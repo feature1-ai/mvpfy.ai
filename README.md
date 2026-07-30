@@ -79,3 +79,15 @@ The curated prompts live in `src/prompts/`:
 
 - First version is intentionally minimal; AO integration is planned for later.
 - Default Codex model is `gpt-5.3-codex` (override in Settings).
+
+## Troubleshooting
+
+**macOS says Electron is malware / the binary disappears.** Apple has revoked the code hash
+of some older stock Electron dev binaries (malware campaigns bundled the unmodified runtime,
+and the revocation hits every identical copy). This project pins Electron ≥ 43, which is not
+affected. If you ever hit it again: don't bypass the warning — upgrade `electron` in
+`package.json` instead, and verify the download against the official
+`SHASUMS256.txt` from the matching GitHub release.
+
+**`spawn …/Electron ENOENT` when starting.** The Electron binary didn't get downloaded by
+`npm install` (postinstall was skipped). Run `node node_modules/electron/install.js` once.

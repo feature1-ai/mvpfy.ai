@@ -1,0 +1,86 @@
+import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
+import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
+import { AgentKind, Project, Settings } from '../../shared/types';
+
+export type RunKind = 'bootstrap' | 'ship' | 'docker-up' | 'docker-down';
+
+export interface RunHandle {
+  runId: string;
+  kind: RunKind;
+  projectId: string;
+  storyId?: string;
+}
+
+function fillTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match
+  );
+}
+
+function makeRunId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function agentFor(settings: Settings): { agent: AgentKind; model?: string } {
+  return settings.defaultAgent === 'codex'
+    ? { agent: 'codex', model: settings.codexModel }
+    : { agent: 'claude' };
+}
+
+export function buildBootstrapPrompt(project: Project): string {
+  return fillTemplate(bootstrapTemplate, {
+    repoPath: project.localPath,
+    basePort: String(project.basePort),
+  });
+}
+
+export function buildShipFeaturePrompt(project: Project, storyId: string): string {
+  return fillTemplate(shipFeatureTemplate, {
+    repoPath: project.localPath,
+    storyId,
+  });
+}
+
+export async function startBootstrapRun(project: Project, settings: Settings): Promise<RunHandle> {
+  const runId = makeRunId('bootstrap');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: buildBootstrapPrompt(project),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'bootstrap', projectId: project.id };
+}
+
+export async function startShipFeatureRun(
+  project: Project,
+  storyId: string,
+  settings: Settings
+): Promise<RunHandle> {
+  const runId = makeRunId('ship');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: buildShipFeaturePrompt(project, storyId),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'ship', projectId: project.id, storyId };
+}
+
+export async function startDockerRun(
+  project: Project,
+  action: 'up' | 'down'
+): Promise<RunHandle> {
+  const runId = makeRunId(`docker-${action}`);
+  await window.mvpfy.dockerCompose(runId, project.localPath, action);
+  return { runId, kind: action === 'up' ? 'docker-up' : 'docker-down', projectId: project.id };
+}
+
+const PR_URL_RE =
+  /https:\/\/(?:github\.com\/[^\s"'<>]+\/pull\/\d+|gitlab\.com\/[^\s"'<>]+\/-\/merge_requests\/\d+)/;
+
+/** Find the last PR/MR URL mentioned in agent output, if any. */
+export function extractPrUrl(logText: string): string | null {
+  const matches = logText.match(new RegExp(PR_URL_RE, 'g'));
+  return matches && matches.length > 0 ? matches[matches.length - 1] : null;
+}

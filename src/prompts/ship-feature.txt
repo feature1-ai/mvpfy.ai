@@ -1,0 +1,22 @@
+You are in the repo at {repoPath}. Implement Feature1 story {storyId}.
+
+Follow this exact sequence:
+1. Use the Feature1 MCP server to call mcp__feature1__load_workflow(session_id="{storyId}") and
+   mcp__feature1__get_user_story(session_id="{storyId}").
+2. Call mcp__feature1__mark_all_acs_in_progress().
+3. Call mcp__feature1__generate_prompts_for_all_acs().
+4. Implement every acceptance criterion in one pass: code + tests.
+5. Run the repo's test command. Only proceed if all tests pass.
+6. git add -A && git commit -m "<story-code>: <story-title>".
+7. Call mcp__feature1__mark_all_acs_implementation_done().
+8. Call mcp__feature1__mark_all_acs_approved().
+9. Push the branch and create a PR: git push -u origin "$(git branch --show-current)" && PR_URL=$(gh
+   pr create --fill --json url --jq .url)
+10. Call mcp__feature1__attach_pr(pr_url="$PR_URL").
+11. Call mcp__feature1__mark_ready_for_testing().
+12. /exit
+
+Hard rules:
+• Commit on the current branch. Do not create a sibling branch.
+• Do not ask for confirmation mid-flow.
+• If an MCP call fails, retry once, then stop and report the error.

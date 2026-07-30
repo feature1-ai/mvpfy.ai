@@ -1,0 +1,46 @@
+{
+  "name": "mvpfy",
+  "version": "0.1.0",
+  "description": "Ship Feature1 user stories as pull requests with one click — a thin desktop wrapper over Claude Code and Codex CLI.",
+  "private": true,
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "npm run build:electron && concurrently -k \"vite\" \"wait-on tcp:127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:renderer": "tsc --noEmit -p tsconfig.json && vite build",
+    "build": "npm run build:electron && npm run build:renderer",
+    "package": "npm run build && electron-builder --mac --dir"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.6",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.4",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "dev.startuper.mvpfy",
+    "productName": "mvpfy",
+    "files": [
+      "dist/**",
+      "dist-electron/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools"
+    }
+  }
+}

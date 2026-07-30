@@ -1,0 +1,16 @@
+You are helping a non-technical product manager run a web application locally inside Docker.
+
+Analyze the repo at {repoPath}. Generate the minimum files needed to run it locally:
+• mvpfy.yml
+• Dockerfile (only if missing)
+• docker-compose.mvpfy.yml with the app service and any DB/cache it needs
+• .env.mvpfy.example with safe local defaults
+
+Rules:
+• Expose the main app on port {basePort}.
+• Use a named Docker volume for the database so data persists.
+• Reuse existing Dockerfile/docker-compose.yml if present.
+• Use official base images.
+• Do not overwrite existing files without creating a backup.
+
+Then write mvpfy-run.md explaining services, ports, and any manual steps.

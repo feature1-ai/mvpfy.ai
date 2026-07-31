@@ -167,7 +167,11 @@ function runAgent(req: RunAgentRequest): void {
   const q = shellQuote;
   let command: string;
   if (req.agent === 'claude') {
-    command = `cd ${q(repoPath)} && claude code --repo ${q(repoPath)} --prompt-file ${q(promptFile)}`;
+    // -p (print) reads the prompt from stdin; stream-json gives per-event
+    // output for the live log panel. Permissions are bypassed because the
+    // ship-feature flow must run unattended (the PM reviews outputs, not
+    // individual tool calls), and the process is confined to the cloned repo.
+    command = `cd ${q(repoPath)} && claude -p --verbose --output-format stream-json --dangerously-skip-permissions < ${q(promptFile)}`;
   } else {
     const model = req.model || DEFAULT_STATE.settings.codexModel;
     command = `cd ${q(repoPath)} && codex exec --model ${q(model)} --sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;

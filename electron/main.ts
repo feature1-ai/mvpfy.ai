@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, safeStorage } from 'electron';
 import { spawn, spawnSync, ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
@@ -236,6 +237,48 @@ function readRepoFiles(repoPath: string, relativePaths: string[]): RepoFile[] {
   });
 }
 
+function writeRepoFile(repoPath: string, relativePath: string, content: string): void {
+  const root = path.resolve(repoPath);
+  const abs = path.resolve(root, relativePath);
+  if (abs !== root && !abs.startsWith(root + path.sep)) {
+    throw new Error('Refusing to write outside the repo');
+  }
+  fs.writeFileSync(abs, content, 'utf8');
+}
+
+/** Find a free localhost port, starting at `start` and walking upward. */
+function findFreePort(start: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const tryPort = (port: number) => {
+      if (port > 65000) {
+        reject(new Error('No free port found'));
+        return;
+      }
+      const srv = net.createServer();
+      srv.once('error', () => tryPort(port + 1));
+      srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(port)));
+    };
+    tryPort(Math.max(1024, start));
+  });
+}
+
+/** Check whether a local URL answers HTTP at all (any status counts as up). */
+async function probeUrl(url: string): Promise<{ reachable: boolean; status: number }> {
+  try {
+    const parsed = new URL(url);
+    if (
+      parsed.protocol !== 'http:' ||
+      (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1')
+    ) {
+      return { reachable: false, status: 0 };
+    }
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'manual' });
+    return { reachable: true, status: res.status };
+  } catch {
+    return { reachable: false, status: 0 };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Feature1 MCP fetch proxy (runs in main to avoid renderer CORS limits)
 // ---------------------------------------------------------------------------
@@ -326,6 +369,11 @@ function registerIpc(): void {
   ipcMain.handle('read-repo-files', (_ev, repoPath: string, relativePaths: string[]) =>
     readRepoFiles(repoPath, relativePaths)
   );
+  ipcMain.handle('write-repo-file', (_ev, repoPath: string, relativePath: string, content: string) =>
+    writeRepoFile(repoPath, relativePath, content)
+  );
+  ipcMain.handle('find-free-port', (_ev, start: number) => findFreePort(start));
+  ipcMain.handle('probe-url', (_ev, url: string) => probeUrl(url));
   ipcMain.handle('mcp-fetch', (_ev, req: McpFetchRequest) => mcpFetch(req));
 }
 

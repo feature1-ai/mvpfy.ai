@@ -51,10 +51,19 @@ npm run package    # package the macOS app into release/
    The MCP endpoint is `https://<tenant>-mcp.feature1.ai/mcp/`.
 2. **Add project** — paste a GitHub/GitLab repo URL. mvpfy clones it into
    `~/.mvpfy/projects/<slug>`.
-3. **Bootstrap environment** — mvpfy asks your default agent to generate `mvpfy.yml`, a
-   `Dockerfile` (if missing), `docker-compose.mvpfy.yml`, and `.env.mvpfy.example`.
+3. **Bootstrap environment** — the goal of this step is that you can *see the app running
+   locally*. mvpfy finds a free port and asks your default agent to make the repo fully
+   runnable: it generates `mvpfy.yml`, a `Dockerfile` (if missing),
+   `docker-compose.mvpfy.yml`, and `.env.mvpfy.example`, and fills any gaps with open-source
+   stand-ins — official images for missing infrastructure (postgres, redis, minio, mailhog,
+   …) and generated mock services under `mvpfy/` in the repo when a backend or third-party
+   API isn't available. If the agent is genuinely blocked (e.g. it needs the real backend
+   repo URL), it writes its questions to `mvpfy-questions.md`; the app shows them, you type
+   answers, and bootstrap re-runs with your answers.
    **Nothing runs automatically**: you review the generated files in the app, then explicitly
    click *Start environment*, which runs `docker compose -f docker-compose.mvpfy.yml up -d`.
+   The app then polls the port and shows a green "App is up" link once the app actually
+   responds.
 4. **Implement a story** — refresh the story list (loaded from the Feature1 MCP server), click
    *Implement*. mvpfy invokes the agent with the ship-feature prompt: it loads the workflow,
    implements every acceptance criterion, runs the tests, commits, pushes, opens a PR with

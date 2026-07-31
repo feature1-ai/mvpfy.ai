@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { GENERATED_FILES, MvpfyState, Project, RepoFile } from '../../shared/types';
+import {
+  ANSWERS_FILE,
+  GENERATED_FILES,
+  MvpfyState,
+  Project,
+  QUESTIONS_FILE,
+  RepoFile,
+} from '../../shared/types';
 import {
   startBootstrapRun,
   startDockerRun,
@@ -23,6 +30,8 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
   const [storiesError, setStoriesError] = useState<string | null>(null);
   const [loadingStories, setLoadingStories] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [answersDraft, setAnswersDraft] = useState('');
+  const [appHealthy, setAppHealthy] = useState(false);
 
   const latestRun = runsApi.latestForProject(project.id);
   const busy = latestRun?.running ?? false;
@@ -32,15 +41,20 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
 
   const refreshFiles = useCallback(() => {
     void window.mvpfy
-      .readRepoFiles(project.localPath, [...GENERATED_FILES])
+      .readRepoFiles(project.localPath, [...GENERATED_FILES, QUESTIONS_FILE, ANSWERS_FILE])
       .then((result) => {
         setFiles(result);
-        const existing = result.filter((f) => f.exists).map((f) => f.relativePath);
-        setActiveFile((prev) => (prev && existing.includes(prev) ? prev : existing[0] ?? null));
+        const viewable = result
+          .filter((f) => f.exists && f.relativePath !== QUESTIONS_FILE)
+          .map((f) => f.relativePath);
+        setActiveFile((prev) => (prev && viewable.includes(prev) ? prev : viewable[0] ?? null));
+        const generated = result
+          .filter((f) => f.exists && (GENERATED_FILES as readonly string[]).includes(f.relativePath))
+          .map((f) => f.relativePath);
         updateState((prev) => ({
           ...prev,
           projects: prev.projects.map((p) =>
-            p.id === project.id ? { ...p, generatedFiles: existing } : p
+            p.id === project.id ? { ...p, generatedFiles: generated } : p
           ),
         }));
       });
@@ -52,7 +66,32 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
     if (!busy) refreshFiles();
   }, [busy, refreshFiles]);
 
+  // While the environment is up, poll the app port until it answers HTTP so
+  // the PM can see when it is actually ready, not just when compose exited.
+  useEffect(() => {
+    if (project.status !== 'running') {
+      setAppHealthy(false);
+      return;
+    }
+    let cancelled = false;
+    const url = `http://localhost:${project.basePort}`;
+    const check = async () => {
+      const res = await window.mvpfy.probeUrl(url);
+      if (!cancelled && res.reachable) setAppHealthy(true);
+    };
+    void check();
+    const timer = setInterval(() => {
+      if (!appHealthy) void check();
+    }, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [project.status, project.basePort, appHealthy]);
+
   const hasMvpfyYml = files.some((f) => f.relativePath === 'mvpfy.yml' && f.exists);
+  const questionsFile = files.find((f) => f.relativePath === QUESTIONS_FILE && f.exists) ?? null;
+  const viewerFiles = files.filter((f) => f.exists && f.relativePath !== QUESTIONS_FILE);
   const activeFileContent = files.find((f) => f.relativePath === activeFile)?.content ?? '';
 
   async function guarded(action: () => Promise<void>) {
@@ -66,14 +105,25 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
 
   const bootstrap = () =>
     guarded(async () => {
-      const handle = await startBootstrapRun(project, state.settings);
+      // Re-verify the port right before generating: it is baked into the
+      // compose file, so it must be genuinely free at bootstrap time.
+      const freePort = await window.mvpfy.findFreePort(project.basePort);
+      const target = { ...project, basePort: freePort };
+      const handle = await startBootstrapRun(target, state.settings);
       runsApi.track(handle);
       updateState((prev) => ({
         ...prev,
         projects: prev.projects.map((p) =>
-          p.id === project.id ? { ...p, status: 'bootstrapping' } : p
+          p.id === project.id ? { ...p, basePort: freePort, status: 'bootstrapping' } : p
         ),
       }));
+    });
+
+  const saveAnswersAndRerun = () =>
+    guarded(async () => {
+      await window.mvpfy.writeRepoFile(project.localPath, ANSWERS_FILE, answersDraft);
+      setAnswersDraft('');
+      await bootstrap();
     });
 
   const docker = (action: 'up' | 'down') =>
@@ -156,14 +206,21 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
           >
             Stop environment
           </button>
-          {project.status === 'running' && (
-            <button
-              onClick={() => void window.mvpfy.openExternal(`http://localhost:${project.basePort}`)}
-              className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
-            >
-              Open app ↗ localhost:{project.basePort}
-            </button>
-          )}
+          {project.status === 'running' &&
+            (appHealthy ? (
+              <button
+                onClick={() =>
+                  void window.mvpfy.openExternal(`http://localhost:${project.basePort}`)
+                }
+                className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+              >
+                ● App is up — open localhost:{project.basePort} ↗
+              </button>
+            ) : (
+              <span className="animate-pulse rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
+                Waiting for the app to respond on port {project.basePort}…
+              </span>
+            ))}
         </div>
         {project.status === 'needs-review' && (
           <p className="mt-2 text-xs text-amber-700">
@@ -172,6 +229,31 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
           </p>
         )}
       </section>
+
+      {questionsFile && !busy && (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-700">
+            The agent needs your input
+          </h3>
+          <pre className="mb-3 whitespace-pre-wrap rounded-md bg-white p-3 text-sm text-slate-800">
+            {questionsFile.content}
+          </pre>
+          <textarea
+            value={answersDraft}
+            onChange={(e) => setAnswersDraft(e.target.value)}
+            placeholder={'Answer the questions here, e.g.\n1. The backend repo is https://github.com/org/api\n2. Use any test key'}
+            rows={4}
+            className="mb-2 w-full rounded-md border border-amber-200 p-3 font-mono text-sm focus:border-amber-400 focus:outline-none"
+          />
+          <button
+            onClick={() => void saveAnswersAndRerun()}
+            disabled={!answersDraft.trim()}
+            className="rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
+          >
+            Save answers & re-run bootstrap
+          </button>
+        </section>
+      )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
@@ -185,16 +267,14 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
             Refresh
           </button>
         </div>
-        {files.filter((f) => f.exists).length === 0 ? (
+        {viewerFiles.length === 0 ? (
           <p className="text-sm text-slate-400">
             No generated files yet. Run “Bootstrap environment” to create them.
           </p>
         ) : (
           <>
             <div className="mb-2 flex flex-wrap gap-1">
-              {files
-                .filter((f) => f.exists)
-                .map((f) => (
+              {viewerFiles.map((f) => (
                   <button
                     key={f.relativePath}
                     onClick={() => setActiveFile(f.relativePath)}

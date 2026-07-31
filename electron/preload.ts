@@ -28,6 +28,10 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('docker-compose', runId, repoPath, action),
   readRepoFiles: (repoPath: string, relativePaths: string[]) =>
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),
+  writeRepoFile: (repoPath: string, relativePath: string, content: string) =>
+    ipcRenderer.invoke('write-repo-file', repoPath, relativePath, content),
+  findFreePort: (start: number) => ipcRenderer.invoke('find-free-port', start),
+  probeUrl: (url: string) => ipcRenderer.invoke('probe-url', url),
   mcpFetch: (req: McpFetchRequest) => ipcRenderer.invoke('mcp-fetch', req),
   onRunOutput: (cb: (ev: RunOutputEvent) => void) => subscribe('run-output', cb),
   onRunExit: (cb: (ev: RunExitEvent) => void) => subscribe('run-exit', cb),

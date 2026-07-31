@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { MvpfyState, Project, ProjectStatus } from '../../shared/types';
-import { newProjectId, nextBasePort } from '../lib/state';
+import { allocateBasePort, newProjectId } from '../lib/state';
 
 const STATUS_STYLES: Record<ProjectStatus, string> = {
   cloned: 'bg-slate-200 text-slate-700',
@@ -38,7 +38,7 @@ export default function ProjectList({ state, selectedProjectId, onSelect, update
         id: newProjectId(),
         repoUrl: url,
         localPath: result.localPath,
-        basePort: nextBasePort(state),
+        basePort: await allocateBasePort(state),
         status: 'cloned',
         lastStoryId: null,
         generatedFiles: [],

@@ -112,6 +112,11 @@ export const GENERATED_FILES = [
   'mvpfy-run.md',
 ] as const;
 
+/** The bootstrap agent writes questions here when it is blocked on PM input. */
+export const QUESTIONS_FILE = 'mvpfy-questions.md';
+/** PM answers are saved here; the agent reads them on the next bootstrap run. */
+export const ANSWERS_FILE = 'mvpfy-answers.md';
+
 /** API surface exposed to the renderer through the preload contextBridge. */
 export interface MvpfyApi {
   cliCheck(): Promise<CliStatus[]>;
@@ -125,6 +130,9 @@ export interface MvpfyApi {
   stopRun(runId: string): Promise<void>;
   dockerCompose(runId: string, repoPath: string, action: 'up' | 'down'): Promise<void>;
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
+  writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
+  findFreePort(start: number): Promise<number>;
+  probeUrl(url: string): Promise<{ reachable: boolean; status: number }>;
   mcpFetch(req: McpFetchRequest): Promise<McpFetchResponse>;
   onRunOutput(cb: (ev: RunOutputEvent) => void): () => void;
   onRunExit(cb: (ev: RunExitEvent) => void): () => void;

@@ -1,16 +1,51 @@
-You are helping a non-technical product manager run a web application locally inside Docker.
+You are helping a non-technical product manager see this application running locally.
 
-Analyze the repo at {repoPath}. Generate the minimum files needed to run it locally:
-• mvpfy.yml
-• Dockerfile (only if missing)
-• docker-compose.mvpfy.yml with the app service and any DB/cache it needs
-• .env.mvpfy.example with safe local defaults
+GOAL: after your changes, running `docker compose -f docker-compose.mvpfy.yml up -d` from the
+repo root must bring up EVERYTHING the app needs, and the main app must be reachable in a
+browser at http://localhost:{basePort} (this port has been verified free on this machine).
+
+Repo: {repoPath}
+
+Follow these steps:
+
+1. Analyze the repo. Work out what it is (frontend, backend, full-stack, monorepo) and list
+   every service it depends on: backend API, database, cache, queue, mail, object storage,
+   third-party APIs.
+
+2. If mvpfy-answers.md exists in the repo root, read it first — it contains the product
+   manager's answers to questions from a previous run. Honor those answers.
+
+3. For every dependent service that is missing, make it available locally:
+   • Infrastructure (database, cache, queue, mail, object storage): add it as a service in
+     docker-compose.mvpfy.yml using official open-source images with safe local defaults —
+     e.g. postgres, mysql, redis, rabbitmq, minio (S3), mailhog (SMTP).
+   • Backend/API whose code is NOT in this repo: if the answers file points to a repo or a
+     reachable URL, use that. Otherwise generate a minimal mock service under
+     mvpfy/services/<name>/ inside the repo root (json-server, or a small Node/Express app —
+     open-source tooling only) that serves the endpoints this app calls with realistic sample
+     data, and wire the app to it via environment variables.
+   • Third-party APIs that cannot run locally (payments, external SaaS): point the app at a
+     mock as above, or disable the feature via env flags with a note in mvpfy-run.md.
+
+4. Only if you are genuinely blocked — for example you need the URL of the real backend repo,
+   or a credential that cannot be defaulted — write a short numbered list of questions to
+   mvpfy-questions.md in the repo root and stop there. Never guess or fabricate secrets.
+   If you were able to proceed, delete any stale mvpfy-questions.md.
+
+5. Generate these files in the repo root:
+   • mvpfy.yml — app name, main service, host port, list of all services, health-check URL
+   • Dockerfile — only if the repo has none
+   • docker-compose.mvpfy.yml — the app service plus every dependent service from step 3
+   • .env.mvpfy.example — safe local defaults for every environment variable the app needs
 
 Rules:
-• Expose the main app on port {basePort}.
-• Use a named Docker volume for the database so data persists.
-• Reuse existing Dockerfile/docker-compose.yml if present.
-• Use official base images.
-• Do not overwrite existing files without creating a backup.
+• The main app must be exposed on host port {basePort}.
+• Use a named Docker volume for each database so data persists between restarts.
+• Reuse the existing Dockerfile/docker-compose.yml if present.
+• Use official base images only.
+• Do not overwrite existing files without creating a .bak backup first.
+• Everything you generate must live under the repo root (use mvpfy/ for mock services).
 
-Then write mvpfy-run.md explaining services, ports, and any manual steps.
+Finish by writing mvpfy-run.md: which services run, their ports, how the product manager can
+tell the app is working (what they should see at http://localhost:{basePort}), and any manual
+steps that remain.

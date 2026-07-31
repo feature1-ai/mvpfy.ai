@@ -20,12 +20,13 @@ export function withProject(
   };
 }
 
-/** Pick a host port for a new project, spaced out to leave room for sidecars. */
-export function nextBasePort(state: MvpfyState): number {
-  const used = new Set(state.projects.map((p) => p.basePort));
-  let port = 4100;
-  while (used.has(port)) port += 10;
-  return port;
+/**
+ * Pick a host port for a new project: ask the OS for a genuinely free one,
+ * starting above ports already promised to other projects.
+ */
+export async function allocateBasePort(state: MvpfyState): Promise<number> {
+  const maxUsed = Math.max(4099, ...state.projects.map((p) => p.basePort));
+  return window.mvpfy.findFreePort(maxUsed + 1);
 }
 
 export function newProjectId(): string {

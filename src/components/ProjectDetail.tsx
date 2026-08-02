@@ -32,6 +32,9 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
   const [actionError, setActionError] = useState<string | null>(null);
   const [answersDraft, setAnswersDraft] = useState('');
   const [appHealthy, setAppHealthy] = useState(false);
+  const [targetRepoDir, setTargetRepoDir] = useState(
+    project.repos[0]?.dir ?? project.localPath
+  );
 
   const latestRun = runsApi.latestForProject(project.id);
   const busy = latestRun?.running ?? false;
@@ -153,7 +156,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
 
   const implement = (story: UserStory) =>
     guarded(async () => {
-      const handle = await startShipFeatureRun(project, story.id, state.settings);
+      const handle = await startShipFeatureRun(project, story.id, state.settings, targetRepoDir);
       runsApi.track(handle);
     });
 
@@ -164,7 +167,14 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
     <div className="flex flex-col gap-5 p-6">
       <header>
         <h2 className="text-lg font-bold">{projectName}</h2>
-        <p className="text-sm text-slate-500">{project.repoUrl}</p>
+        {project.repos.map((r) => (
+          <p key={r.url} className="text-sm text-slate-500">
+            {r.url}
+            {project.repos.length > 1 && (
+              <span className="ml-2 text-xs text-slate-400">→ {r.dir.split('/').pop()}/</span>
+            )}
+          </p>
+        ))}
         <p className="text-xs text-slate-400">{project.localPath}</p>
         <p className="mt-1 text-sm">
           <span className="text-slate-500">App URL: </span>
@@ -315,13 +325,31 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
             Feature1 stories
           </h3>
-          <button
-            onClick={() => void refreshStories()}
-            disabled={loadingStories}
-            className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
-          >
-            {loadingStories ? 'Loading…' : 'Refresh'}
-          </button>
+          <div className="flex items-center gap-3">
+            {project.repos.length > 1 && (
+              <label className="flex items-center gap-1 text-xs text-slate-500">
+                Implement in
+                <select
+                  value={targetRepoDir}
+                  onChange={(e) => setTargetRepoDir(e.target.value)}
+                  className="rounded border border-slate-300 px-1 py-0.5 text-xs"
+                >
+                  {project.repos.map((r) => (
+                    <option key={r.dir} value={r.dir}>
+                      {r.dir.split('/').pop()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <button
+              onClick={() => void refreshStories()}
+              disabled={loadingStories}
+              className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+            >
+              {loadingStories ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
         </div>
         {storiesError && <p className="mb-2 text-sm text-red-600">{storiesError}</p>}
         {stories.length === 0 && !storiesError ? (

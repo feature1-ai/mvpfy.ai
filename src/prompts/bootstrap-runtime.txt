@@ -4,13 +4,18 @@ GOAL: after your changes, running `docker compose -f docker-compose.mvpfy.yml up
 repo root must bring up EVERYTHING the app needs, and the main app must be reachable in a
 browser at http://localhost:{basePort} (this port has been verified free on this machine).
 
-Repo: {repoPath}
+Workspace: {repoPath}
+
+The workspace root is either a single application repo, or a folder that contains MULTIPLE
+repos (e.g. frontend, backend, services), each cloned into its own subdirectory. Treat every
+repo in the workspace as part of one product: they must build, connect, and run together.
 
 Follow these steps:
 
-1. Analyze the repo. Work out what it is (frontend, backend, full-stack, monorepo) and list
-   every service it depends on: backend API, database, cache, queue, mail, object storage,
-   third-party APIs.
+1. Analyze every repo in the workspace. Work out what each one is (frontend, backend,
+   full-stack, monorepo) and list every service the product depends on: backend API,
+   database, cache, queue, mail, object storage, third-party APIs. Work out how the repos
+   talk to each other (API base URLs, env vars) and wire them accordingly.
 
 2. If mvpfy-answers.md exists in the repo root, read it first — it contains the product
    manager's answers to questions from a previous run. Honor those answers.
@@ -32,14 +37,16 @@ Follow these steps:
    mvpfy-questions.md in the repo root and stop there. Never guess or fabricate secrets.
    If you were able to proceed, delete any stale mvpfy-questions.md.
 
-5. Generate these files in the repo root:
+5. Generate these files in the WORKSPACE ROOT:
    • mvpfy.yml — app name, main service, host port, list of all services, health-check URL
-   • Dockerfile — only if the repo has none
-   • docker-compose.mvpfy.yml — the app service plus every dependent service from step 3
-   • .env.mvpfy.example — safe local defaults for every environment variable the app needs
+   • Dockerfile — inside any repo that has none (one per repo that needs it)
+   • docker-compose.mvpfy.yml — one compose file that runs every repo's app plus every
+     dependent service from step 3; build contexts point at the right subdirectory
+   • .env.mvpfy.example — safe local defaults for every environment variable the product needs
 
 Rules:
-• The main app must be exposed on host port {basePort}.
+• The main user-facing app must be exposed on host port {basePort}; give other repos' apps
+  their own nearby host ports and record them all in mvpfy.yml and mvpfy-run.md.
 • Use a named Docker volume for each database so data persists between restarts.
 • Reuse the existing Dockerfile/docker-compose.yml if present.
 • Use official base images only.

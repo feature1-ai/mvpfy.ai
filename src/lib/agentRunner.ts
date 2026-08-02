@@ -34,9 +34,9 @@ export function buildBootstrapPrompt(project: Project): string {
   });
 }
 
-export function buildShipFeaturePrompt(project: Project, storyId: string): string {
+export function buildShipFeaturePrompt(repoPath: string, storyId: string): string {
   return fillTemplate(shipFeatureTemplate, {
-    repoPath: project.localPath,
+    repoPath,
     storyId,
   });
 }
@@ -55,13 +55,15 @@ export async function startBootstrapRun(project: Project, settings: Settings): P
 export async function startShipFeatureRun(
   project: Project,
   storyId: string,
-  settings: Settings
+  settings: Settings,
+  /** Which repo of the workspace to implement the story in. */
+  repoPath: string = project.repos[0]?.dir ?? project.localPath
 ): Promise<RunHandle> {
   const runId = makeRunId('ship');
   await window.mvpfy.runAgent({
     runId,
-    repoPath: project.localPath,
-    promptText: buildShipFeaturePrompt(project, storyId),
+    repoPath,
+    promptText: buildShipFeaturePrompt(repoPath, storyId),
     ...agentFor(settings),
   });
   return { runId, kind: 'ship', projectId: project.id, storyId };

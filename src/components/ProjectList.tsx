@@ -19,32 +19,35 @@ interface Props {
 }
 
 export default function ProjectList({ state, selectedProjectId, onSelect, updateState }: Props) {
-  const [repoUrl, setRepoUrl] = useState('');
+  const [repoUrlsText, setRepoUrlsText] = useState('');
   const [cloning, setCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function addProject() {
-    const url = repoUrl.trim();
-    if (!url || cloning) return;
+    const urls = repoUrlsText
+      .split(/[\n,]+/)
+      .map((u) => u.trim())
+      .filter(Boolean);
+    if (urls.length === 0 || cloning) return;
     setCloning(true);
     setError(null);
     try {
-      const result = await window.mvpfy.cloneRepo(url);
+      const result = await window.mvpfy.createProject(urls);
       if (!result.ok) {
         setError(result.error || 'Clone failed');
         return;
       }
       const project: Project = {
         id: newProjectId(),
-        repoUrl: url,
-        localPath: result.localPath,
+        repos: result.repos.map(({ url, dir }) => ({ url, dir })),
+        localPath: result.workspacePath,
         basePort: await allocateBasePort(state),
         status: 'cloned',
         lastStoryId: null,
         generatedFiles: [],
       };
       updateState((prev) => ({ ...prev, projects: [...prev.projects, project] }));
-      setRepoUrl('');
+      setRepoUrlsText('');
       onSelect(project.id);
     } finally {
       setCloning(false);
@@ -58,22 +61,22 @@ export default function ProjectList({ state, selectedProjectId, onSelect, update
           Add project
         </h2>
         <div className="flex flex-col gap-2">
-          <input
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && void addProject()}
-            placeholder="https://github.com/org/repo"
+          <textarea
+            value={repoUrlsText}
+            onChange={(e) => setRepoUrlsText(e.target.value)}
+            placeholder={'One repo URL per line, e.g.\nhttps://github.com/org/frontend\nhttps://github.com/org/backend'}
+            rows={3}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
             disabled={cloning}
           />
           <button
             onClick={() => void addProject()}
-            disabled={cloning || !repoUrl.trim()}
+            disabled={cloning || !repoUrlsText.trim()}
             className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
             {cloning ? 'Cloning…' : 'Add project'}
           </button>
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="whitespace-pre-wrap text-xs text-red-600">{error}</p>}
         </div>
       </div>
 
@@ -95,6 +98,11 @@ export default function ProjectList({ state, selectedProjectId, onSelect, update
               >
                 <span className="block truncate font-medium">
                   {p.localPath.split('/').pop()}
+                  {p.repos.length > 1 && (
+                    <span className="ml-1 text-xs font-normal text-slate-400">
+                      ({p.repos.length} repos)
+                    </span>
+                  )}
                 </span>
                 <span
                   className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[p.status]}`}

@@ -6,12 +6,14 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   CliStatus,
-  CloneResult,
+  CreateProjectResult,
   DEFAULT_STATE,
   McpFetchRequest,
   McpFetchResponse,
   MvpfyState,
+  Project,
   REQUIRED_CLIS,
+  RepoCloneOutcome,
   RepoFile,
   RunAgentRequest,
 } from '../shared/types';
@@ -47,9 +49,17 @@ function readState(): MvpfyState {
   try {
     const raw = fs.readFileSync(STATE_FILE, 'utf8');
     const parsed = JSON.parse(raw) as Partial<MvpfyState>;
+    // Migrate pre-multi-repo projects ({repoUrl} → {repos: [{url, dir}]}).
+    const projects = ((parsed.projects ?? []) as unknown as Array<Record<string, unknown>>).map((p) => {
+      if (!p.repos && typeof p.repoUrl === 'string') {
+        const { repoUrl, ...rest } = p;
+        return { ...rest, repos: [{ url: repoUrl, dir: p.localPath }] };
+      }
+      return p;
+    }) as unknown as Project[];
     return {
       tenant: parsed.tenant ?? null,
-      projects: parsed.projects ?? [],
+      projects,
       settings: { ...DEFAULT_STATE.settings, ...parsed.settings },
     };
   } catch {
@@ -190,34 +200,74 @@ function slugFromRepoUrl(repoUrl: string): string {
   return last.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'project';
 }
 
-async function cloneRepo(repoUrl: string): Promise<CloneResult> {
-  ensureDirs();
-  const baseSlug = slugFromRepoUrl(repoUrl);
-  let slug = baseSlug;
-  let n = 2;
-  while (fs.existsSync(path.join(PROJECTS_DIR, slug))) {
-    slug = `${baseSlug}-${n++}`;
-  }
-  const localPath = path.join(PROJECTS_DIR, slug);
-  return await new Promise<CloneResult>((resolve) => {
-    const child = spawn(USER_SHELL, ['-lc', `git clone ${shellQuote(repoUrl)} ${shellQuote(localPath)}`], {
+function gitClone(repoUrl: string, dest: string): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(USER_SHELL, ['-lc', `git clone ${shellQuote(repoUrl)} ${shellQuote(dest)}`], {
       cwd: PROJECTS_DIR,
     });
     let stderr = '';
     child.stderr?.on('data', (d: Buffer) => {
       stderr += d.toString('utf8');
     });
-    child.on('error', (err) => {
-      resolve({ ok: false, localPath, slug, error: err.message });
-    });
+    child.on('error', (err) => resolve({ ok: false, error: err.message }));
     child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ ok: true, localPath, slug });
-      } else {
-        resolve({ ok: false, localPath, slug, error: stderr.trim() || `git clone exited with code ${code}` });
-      }
+      if (code === 0) resolve({ ok: true });
+      else resolve({ ok: false, error: stderr.trim() || `git clone exited with code ${code}` });
     });
   });
+}
+
+/**
+ * Create a project workspace. A single URL is cloned directly as the workspace
+ * root; multiple URLs get a shared workspace folder with one subdirectory per
+ * repo, so one compose file at the root can run the whole stack.
+ */
+async function createProject(repoUrls: string[]): Promise<CreateProjectResult> {
+  ensureDirs();
+  const urls = repoUrls.map((u) => u.trim()).filter(Boolean);
+  if (urls.length === 0) {
+    return { ok: false, slug: '', workspacePath: '', repos: [], error: 'No repo URLs given' };
+  }
+  const baseSlug =
+    urls.length === 1 ? slugFromRepoUrl(urls[0]) : `${slugFromRepoUrl(urls[0])}-stack`;
+  let slug = baseSlug;
+  let n = 2;
+  while (fs.existsSync(path.join(PROJECTS_DIR, slug))) {
+    slug = `${baseSlug}-${n++}`;
+  }
+  const workspacePath = path.join(PROJECTS_DIR, slug);
+  const repos: RepoCloneOutcome[] = [];
+
+  if (urls.length === 1) {
+    const res = await gitClone(urls[0], workspacePath);
+    repos.push({ url: urls[0], dir: workspacePath, ...res });
+  } else {
+    fs.mkdirSync(workspacePath, { recursive: true });
+    const used = new Set<string>();
+    for (const url of urls) {
+      const repoSlugBase = slugFromRepoUrl(url);
+      let repoSlug = repoSlugBase;
+      let m = 2;
+      while (used.has(repoSlug)) repoSlug = `${repoSlugBase}-${m++}`;
+      used.add(repoSlug);
+      const dir = path.join(workspacePath, repoSlug);
+      const res = await gitClone(url, dir);
+      repos.push({ url, dir, ...res });
+    }
+  }
+
+  const failed = repos.filter((r) => !r.ok);
+  if (failed.length > 0) {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+    return {
+      ok: false,
+      slug,
+      workspacePath,
+      repos,
+      error: failed.map((r) => `${r.url}: ${r.error}`).join('\n'),
+    };
+  }
+  return { ok: true, slug, workspacePath, repos };
 }
 
 function readRepoFiles(repoPath: string, relativePaths: string[]): RepoFile[] {
@@ -349,7 +399,7 @@ function registerIpc(): void {
     }
     return shell.openExternal(url);
   });
-  ipcMain.handle('clone-repo', (_ev, repoUrl: string) => cloneRepo(repoUrl));
+  ipcMain.handle('create-project', (_ev, repoUrls: string[]) => createProject(repoUrls));
   ipcMain.handle('run-agent', (_ev, req: RunAgentRequest) => runAgent(req));
   ipcMain.handle('stop-run', (_ev, runId: string) => {
     const child = activeRuns.get(runId);

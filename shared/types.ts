@@ -10,9 +10,16 @@ export type ProjectStatus =
   | 'stopped'
   | 'error';
 
+export interface RepoRef {
+  url: string;
+  /** Absolute path of the clone. Equals localPath for single-repo projects. */
+  dir: string;
+}
+
 export interface Project {
   id: string;
-  repoUrl: string;
+  repos: RepoRef[];
+  /** Workspace root: where generated files and the compose file live. */
   localPath: string;
   basePort: number;
   status: ProjectStatus;
@@ -55,10 +62,18 @@ export interface CliStatus {
   path: string | null;
 }
 
-export interface CloneResult {
+export interface RepoCloneOutcome {
+  url: string;
+  dir: string;
   ok: boolean;
-  localPath: string;
+  error?: string;
+}
+
+export interface CreateProjectResult {
+  ok: boolean;
   slug: string;
+  workspacePath: string;
+  repos: RepoCloneOutcome[];
   error?: string;
 }
 
@@ -125,7 +140,7 @@ export interface MvpfyApi {
   keychainGet(entry: string): Promise<string | null>;
   keychainSet(entry: string, value: string): Promise<void>;
   openExternal(url: string): Promise<void>;
-  cloneRepo(repoUrl: string): Promise<CloneResult>;
+  createProject(repoUrls: string[]): Promise<CreateProjectResult>;
   runAgent(req: RunAgentRequest): Promise<void>;
   stopRun(runId: string): Promise<void>;
   dockerCompose(runId: string, repoPath: string, action: 'up' | 'down'): Promise<void>;

@@ -35,6 +35,8 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
   const [targetRepoDir, setTargetRepoDir] = useState(
     project.repos[0]?.dir ?? project.localPath
   );
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const latestRun = runsApi.latestForProject(project.id);
   const busy = latestRun?.running ?? false;
@@ -154,6 +156,23 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
       }
     });
 
+  const removeProject = () =>
+    guarded(async () => {
+      setRemoving(true);
+      try {
+        if (latestRun?.running) runsApi.stop(latestRun.handle.runId);
+        const res = await window.mvpfy.deleteProject(project.localPath);
+        if (!res.ok) throw new Error(res.error || 'Failed to delete project files');
+        updateState((prev) => ({
+          ...prev,
+          projects: prev.projects.filter((p) => p.id !== project.id),
+        }));
+      } finally {
+        setRemoving(false);
+        setConfirmRemove(false);
+      }
+    });
+
   const implement = (story: UserStory) =>
     guarded(async () => {
       const handle = await startShipFeatureRun(project, story.id, state.settings, targetRepoDir);
@@ -165,7 +184,33 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
 
   return (
     <div className="flex flex-col gap-5 p-6">
-      <header>
+      <header className="relative">
+        <div className="absolute right-0 top-0 flex items-center gap-2">
+          {confirmRemove && !removing && (
+            <>
+              <span className="text-xs text-red-600">
+                Stops Docker, deletes all cloned files. Sure?
+              </span>
+              <button
+                onClick={() => setConfirmRemove(false)}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => (confirmRemove ? void removeProject() : setConfirmRemove(true))}
+            disabled={removing}
+            className={`rounded-md px-2 py-1 text-xs font-medium disabled:opacity-50 ${
+              confirmRemove
+                ? 'bg-red-600 text-white hover:bg-red-500'
+                : 'border border-red-200 text-red-600 hover:bg-red-50'
+            }`}
+          >
+            {removing ? 'Removing…' : confirmRemove ? 'Yes, remove everything' : 'Remove project'}
+          </button>
+        </div>
         <h2 className="text-lg font-bold">{projectName}</h2>
         {project.repos.map((r) => (
           <p key={r.url} className="text-sm text-slate-500">

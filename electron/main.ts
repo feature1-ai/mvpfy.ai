@@ -296,6 +296,37 @@ function writeRepoFile(repoPath: string, relativePath: string, content: string):
   fs.writeFileSync(abs, content, 'utf8');
 }
 
+/**
+ * Delete a project workspace: tear down its Docker stack (containers and
+ * volumes) if a compose file exists, then remove the directory.
+ */
+async function deleteProject(workspacePath: string): Promise<{ ok: boolean; error?: string }> {
+  const resolved = path.resolve(workspacePath);
+  if (!resolved.startsWith(PROJECTS_DIR + path.sep) || resolved === PROJECTS_DIR) {
+    return { ok: false, error: 'Refusing to delete outside ~/.mvpfy/projects' };
+  }
+  if (!fs.existsSync(resolved)) {
+    return { ok: true };
+  }
+  try {
+    if (fs.existsSync(path.join(resolved, 'docker-compose.mvpfy.yml'))) {
+      await new Promise<void>((resolve) => {
+        const child = spawn(
+          USER_SHELL,
+          ['-lc', 'docker compose -f docker-compose.mvpfy.yml down --volumes --remove-orphans'],
+          { cwd: resolved }
+        );
+        child.on('error', () => resolve());
+        child.on('close', () => resolve());
+      });
+    }
+    fs.rmSync(resolved, { recursive: true, force: true });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** Find a free localhost port, starting at `start` and walking upward. */
 function findFreePort(start: number): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -400,6 +431,7 @@ function registerIpc(): void {
     return shell.openExternal(url);
   });
   ipcMain.handle('create-project', (_ev, repoUrls: string[]) => createProject(repoUrls));
+  ipcMain.handle('delete-project', (_ev, workspacePath: string) => deleteProject(workspacePath));
   ipcMain.handle('run-agent', (_ev, req: RunAgentRequest) => runAgent(req));
   ipcMain.handle('stop-run', (_ev, runId: string) => {
     const child = activeRuns.get(runId);

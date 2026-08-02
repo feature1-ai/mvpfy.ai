@@ -131,6 +131,33 @@ function cliCheck(): CliStatus[] {
 // Streaming command runner
 // ---------------------------------------------------------------------------
 
+// Users often have `docker context use` pointing at a remote engine (ssh://…).
+// mvpfy must never deploy there: pin every spawned command to a local engine.
+let cachedLocalDockerContext: string | null | undefined;
+
+function localDockerContext(): string | null {
+  if (cachedLocalDockerContext !== undefined) return cachedLocalDockerContext;
+  const result = spawnSync(USER_SHELL, ['-lc', 'docker context ls --format "{{.Name}}"'], {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  const names =
+    result.status === 0
+      ? result.stdout.split('\n').map((s) => s.trim()).filter(Boolean)
+      : [];
+  cachedLocalDockerContext = names.includes('desktop-linux')
+    ? 'desktop-linux'
+    : names.includes('default')
+      ? 'default'
+      : null;
+  return cachedLocalDockerContext;
+}
+
+function spawnEnv(): NodeJS.ProcessEnv {
+  const ctx = localDockerContext();
+  return ctx ? { ...process.env, DOCKER_CONTEXT: ctx } : { ...process.env };
+}
+
 function sendToRenderer(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
@@ -144,7 +171,7 @@ function startRun(runId: string, command: string, cwd: string): void {
   sendToRenderer('run-output', { runId, stream: 'info', chunk: `$ ${command}\n` });
   const child = spawn(USER_SHELL, ['-lc', command], {
     cwd,
-    env: { ...process.env },
+    env: spawnEnv(),
   });
   activeRuns.set(runId, child);
 
@@ -314,7 +341,7 @@ async function deleteProject(workspacePath: string): Promise<{ ok: boolean; erro
         const child = spawn(
           USER_SHELL,
           ['-lc', 'docker compose -f docker-compose.mvpfy.yml down --volumes --remove-orphans'],
-          { cwd: resolved }
+          { cwd: resolved, env: spawnEnv() }
         );
         child.on('error', () => resolve());
         child.on('close', () => resolve());
@@ -442,11 +469,17 @@ function registerIpc(): void {
     if (!resolved.startsWith(PROJECTS_DIR + path.sep)) {
       throw new Error('docker compose is restricted to managed project directories');
     }
-    const command =
+    // If the local daemon is down, launch Docker Desktop and wait for it
+    // (PMs won't know the whale needs to be running first).
+    const ensureDaemon =
+      'docker info >/dev/null 2>&1 || { echo "Docker is not running — starting Docker Desktop…"; ' +
+      'open -a Docker >/dev/null 2>&1; ' +
+      'for i in $(seq 1 45); do docker info >/dev/null 2>&1 && break; sleep 2; done; }';
+    const compose =
       action === 'up'
-        ? 'docker compose -f docker-compose.mvpfy.yml up -d'
+        ? 'docker compose -f docker-compose.mvpfy.yml up -d --build'
         : 'docker compose -f docker-compose.mvpfy.yml down';
-    startRun(runId, command, resolved);
+    startRun(runId, `${ensureDaemon} && ${compose}`, resolved);
   });
   ipcMain.handle('read-repo-files', (_ev, repoPath: string, relativePaths: string[]) =>
     readRepoFiles(repoPath, relativePaths)

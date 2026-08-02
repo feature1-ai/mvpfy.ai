@@ -48,6 +48,11 @@ Rules:
 • The main user-facing app must be exposed on host port {basePort}; give other repos' apps
   their own nearby host ports and record them all in mvpfy.yml and mvpfy-run.md.
 • Use a named Docker volume for each database so data persists between restarts.
+• Initialize fresh databases from the committed schema file when the framework keeps one
+  (Rails db/schema.rb or structure.sql → `rails db:schema:load`, Django, Prisma, …), NOT by
+  replaying the full migration history — old migration chains are often broken when run from
+  scratch. Guard the load so it only runs on an empty database and never wipes data on a
+  container restart, and never auto-run pending migrations at startup.
 • Reuse the existing Dockerfile/docker-compose.yml if present.
 • Use official base images only.
 • Do not overwrite existing files without creating a .bak backup first.

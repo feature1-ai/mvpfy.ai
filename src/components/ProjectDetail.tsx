@@ -158,14 +158,29 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
     });
 
   const projectName = project.localPath.split('/').pop();
+  const appUrl = `http://localhost:${project.basePort}`;
 
   return (
     <div className="flex flex-col gap-5 p-6">
       <header>
         <h2 className="text-lg font-bold">{projectName}</h2>
         <p className="text-sm text-slate-500">{project.repoUrl}</p>
-        <p className="text-xs text-slate-400">
-          {project.localPath} · port {project.basePort}
+        <p className="text-xs text-slate-400">{project.localPath}</p>
+        <p className="mt-1 text-sm">
+          <span className="text-slate-500">App URL: </span>
+          <button
+            onClick={() => void window.mvpfy.openExternal(appUrl)}
+            className="font-mono text-blue-600 hover:underline"
+            title="Open in browser"
+          >
+            {appUrl}
+          </button>
+          <span
+            className={`ml-2 inline-block h-2 w-2 rounded-full align-middle ${
+              appHealthy ? 'bg-emerald-500' : 'bg-slate-300'
+            }`}
+            title={appHealthy ? 'App is responding' : 'App is not responding yet'}
+          />
         </p>
       </header>
 

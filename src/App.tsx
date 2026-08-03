@@ -14,6 +14,8 @@ export default function App() {
   const [cliStatuses, setCliStatuses] = useState<CliStatus[]>([]);
   const [view, setView] = useState<View>('projects');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [projectListCollapsed, setProjectListCollapsed] = useState(false);
 
   const updateState = useCallback((mutate: (prev: MvpfyState) => MvpfyState) => {
     setState((prev) => {
@@ -72,10 +74,30 @@ export default function App() {
 
   return (
     <div className="flex h-full bg-slate-100 text-slate-900">
+      {sidebarCollapsed ? (
+        <div className="flex w-9 shrink-0 flex-col items-center bg-slate-900 py-3">
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            title="Expand sidebar"
+            className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+          >
+            »
+          </button>
+        </div>
+      ) : (
       <aside className="flex w-52 shrink-0 flex-col bg-slate-900 text-slate-200">
-        <div className="px-4 py-5">
-          <h1 className="text-xl font-bold tracking-tight text-white">mvpfy</h1>
-          <p className="text-xs text-slate-400">story → pull request</p>
+        <div className="flex items-start justify-between px-4 py-5">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-white">mvpfy</h1>
+            <p className="text-xs text-slate-400">story → pull request</p>
+          </div>
+          <button
+            onClick={() => setSidebarCollapsed(true)}
+            title="Collapse sidebar"
+            className="rounded px-1 text-slate-500 hover:bg-slate-800 hover:text-white"
+          >
+            «
+          </button>
         </div>
         <nav className="flex flex-col gap-1 px-2">
           <SidebarButton active={view === 'projects'} onClick={() => setView('projects')}>
@@ -94,6 +116,7 @@ export default function App() {
           {state.tenant ? `Feature1: ${state.tenant.slug}` : 'Feature1: not connected'}
         </div>
       </aside>
+      )}
 
       <main className="flex min-w-0 flex-1">
         {view === 'settings' ? (
@@ -105,14 +128,33 @@ export default function App() {
           />
         ) : (
           <>
-            <div className="w-72 shrink-0 overflow-y-auto border-r border-slate-200 bg-white">
-              <ProjectList
-                state={state}
-                selectedProjectId={selectedProjectId}
-                onSelect={setSelectedProjectId}
-                updateState={updateState}
-              />
-            </div>
+            {projectListCollapsed ? (
+              <div className="flex w-8 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-3">
+                <button
+                  onClick={() => setProjectListCollapsed(false)}
+                  title="Expand projects panel"
+                  className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  »
+                </button>
+              </div>
+            ) : (
+              <div className="relative w-72 shrink-0 overflow-y-auto border-r border-slate-200 bg-white">
+                <button
+                  onClick={() => setProjectListCollapsed(true)}
+                  title="Collapse projects panel"
+                  className="absolute right-2 top-3 rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  «
+                </button>
+                <ProjectList
+                  state={state}
+                  selectedProjectId={selectedProjectId}
+                  onSelect={setSelectedProjectId}
+                  updateState={updateState}
+                />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               {selectedProject ? (
                 <ProjectDetail

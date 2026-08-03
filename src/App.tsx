@@ -92,7 +92,8 @@ export default function App() {
             <div className="inline-block rounded-md bg-white px-2 py-1.5">
               <img src={logoUrl} alt="#mvpFY" className="h-8" />
             </div>
-            <p className="mt-1.5 text-xs text-slate-400">story → pull request</p>
+            <p className="mt-1.5 text-xs font-medium text-slate-300">by feature1</p>
+            <p className="text-xs text-slate-400">story → pull request</p>
           </div>
           <button
             onClick={() => setSidebarCollapsed(true)}

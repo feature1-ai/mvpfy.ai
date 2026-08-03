@@ -1,4 +1,4 @@
-# mvpfy
+# mvpfy by feature1
 
 Turn a Feature1 user story into a pull request with one click.
 

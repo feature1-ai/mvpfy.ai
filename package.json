@@ -35,8 +35,8 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "dev.startuper.mvpfy",
-    "productName": "mvpfy",
+    "appId": "ai.feature1.mvpfy",
+    "productName": "mvpfy by feature1",
     "files": [
       "dist/**",
       "dist-electron/**",

@@ -89,6 +89,10 @@ The curated prompts live in `src/prompts/`:
 - First version is intentionally minimal; AO integration is planned for later.
 - Default Codex model is `gpt-5.3-codex` (override in Settings).
 
+## License
+
+[MIT](LICENSE)
+
 ## Troubleshooting
 
 **macOS says Electron is malware / the binary disappears.** Apple has revoked the code hash

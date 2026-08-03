@@ -62,6 +62,8 @@ export interface CliStatus {
   name: CliName;
   found: boolean;
   path: string | null;
+  /** true/false for CLIs with a login (gh, claude, codex); null when N/A. */
+  authenticated: boolean | null;
 }
 
 export interface RepoCloneOutcome {

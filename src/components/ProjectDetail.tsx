@@ -15,6 +15,7 @@ import {
 } from '../lib/agentRunner';
 import PreviewPane from './PreviewPane';
 import QRCode from 'qrcode';
+import { preflightAuth } from '../lib/cliCheck';
 import { parseDemoCredentials } from '../lib/credentials';
 import { parseMobilePreview } from '../lib/mobile';
 import { Feature1McpClient, UserStory } from '../lib/feature1Mcp';
@@ -142,6 +143,8 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
 
   const bootstrap = () =>
     guarded(async () => {
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
       // Re-verify the port right before generating: it is baked into the
       // compose file, so it must be genuinely free at bootstrap time.
       const freePort = await window.mvpfy.findFreePort(project.basePort);
@@ -220,6 +223,9 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
 
   const implement = (story: UserStory) =>
     guarded(async () => {
+      // Ship needs the agent AND gh (push + PR creation) to be signed in.
+      const authProblem = await preflightAuth(state.settings.defaultAgent, true);
+      if (authProblem) throw new Error(authProblem);
       const handle = await startShipFeatureRun(project, story.id, state.settings, targetRepoDir);
       runsApi.track(handle);
     });

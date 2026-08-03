@@ -123,17 +123,43 @@ export default function Settings({ state, cliStatuses, onRefreshClis, updateStat
         <ul className="divide-y divide-slate-100">
           {cliStatuses.map((cli) => {
             const help = CLI_HELP[cli.name];
+            const needsLogin = cli.found && cli.authenticated === false;
             return (
               <li key={cli.name} className="flex items-center gap-3 py-2">
-                <span className={`text-lg ${cli.found ? 'text-emerald-500' : 'text-red-500'}`}>
-                  {cli.found ? '✓' : '✗'}
+                <span
+                  className={`text-lg ${
+                    !cli.found ? 'text-red-500' : needsLogin ? 'text-amber-500' : 'text-emerald-500'
+                  }`}
+                >
+                  {!cli.found ? '✗' : needsLogin ? '⚠' : '✓'}
                 </span>
                 <div className="min-w-0 flex-1">
                   <span className="text-sm font-medium">{help.label}</span>
+                  {cli.found && cli.authenticated === true && (
+                    <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-600">
+                      signed in
+                    </span>
+                  )}
                   <span className="ml-2 font-mono text-xs text-slate-400">
                     {cli.found ? cli.path : help.installHint}
                   </span>
+                  {needsLogin && (
+                    <p className="mt-0.5 text-xs text-amber-700">
+                      Installed but not signed in — run{' '}
+                      <code className="rounded bg-amber-50 px-1 font-mono">{help.authFix}</code> in
+                      Terminal, then re-check.
+                    </p>
+                  )}
                 </div>
+                {needsLogin && help.authFix && (
+                  <button
+                    onClick={() => void navigator.clipboard.writeText(help.authFix!)}
+                    className="text-xs font-medium text-brand hover:underline"
+                    title="Copy command"
+                  >
+                    Copy command
+                  </button>
+                )}
                 {!cli.found && (
                   <button
                     onClick={() => void window.mvpfy.openExternal(help.installUrl)}

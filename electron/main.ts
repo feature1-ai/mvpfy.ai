@@ -116,6 +116,22 @@ function keychainGet(entry: string): string | null {
 // CLI checks
 // ---------------------------------------------------------------------------
 
+const AUTH_PROBES: Partial<Record<(typeof REQUIRED_CLIS)[number], string>> = {
+  gh: 'gh auth status',
+  claude: 'claude auth status',
+  codex: 'codex login status',
+};
+
+function authCheck(name: (typeof REQUIRED_CLIS)[number], found: boolean): boolean | null {
+  const probe = AUTH_PROBES[name];
+  if (!probe || !found) return probe ? false : null;
+  const result = spawnSync(USER_SHELL, ['-lc', probe], { encoding: 'utf8', timeout: 20_000 });
+  if (name === 'claude') {
+    return result.status === 0 && /"loggedIn":\s*true/.test(result.stdout);
+  }
+  return result.status === 0;
+}
+
 function cliCheck(): CliStatus[] {
   return REQUIRED_CLIS.map((name) => {
     const result = spawnSync(USER_SHELL, ['-lc', `command -v ${name}`], {
@@ -123,7 +139,12 @@ function cliCheck(): CliStatus[] {
       timeout: 10_000,
     });
     const found = result.status === 0 && result.stdout.trim().length > 0;
-    return { name, found, path: found ? result.stdout.trim().split('\n')[0] : null };
+    return {
+      name,
+      found,
+      path: found ? result.stdout.trim().split('\n')[0] : null,
+      authenticated: authCheck(name, found),
+    };
   });
 }
 

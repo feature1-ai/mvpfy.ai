@@ -71,7 +71,7 @@ export default function App() {
   }
 
   const selectedProject = state.projects.find((p) => p.id === selectedProjectId) ?? null;
-  const missingClis = cliStatuses.filter((s) => !s.found);
+  const missingClis = cliStatuses.filter((s) => !s.found || s.authenticated === false);
 
   return (
     <div className="flex h-full bg-slate-100 text-slate-900">

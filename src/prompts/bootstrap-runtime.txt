@@ -32,12 +32,32 @@ Follow these steps:
    • Third-party APIs that cannot run locally (payments, external SaaS): point the app at a
      mock as above, or disable the feature via env flags with a note in mvpfy-run.md.
 
-4. Only if you are genuinely blocked — for example you need the URL of the real backend repo,
+4. Mobile repos (Flutter / React Native) — the PM still needs to SEE the app:
+   • Flutter (pubspec.yaml with a flutter dependency): prefer the WEB build for local
+     preview. Build it in Docker with an open-source Flutter image (e.g.
+     cirruslabs/flutter) via `flutter build web` and serve the output with nginx on port
+     {basePort}. Note in mvpfy-run.md that this is a web preview of a mobile app.
+   • React Native with Expo (or react-native-web): serve the web export on {basePort} when
+     the app supports web. ALSO run the Expo/Metro dev server as a compose service and
+     record its URL in mvpfy.yml as:
+       mobile:
+         kind: expo
+         expo_url: exp://<LAN-IP-of-this-machine>:8081
+         note: <one line telling the PM what to expect>
+     (detect the machine's LAN IP; the app shows this as a QR code the PM scans with the
+     free Expo Go app to see the real native app on their phone).
+   • Bare React Native / Flutter with no web support: run Metro and every backend service
+     anyway, add the `mobile:` block with a note explaining that the native UI needs a
+     simulator and which command to use — never fake a preview.
+   • Mobile apps must point their API base URL at the machine's LAN IP (not localhost or a
+     Docker hostname) so a real phone can reach the local backend.
+
+5. Only if you are genuinely blocked — for example you need the URL of the real backend repo,
    or a credential that cannot be defaulted — write a short numbered list of questions to
    mvpfy-questions.md in the repo root and stop there. Never guess or fabricate secrets.
    If you were able to proceed, delete any stale mvpfy-questions.md.
 
-5. Generate these files in the WORKSPACE ROOT:
+6. Generate these files in the WORKSPACE ROOT:
    • mvpfy.yml — app name, main service, host port, list of all services, health-check URL.
      If the app has authentication, seed a working demo account and record it in a
      `demo_login:` block (url, email/username, password, and how to get the OTP if login

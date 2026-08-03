@@ -12,7 +12,9 @@ import {
   startDockerRun,
   startShipFeatureRun,
 } from '../lib/agentRunner';
+import QRCode from 'qrcode';
 import { parseDemoCredentials } from '../lib/credentials';
+import { parseMobilePreview } from '../lib/mobile';
 import { Feature1McpClient, UserStory } from '../lib/feature1Mcp';
 import { RunsApi } from '../lib/useRuns';
 import LogPanel from './LogPanel';
@@ -96,9 +98,9 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
   }, [project.status, project.basePort, appHealthy]);
 
   const hasMvpfyYml = files.some((f) => f.relativePath === 'mvpfy.yml' && f.exists);
-  const demoCredentials = parseDemoCredentials(
-    files.find((f) => f.relativePath === 'mvpfy.yml')?.content
-  );
+  const mvpfyYmlContent = files.find((f) => f.relativePath === 'mvpfy.yml')?.content;
+  const demoCredentials = parseDemoCredentials(mvpfyYmlContent);
+  const mobilePreview = parseMobilePreview(mvpfyYmlContent);
   const questionsFile = files.find((f) => f.relativePath === QUESTIONS_FILE && f.exists) ?? null;
   const viewerFiles = files.filter((f) => f.exists && f.relativePath !== QUESTIONS_FILE);
   const activeFileContent = files.find((f) => f.relativePath === activeFile)?.content ?? '';
@@ -302,6 +304,28 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
             you click start.
           </p>
         )}
+        {mobilePreview && (
+          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Mobile preview{mobilePreview.kind ? ` (${mobilePreview.kind})` : ''}
+            </h4>
+            <div className="flex items-start gap-4">
+              {mobilePreview.expoUrl && <ExpoQr url={mobilePreview.expoUrl} />}
+              <div className="text-xs text-slate-600">
+                {mobilePreview.expoUrl && (
+                  <p className="mb-1">
+                    Install <span className="font-medium">Expo Go</span> on your phone and scan
+                    the QR code (phone must be on the same Wi-Fi).
+                  </p>
+                )}
+                {mobilePreview.expoUrl && (
+                  <p className="mb-1 select-all font-mono text-slate-500">{mobilePreview.expoUrl}</p>
+                )}
+                {mobilePreview.note && <p>{mobilePreview.note}</p>}
+              </div>
+            </div>
+          </div>
+        )}
         {demoCredentials.length > 0 && (
           <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -466,6 +490,21 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
       </section>
     </div>
   );
+}
+
+function ExpoQr({ url }: { url: string }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void QRCode.toDataURL(url, { width: 132, margin: 1 }).then((d) => {
+      if (!cancelled) setDataUrl(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  if (!dataUrl) return null;
+  return <img src={dataUrl} alt={`QR code for ${url}`} className="h-32 w-32 rounded bg-white" />;
 }
 
 function CredField({ fieldKey, value }: { fieldKey: string; value: string }) {

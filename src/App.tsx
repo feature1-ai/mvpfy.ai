@@ -6,6 +6,7 @@ import Settings from './components/Settings';
 import { checkClis } from './lib/cliCheck';
 import { loadState, saveState } from './lib/state';
 import { RunState, useRuns } from './lib/useRuns';
+import logoUrl from '../assets/logo.svg';
 
 type View = 'projects' | 'settings';
 
@@ -75,26 +76,28 @@ export default function App() {
   return (
     <div className="flex h-full bg-slate-100 text-slate-900">
       {sidebarCollapsed ? (
-        <div className="flex w-9 shrink-0 flex-col items-center bg-slate-900 py-3">
+        <div className="flex w-9 shrink-0 flex-col items-center bg-brand-dark py-3">
           <button
             onClick={() => setSidebarCollapsed(false)}
             title="Expand sidebar"
-            className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+            className="rounded px-1 text-slate-400 hover:bg-brand hover:text-white"
           >
             »
           </button>
         </div>
       ) : (
-      <aside className="flex w-52 shrink-0 flex-col bg-slate-900 text-slate-200">
+      <aside className="flex w-52 shrink-0 flex-col bg-brand-dark text-slate-200">
         <div className="flex items-start justify-between px-4 py-5">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-white">mvpfy</h1>
-            <p className="text-xs text-slate-400">story → pull request</p>
+            <div className="inline-block rounded-md bg-white px-2 py-1.5">
+              <img src={logoUrl} alt="#mvpFY" className="h-8" />
+            </div>
+            <p className="mt-1.5 text-xs text-slate-400">story → pull request</p>
           </div>
           <button
             onClick={() => setSidebarCollapsed(true)}
             title="Collapse sidebar"
-            className="rounded px-1 text-slate-500 hover:bg-slate-800 hover:text-white"
+            className="rounded px-1 text-slate-500 hover:bg-brand hover:text-white"
           >
             «
           </button>
@@ -190,7 +193,7 @@ function SidebarButton({
     <button
       onClick={onClick}
       className={`flex items-center rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-        active ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-800'
+        active ? 'bg-brand text-white' : 'text-slate-300 hover:bg-brand'
       }`}
     >
       {children}

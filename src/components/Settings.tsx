@@ -59,7 +59,7 @@ export default function Settings({ state, cliStatuses, onRefreshClis, updateStat
           <button
             onClick={() => void connectFeature1()}
             disabled={loginStatus === 'waiting' || !slugInput.trim()}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-md bg-brand-dark px-4 py-2 text-sm font-medium text-white hover:bg-brand disabled:opacity-50"
           >
             {loginStatus === 'waiting' ? 'Waiting for browser…' : 'Sign in'}
           </button>
@@ -116,7 +116,7 @@ export default function Settings({ state, cliStatuses, onRefreshClis, updateStat
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
             Required CLIs
           </h3>
-          <button onClick={onRefreshClis} className="text-xs font-medium text-blue-600 hover:underline">
+          <button onClick={onRefreshClis} className="text-xs font-medium text-brand hover:underline">
             Re-check
           </button>
         </div>
@@ -137,7 +137,7 @@ export default function Settings({ state, cliStatuses, onRefreshClis, updateStat
                 {!cli.found && (
                   <button
                     onClick={() => void window.mvpfy.openExternal(help.installUrl)}
-                    className="text-xs font-medium text-blue-600 hover:underline"
+                    className="text-xs font-medium text-brand hover:underline"
                   >
                     Install guide ↗
                   </button>

@@ -42,7 +42,7 @@ export default function LogPanel({ run, onStop }: Props) {
           {run && (
             <button
               onClick={() => setShowRaw((v) => !v)}
-              className="rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-300 hover:bg-slate-700"
+              className="rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-300 hover:bg-brand"
             >
               {showRaw ? 'Pretty' : 'Raw'}
             </button>

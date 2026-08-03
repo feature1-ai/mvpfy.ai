@@ -22,4 +22,9 @@ declare module '*.txt?raw' {
   export default content;
 }
 
+declare module '*.svg' {
+  const src: string;
+  export default src;
+}
+
 export {};

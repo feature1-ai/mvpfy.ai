@@ -39,13 +39,15 @@
     "productName": "mvpfy",
     "files": [
       "dist/**",
-      "dist-electron/**"
+      "dist-electron/**",
+      "assets/**"
     ],
     "directories": {
       "output": "release"
     },
     "mac": {
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns"
     }
   }
 }

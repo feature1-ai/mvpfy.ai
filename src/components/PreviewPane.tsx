@@ -173,7 +173,7 @@ export default function PreviewPane({
               />
               <button
                 onClick={addCustomTab}
-                className="text-xs font-medium text-blue-600 hover:underline"
+                className="text-xs font-medium text-brand hover:underline"
               >
                 Open
               </button>
@@ -193,13 +193,13 @@ export default function PreviewPane({
             <>
               <button
                 onClick={reloadActive}
-                className="text-xs font-medium text-blue-600 hover:underline"
+                className="text-xs font-medium text-brand hover:underline"
               >
                 Reload
               </button>
               <button
                 onClick={() => void window.mvpfy.openExternal(activeTab.url!)}
-                className="text-xs font-medium text-blue-600 hover:underline"
+                className="text-xs font-medium text-brand hover:underline"
               >
                 Open in browser ↗
               </button>
@@ -266,7 +266,7 @@ export default function PreviewPane({
                 <button
                   onClick={onStartIde}
                   disabled={busy}
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="rounded-md bg-brand-dark px-4 py-2 text-sm font-medium text-white hover:bg-brand disabled:opacity-50"
                 >
                   Launch VS Code IDE
                 </button>

@@ -270,7 +270,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
           <span className="text-slate-500">App URL: </span>
           <button
             onClick={() => void window.mvpfy.openExternal(appUrl)}
-            className="font-mono text-blue-600 hover:underline"
+            className="font-mono text-brand hover:underline"
             title="Open in browser"
           >
             {appUrl}
@@ -298,7 +298,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
           <button
             onClick={() => void bootstrap()}
             disabled={busy}
-            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
           >
             Bootstrap environment
           </button>
@@ -418,7 +418,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
           </h3>
           <button
             onClick={refreshFiles}
-            className="text-xs font-medium text-blue-600 hover:underline"
+            className="text-xs font-medium text-brand hover:underline"
           >
             Refresh
           </button>
@@ -436,7 +436,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
                     onClick={() => setActiveFile(f.relativePath)}
                     className={`rounded-md px-2 py-1 text-xs font-medium ${
                       activeFile === f.relativePath
-                        ? 'bg-slate-900 text-white'
+                        ? 'bg-brand-dark text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
@@ -476,7 +476,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
             <button
               onClick={() => void refreshStories()}
               disabled={loadingStories}
-              className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+              className="text-xs font-medium text-brand hover:underline disabled:opacity-50"
             >
               {loadingStories ? 'Loading…' : 'Refresh'}
             </button>
@@ -503,7 +503,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
                 <button
                   onClick={() => void implement(story)}
                   disabled={busy}
-                  className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="rounded-md bg-brand-dark px-3 py-1.5 text-xs font-medium text-white hover:bg-brand disabled:opacity-50"
                 >
                   Implement
                 </button>
@@ -570,7 +570,7 @@ function CredField({ fieldKey, value }: { fieldKey: string; value: string }) {
         {isUrl ? (
           <button
             onClick={() => void window.mvpfy.openExternal(value)}
-            className="font-mono text-blue-600 hover:underline"
+            className="font-mono text-brand hover:underline"
           >
             {value}
           </button>

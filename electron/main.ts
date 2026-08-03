@@ -538,6 +538,14 @@ function registerIpc(): void {
 app.whenReady().then(() => {
   ensureDirs();
   registerIpc();
+  // Brand the dock in dev; packaged builds use build/icon.icns.
+  if (process.platform === 'darwin' && app.dock) {
+    try {
+      app.dock.setIcon(path.join(app.getAppPath(), 'assets', 'icon.png'));
+    } catch {
+      // Non-fatal: fall back to the default Electron icon.
+    }
+  }
   createWindow();
 
   app.on('activate', () => {

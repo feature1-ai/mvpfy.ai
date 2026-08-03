@@ -45,9 +45,17 @@ export default function Settings({ state, cliStatuses, onRefreshClis, updateStat
       <h2 className="mb-5 text-lg font-bold">Settings</h2>
 
       <section className="mb-6 max-w-xl rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Feature1 cloud
-        </h3>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Feature1 cloud
+          </h3>
+          <button
+            onClick={() => void window.mvpfy.openExternal('https://feature1.ai')}
+            className="text-xs font-medium text-brand hover:underline"
+          >
+            feature1.ai ↗
+          </button>
+        </div>
         <label className="mb-1 block text-sm font-medium">Tenant slug</label>
         <div className="flex gap-2">
           <input

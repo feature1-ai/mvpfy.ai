@@ -1,6 +1,6 @@
-# mvpfy by feature1
+# mvpfy by [feature1](https://feature1.ai)
 
-Turn a Feature1 user story into a pull request with one click.
+Turn a [Feature1](https://feature1.ai) user story into a pull request with one click.
 
 mvpfy is a minimal Electron desktop app for non-technical product managers. It is a **thin
 wrapper over [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and

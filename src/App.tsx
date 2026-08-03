@@ -92,7 +92,13 @@ export default function App() {
             <div className="inline-block rounded-md bg-white px-2 py-1.5">
               <img src={logoUrl} alt="#mvpFY" className="h-8" />
             </div>
-            <p className="mt-1.5 text-xs font-medium text-slate-300">by feature1</p>
+            <button
+              onClick={() => void window.mvpfy.openExternal('https://feature1.ai')}
+              className="mt-1.5 block text-xs font-medium text-slate-300 hover:text-white hover:underline"
+              title="feature1.ai"
+            >
+              by feature1 ↗
+            </button>
             <p className="text-xs text-slate-400">story → pull request</p>
           </div>
           <button

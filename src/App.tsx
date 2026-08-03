@@ -36,6 +36,10 @@ export default function App() {
           if (kind === 'docker-up' && run.exitCode === 0) patch.status = 'running';
           if (kind === 'docker-down' && run.exitCode === 0) patch.status = 'stopped';
           if (kind === 'ship' && storyId) patch.lastStoryId = storyId;
+          if (kind === 'ide-up') {
+            patch.idePort = run.exitCode === 0 ? run.handle.port ?? null : null;
+          }
+          if (kind === 'ide-down' && run.exitCode === 0) patch.idePort = null;
           if (run.exitCode !== 0 && (kind === 'docker-up' || kind === 'bootstrap')) {
             patch.status = 'error';
           }

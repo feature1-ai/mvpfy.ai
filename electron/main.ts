@@ -158,6 +158,21 @@ function spawnEnv(): NodeJS.ProcessEnv {
   return ctx ? { ...process.env, DOCKER_CONTEXT: ctx } : { ...process.env };
 }
 
+// If the local daemon is down, launch Docker Desktop and wait for it
+// (PMs won't know the whale needs to be running first).
+const ENSURE_DAEMON =
+  'docker info >/dev/null 2>&1 || { echo "Docker is not running — starting Docker Desktop…"; ' +
+  'open -a Docker >/dev/null 2>&1; ' +
+  'for i in $(seq 1 45); do docker info >/dev/null 2>&1 && break; sleep 2; done; }';
+
+function ideContainerName(workspacePath: string): string {
+  const base = path
+    .basename(workspacePath)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-');
+  return `mvpfy-ide-${base}`;
+}
+
 function sendToRenderer(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
@@ -336,6 +351,14 @@ async function deleteProject(workspacePath: string): Promise<{ ok: boolean; erro
     return { ok: true };
   }
   try {
+    // Remove the project's IDE container if one was launched.
+    await new Promise<void>((resolve) => {
+      const child = spawn(USER_SHELL, ['-lc', `docker rm -f ${ideContainerName(resolved)}`], {
+        env: spawnEnv(),
+      });
+      child.on('error', () => resolve());
+      child.on('close', () => resolve());
+    });
     if (fs.existsSync(path.join(resolved, 'docker-compose.mvpfy.yml'))) {
       await new Promise<void>((resolve) => {
         const child = spawn(
@@ -424,6 +447,8 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Needed for the embedded Preview/IDE panes (<webview> tags).
+      webviewTag: true,
     },
   });
 
@@ -469,18 +494,36 @@ function registerIpc(): void {
     if (!resolved.startsWith(PROJECTS_DIR + path.sep)) {
       throw new Error('docker compose is restricted to managed project directories');
     }
-    // If the local daemon is down, launch Docker Desktop and wait for it
-    // (PMs won't know the whale needs to be running first).
-    const ensureDaemon =
-      'docker info >/dev/null 2>&1 || { echo "Docker is not running — starting Docker Desktop…"; ' +
-      'open -a Docker >/dev/null 2>&1; ' +
-      'for i in $(seq 1 45); do docker info >/dev/null 2>&1 && break; sleep 2; done; }';
     const compose =
       action === 'up'
         ? 'docker compose -f docker-compose.mvpfy.yml up -d --build'
         : 'docker compose -f docker-compose.mvpfy.yml down';
-    startRun(runId, `${ensureDaemon} && ${compose}`, resolved);
+    startRun(runId, `${ENSURE_DAEMON} && ${compose}`, resolved);
   });
+  ipcMain.handle(
+    'ide',
+    (_ev, runId: string, workspacePath: string, action: 'up' | 'down', port?: number) => {
+      const resolved = path.resolve(workspacePath);
+      if (!resolved.startsWith(PROJECTS_DIR + path.sep)) {
+        throw new Error('IDE containers are restricted to managed project directories');
+      }
+      const name = ideContainerName(resolved);
+      let command: string;
+      if (action === 'up') {
+        if (!Number.isInteger(port) || (port as number) < 1024 || (port as number) > 65000) {
+          throw new Error('A valid port is required to start the IDE');
+        }
+        command =
+          `docker rm -f ${name} >/dev/null 2>&1; ` +
+          `docker run -d --name ${name} -p ${port}:8080 ` +
+          `-v ${shellQuote(resolved)}:/home/coder/project ` +
+          `codercom/code-server:latest --auth none --bind-addr 0.0.0.0:8080 /home/coder/project`;
+      } else {
+        command = `docker rm -f ${name}`;
+      }
+      startRun(runId, `${ENSURE_DAEMON} && ${command}`, resolved);
+    }
+  );
   ipcMain.handle('read-repo-files', (_ev, repoPath: string, relativePaths: string[]) =>
     readRepoFiles(repoPath, relativePaths)
   );

@@ -2,13 +2,15 @@ import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import { AgentKind, Project, Settings } from '../../shared/types';
 
-export type RunKind = 'bootstrap' | 'ship' | 'docker-up' | 'docker-down';
+export type RunKind = 'bootstrap' | 'ship' | 'docker-up' | 'docker-down' | 'ide-up' | 'ide-down';
 
 export interface RunHandle {
   runId: string;
   kind: RunKind;
   projectId: string;
   storyId?: string;
+  /** IDE runs only: the host port code-server was asked to bind. */
+  port?: number;
 }
 
 function fillTemplate(template: string, vars: Record<string, string>): string {
@@ -76,6 +78,21 @@ export async function startDockerRun(
   const runId = makeRunId(`docker-${action}`);
   await window.mvpfy.dockerCompose(runId, project.localPath, action);
   return { runId, kind: action === 'up' ? 'docker-up' : 'docker-down', projectId: project.id };
+}
+
+export async function startIdeRun(
+  project: Project,
+  action: 'up' | 'down',
+  port?: number
+): Promise<RunHandle> {
+  const runId = makeRunId(`ide-${action}`);
+  await window.mvpfy.ide(runId, project.localPath, action, port);
+  return {
+    runId,
+    kind: action === 'up' ? 'ide-up' : 'ide-down',
+    projectId: project.id,
+    port,
+  };
 }
 
 const PR_URL_RE =

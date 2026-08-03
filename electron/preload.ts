@@ -27,6 +27,8 @@ const api: MvpfyApi = {
   stopRun: (runId: string) => ipcRenderer.invoke('stop-run', runId),
   dockerCompose: (runId: string, repoPath: string, action: 'up' | 'down') =>
     ipcRenderer.invoke('docker-compose', runId, repoPath, action),
+  ide: (runId: string, workspacePath: string, action: 'up' | 'down', port?: number) =>
+    ipcRenderer.invoke('ide', runId, workspacePath, action, port),
   readRepoFiles: (repoPath: string, relativePaths: string[]) =>
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),
   writeRepoFile: (repoPath: string, relativePath: string, content: string) =>

@@ -10,8 +10,10 @@ import {
 import {
   startBootstrapRun,
   startDockerRun,
+  startIdeRun,
   startShipFeatureRun,
 } from '../lib/agentRunner';
+import PreviewPane from './PreviewPane';
 import QRCode from 'qrcode';
 import { parseDemoCredentials } from '../lib/credentials';
 import { parseMobilePreview } from '../lib/mobile';
@@ -40,6 +42,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
   );
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [ideHealthy, setIdeHealthy] = useState(false);
 
   const latestRun = runsApi.latestForProject(project.id);
   const busy = latestRun?.running ?? false;
@@ -96,6 +99,29 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
       clearInterval(timer);
     };
   }, [project.status, project.basePort, appHealthy]);
+
+  // Poll the IDE port like the app port so the pane appears once ready.
+  const idePort = project.idePort ?? null;
+  useEffect(() => {
+    if (!idePort) {
+      setIdeHealthy(false);
+      return;
+    }
+    let cancelled = false;
+    const url = `http://localhost:${idePort}`;
+    const check = async () => {
+      const res = await window.mvpfy.probeUrl(url);
+      if (!cancelled && res.reachable) setIdeHealthy(true);
+    };
+    void check();
+    const timer = setInterval(() => {
+      if (!ideHealthy) void check();
+    }, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [idePort, ideHealthy]);
 
   const hasMvpfyYml = files.some((f) => f.relativePath === 'mvpfy.yml' && f.exists);
   const mvpfyYmlContent = files.find((f) => f.relativePath === 'mvpfy.yml')?.content;
@@ -160,6 +186,19 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
       } finally {
         setLoadingStories(false);
       }
+    });
+
+  const startIde = () =>
+    guarded(async () => {
+      const port = await window.mvpfy.findFreePort(project.basePort + 500);
+      const handle = await startIdeRun(project, 'up', port);
+      runsApi.track(handle);
+    });
+
+  const stopIde = () =>
+    guarded(async () => {
+      const handle = await startIdeRun(project, 'down');
+      runsApi.track(handle);
     });
 
   const removeProject = () =>
@@ -346,6 +385,17 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
           </div>
         )}
       </section>
+
+      <PreviewPane
+        appUrl={appUrl}
+        appHealthy={appHealthy}
+        ideUrl={idePort ? `http://localhost:${idePort}` : null}
+        ideHealthy={ideHealthy}
+        ideStarting={latestRun?.running === true && latestRun.handle.kind === 'ide-up'}
+        busy={busy}
+        onStartIde={() => void startIde()}
+        onStopIde={() => void stopIde()}
+      />
 
       {questionsFile && !busy && (
         <section className="rounded-lg border border-amber-300 bg-amber-50 p-4">

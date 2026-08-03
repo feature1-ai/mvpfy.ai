@@ -25,6 +25,8 @@ export interface Project {
   status: ProjectStatus;
   lastStoryId: string | null;
   generatedFiles: string[];
+  /** Port of the running code-server IDE container, if launched. */
+  idePort?: number | null;
 }
 
 export interface TenantConfig {
@@ -145,6 +147,7 @@ export interface MvpfyApi {
   runAgent(req: RunAgentRequest): Promise<void>;
   stopRun(runId: string): Promise<void>;
   dockerCompose(runId: string, repoPath: string, action: 'up' | 'down'): Promise<void>;
+  ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
   findFreePort(start: number): Promise<number>;

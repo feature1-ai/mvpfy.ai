@@ -11,9 +11,23 @@ interface Props {
   onStopIde: () => void;
 }
 
-type Tab = 'preview' | 'ide';
+interface TabMeta {
+  title?: string;
+  favicon?: string;
+}
 
-/** Embedded Chromium panes: live app preview and the code-server IDE. */
+interface BrowserTab {
+  id: string;
+  url: string | null;
+  fallback: string;
+  closable: boolean;
+}
+
+/**
+ * Browser-like tab strip over persistent Electron <webview> panes: the app
+ * preview, the code-server IDE, and any extra local URLs the PM opens.
+ * Inactive webviews stay mounted (visibility toggle) so switching is instant.
+ */
 export default function PreviewPane({
   appUrl,
   appHealthy,
@@ -24,46 +38,168 @@ export default function PreviewPane({
   onStartIde,
   onStopIde,
 }: Props) {
-  const [tab, setTab] = useState<Tab>('preview');
-  // Bumping the key remounts the webview — the simplest reliable "reload".
-  const [reloadKey, setReloadKey] = useState(0);
-  const activeUrl = tab === 'preview' ? (appHealthy ? appUrl : null) : ideHealthy ? ideUrl : null;
-  const webviewRef = useRef<HTMLElement>(null);
+  const [activeId, setActiveId] = useState('app');
+  const [meta, setMeta] = useState<Record<string, TabMeta>>({});
+  const [customTabs, setCustomTabs] = useState<Array<{ id: string; url: string }>>([]);
+  const [adding, setAdding] = useState(false);
+  const [newUrl, setNewUrl] = useState('');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const webviews = useRef(new Map<string, any>());
+  const listened = useRef(new Set<string>());
+
+  const tabs: BrowserTab[] = [
+    { id: 'app', url: appHealthy ? appUrl : null, fallback: 'App preview', closable: false },
+    { id: 'ide', url: ideHealthy ? ideUrl : null, fallback: 'IDE (VS Code)', closable: false },
+    ...customTabs.map((t) => ({
+      id: t.id,
+      url: t.url,
+      fallback: t.url.replace(/^https?:\/\//, ''),
+      closable: true,
+    })),
+  ];
+  const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
+
+  const refFor = (id: string) => (el: HTMLElement | null) => {
+    if (!el) {
+      webviews.current.delete(id);
+      listened.current.delete(id);
+      return;
+    }
+    webviews.current.set(id, el);
+    if (!listened.current.has(id)) {
+      listened.current.add(id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      el.addEventListener('page-title-updated', (e: any) => {
+        setMeta((m) => ({ ...m, [id]: { ...m[id], title: e.title } }));
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      el.addEventListener('page-favicon-updated', (e: any) => {
+        setMeta((m) => ({ ...m, [id]: { ...m[id], favicon: e.favicons?.[0] } }));
+      });
+    }
+  };
+
+  function addCustomTab() {
+    const url = newUrl.trim();
+    if (!/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/.test(url)) return;
+    const id = `custom-${Date.now()}`;
+    setCustomTabs((prev) => [...prev, { id, url }]);
+    setActiveId(id);
+    setNewUrl('');
+    setAdding(false);
+  }
+
+  function closeTab(id: string) {
+    setCustomTabs((prev) => prev.filter((t) => t.id !== id));
+    setMeta((m) => {
+      const { [id]: _gone, ...rest } = m;
+      return rest;
+    });
+    if (activeId === id) setActiveId('app');
+  }
+
+  function reloadActive() {
+    const el = webviews.current.get(activeTab.id);
+    el?.reload?.();
+  }
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
-        <div className="flex gap-1">
-          {(['preview', 'ide'] as Tab[]).map((t) => (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="flex items-end justify-between gap-2 border-b border-slate-200 bg-slate-100 px-2 pt-1.5">
+        <div className="flex min-w-0 items-end gap-0.5">
+          {tabs.map((t) => {
+            const m = meta[t.id] ?? {};
+            const isActive = t.id === activeId;
+            return (
+              <div
+                key={t.id}
+                className={`group flex max-w-[13rem] cursor-pointer items-center gap-1.5 rounded-t-lg px-3 py-1.5 text-xs ${
+                  isActive
+                    ? 'bg-white font-medium text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:bg-slate-200'
+                }`}
+                onClick={() => setActiveId(t.id)}
+              >
+                {m.favicon ? (
+                  <img
+                    src={m.favicon}
+                    alt=""
+                    className="h-3.5 w-3.5 shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      t.url ? 'bg-emerald-400' : 'bg-slate-300'
+                    }`}
+                  />
+                )}
+                <span className="truncate">{m.title || t.fallback}</span>
+                {t.closable && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(t.id);
+                    }}
+                    className="ml-0.5 hidden rounded-full px-1 text-slate-400 hover:bg-slate-300 hover:text-slate-700 group-hover:block"
+                    title="Close tab"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {adding ? (
+            <div className="flex items-center gap-1 px-2 pb-1">
+              <input
+                autoFocus
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addCustomTab();
+                  if (e.key === 'Escape') setAdding(false);
+                }}
+                placeholder="http://localhost:4103"
+                className="w-44 rounded border border-slate-300 px-2 py-0.5 text-xs focus:border-slate-500 focus:outline-none"
+              />
+              <button
+                onClick={addCustomTab}
+                className="text-xs font-medium text-blue-600 hover:underline"
+              >
+                Open
+              </button>
+            </div>
+          ) : (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                tab === t ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
+              onClick={() => setAdding(true)}
+              className="mb-1 rounded-full px-2 py-0.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              title="Open a local URL in a new tab (e.g. MailHog)"
             >
-              {t === 'preview' ? 'App preview' : 'IDE (VS Code)'}
+              +
             </button>
-          ))}
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          {activeUrl && (
+        <div className="flex shrink-0 items-center gap-2 pb-1.5">
+          {activeTab.url && (
             <>
               <button
-                onClick={() => setReloadKey((k) => k + 1)}
+                onClick={reloadActive}
                 className="text-xs font-medium text-blue-600 hover:underline"
               >
                 Reload
               </button>
               <button
-                onClick={() => void window.mvpfy.openExternal(activeUrl)}
+                onClick={() => void window.mvpfy.openExternal(activeTab.url!)}
                 className="text-xs font-medium text-blue-600 hover:underline"
               >
                 Open in browser ↗
               </button>
             </>
           )}
-          {tab === 'ide' && ideUrl && (
+          {activeTab.id === 'ide' && ideUrl && (
             <button
               onClick={onStopIde}
               disabled={busy}
@@ -75,38 +211,52 @@ export default function PreviewPane({
         </div>
       </div>
 
-      <div className="h-[520px]">
-        {activeUrl ? (
-          <webview
-            key={`${tab}-${activeUrl}-${reloadKey}`}
-            ref={webviewRef}
-            src={activeUrl}
-            partition="persist:mvpfy-embedded"
-            className="block h-full w-full"
-          />
-        ) : tab === 'preview' ? (
-          <Placeholder>
-            {appHealthy
-              ? 'Loading…'
-              : 'Start the environment — the running app will appear here.'}
-          </Placeholder>
-        ) : ideUrl || ideStarting ? (
-          <Placeholder>Starting VS Code (code-server)… first launch downloads the image.</Placeholder>
-        ) : (
-          <Placeholder>
-            <button
-              onClick={onStartIde}
-              disabled={busy}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-            >
-              Launch VS Code IDE
-            </button>
-            <p className="mt-2 text-xs text-slate-400">
-              Runs open-source code-server in Docker with this project mounted. First launch
-              downloads the image (~300 MB).
-            </p>
-          </Placeholder>
+      <div className="relative h-[520px]">
+        {tabs.map(
+          (t) =>
+            t.url && (
+              <div
+                key={t.id}
+                className="absolute inset-0"
+                style={{ visibility: t.id === activeId ? 'visible' : 'hidden' }}
+              >
+                <webview
+                  ref={refFor(t.id)}
+                  src={t.url}
+                  partition="persist:mvpfy-embedded"
+                  className="block h-full w-full"
+                />
+              </div>
+            )
         )}
+        {!activeTab.url &&
+          (activeTab.id === 'app' ? (
+            <Placeholder>
+              Start the environment — the running app will appear here.
+            </Placeholder>
+          ) : activeTab.id === 'ide' ? (
+            ideUrl || ideStarting ? (
+              <Placeholder>
+                Starting VS Code (code-server)… first launch downloads the image.
+              </Placeholder>
+            ) : (
+              <Placeholder>
+                <button
+                  onClick={onStartIde}
+                  disabled={busy}
+                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                >
+                  Launch VS Code IDE
+                </button>
+                <p className="mt-2 text-xs text-slate-400">
+                  Runs open-source code-server in Docker with this project mounted. First
+                  launch downloads the image (~300 MB).
+                </p>
+              </Placeholder>
+            )
+          ) : (
+            <Placeholder>Loading…</Placeholder>
+          ))}
       </div>
     </section>
   );

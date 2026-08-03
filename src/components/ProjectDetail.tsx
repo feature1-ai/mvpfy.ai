@@ -12,6 +12,7 @@ import {
   startDockerRun,
   startShipFeatureRun,
 } from '../lib/agentRunner';
+import { parseDemoCredentials } from '../lib/credentials';
 import { Feature1McpClient, UserStory } from '../lib/feature1Mcp';
 import { RunsApi } from '../lib/useRuns';
 import LogPanel from './LogPanel';
@@ -95,6 +96,9 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
   }, [project.status, project.basePort, appHealthy]);
 
   const hasMvpfyYml = files.some((f) => f.relativePath === 'mvpfy.yml' && f.exists);
+  const demoCredentials = parseDemoCredentials(
+    files.find((f) => f.relativePath === 'mvpfy.yml')?.content
+  );
   const questionsFile = files.find((f) => f.relativePath === QUESTIONS_FILE && f.exists) ?? null;
   const viewerFiles = files.filter((f) => f.exists && f.relativePath !== QUESTIONS_FILE);
   const activeFileContent = files.find((f) => f.relativePath === activeFile)?.content ?? '';
@@ -298,6 +302,25 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
             you click start.
           </p>
         )}
+        {demoCredentials.length > 0 && (
+          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Demo credentials
+            </h4>
+            <div className="flex flex-col gap-3">
+              {demoCredentials.map((cred) => (
+                <div key={cred.label}>
+                  <p className="mb-1 text-xs font-medium text-slate-600">{cred.label}</p>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                    {cred.fields.map((f) => (
+                      <CredField key={f.key} fieldKey={f.key} value={f.value} />
+                    ))}
+                  </dl>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {questionsFile && !busy && (
@@ -442,5 +465,39 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
         <LogPanel run={latestRun} onStop={runsApi.stop} />
       </section>
     </div>
+  );
+}
+
+function CredField({ fieldKey, value }: { fieldKey: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const isUrl = /^https?:\/\//.test(value);
+  return (
+    <>
+      <dt className="text-xs text-slate-500">{fieldKey}</dt>
+      <dd className="flex items-center gap-2 text-xs">
+        {isUrl ? (
+          <button
+            onClick={() => void window.mvpfy.openExternal(value)}
+            className="font-mono text-blue-600 hover:underline"
+          >
+            {value}
+          </button>
+        ) : (
+          <span className="select-all font-mono text-slate-800">{value}</span>
+        )}
+        <button
+          onClick={() => {
+            void navigator.clipboard.writeText(value).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+          className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100"
+          title="Copy to clipboard"
+        >
+          {copied ? 'Copied ✓' : 'Copy'}
+        </button>
+      </dd>
+    </>
   );
 }

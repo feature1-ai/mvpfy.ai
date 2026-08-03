@@ -38,7 +38,12 @@ Follow these steps:
    If you were able to proceed, delete any stale mvpfy-questions.md.
 
 5. Generate these files in the WORKSPACE ROOT:
-   • mvpfy.yml — app name, main service, host port, list of all services, health-check URL
+   • mvpfy.yml — app name, main service, host port, list of all services, health-check URL.
+     If the app has authentication, seed a working demo account and record it in a
+     `demo_login:` block (url, email/username, password, and how to get the OTP if login
+     needs one — e.g. "read the code at the mailhog URL"). Add a `demo_credentials:` list
+     for any extra logins (admin dashboards, secondary roles). These must be local-only
+     demo values, never real secrets — the app displays them to the product manager.
    • Dockerfile — inside any repo that has none (one per repo that needs it)
    • docker-compose.mvpfy.yml — one compose file that runs every repo's app plus every
      dependent service from step 3; build contexts point at the right subdirectory

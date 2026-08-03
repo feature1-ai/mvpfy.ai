@@ -218,9 +218,15 @@ export default function PreviewPane({
       </div>
 
       <div className="relative flex-1">
+        {/* Panes stay visible and stack by z-index: hiding a <webview> with
+            visibility/display freezes its guest at the wrong size. The active
+            pane's opaque background covers the others. */}
         <div
           className="absolute inset-0 overflow-y-auto bg-slate-100"
-          style={{ visibility: activeId === 'overview' ? 'visible' : 'hidden' }}
+          style={{
+            zIndex: activeId === 'overview' ? 2 : 0,
+            pointerEvents: activeId === 'overview' ? 'auto' : 'none',
+          }}
         >
           {overview}
         </div>
@@ -229,14 +235,17 @@ export default function PreviewPane({
             t.url && (
               <div
                 key={t.id}
-                className="absolute inset-0"
-                style={{ visibility: t.id === activeId ? 'visible' : 'hidden' }}
+                className="absolute inset-0 bg-white"
+                style={{
+                  zIndex: t.id === activeId ? 2 : 1,
+                  pointerEvents: t.id === activeId ? 'auto' : 'none',
+                }}
               >
                 <webview
                   ref={refFor(t.id)}
                   src={t.url}
                   partition="persist:mvpfy-embedded"
-                  className="block h-full w-full"
+                  style={{ display: 'flex', width: '100%', height: '100%' }}
                 />
               </div>
             )
@@ -277,7 +286,7 @@ export default function PreviewPane({
 
 function Placeholder({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-8 text-center text-sm text-slate-400">
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white px-8 text-center text-sm text-slate-400">
       {children}
     </div>
   );

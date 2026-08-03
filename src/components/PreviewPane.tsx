@@ -9,6 +9,8 @@ interface Props {
   busy: boolean;
   onStartIde: () => void;
   onStopIde: () => void;
+  /** Rendered as the first tab: project info, environment, stories, logs. */
+  overview: ReactNode;
 }
 
 interface TabMeta {
@@ -37,8 +39,9 @@ export default function PreviewPane({
   busy,
   onStartIde,
   onStopIde,
+  overview,
 }: Props) {
-  const [activeId, setActiveId] = useState('app');
+  const [activeId, setActiveId] = useState('overview');
   const [meta, setMeta] = useState<Record<string, TabMeta>>({});
   const [customTabs, setCustomTabs] = useState<Array<{ id: string; url: string }>>([]);
   const [adding, setAdding] = useState(false);
@@ -48,6 +51,7 @@ export default function PreviewPane({
   const listened = useRef(new Set<string>());
 
   const tabs: BrowserTab[] = [
+    { id: 'overview', url: null, fallback: 'Overview', closable: false },
     { id: 'app', url: appHealthy ? appUrl : null, fallback: 'App preview', closable: false },
     { id: 'ide', url: ideHealthy ? ideUrl : null, fallback: 'IDE (VS Code)', closable: false },
     ...customTabs.map((t) => ({
@@ -95,7 +99,7 @@ export default function PreviewPane({
       const { [id]: _gone, ...rest } = m;
       return rest;
     });
-    if (activeId === id) setActiveId('app');
+    if (activeId === id) setActiveId('overview');
   }
 
   function reloadActive() {
@@ -104,8 +108,8 @@ export default function PreviewPane({
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <div className="flex items-end justify-between gap-2 border-b border-slate-200 bg-slate-100 px-2 pt-1.5">
+    <section className="flex h-full flex-col overflow-hidden bg-white">
+      <div className="flex shrink-0 items-end justify-between gap-2 border-b border-slate-200 bg-slate-100 px-2 pt-1.5">
         <div className="flex min-w-0 items-end gap-0.5">
           {tabs.map((t) => {
             const m = meta[t.id] ?? {};
@@ -120,7 +124,9 @@ export default function PreviewPane({
                 }`}
                 onClick={() => setActiveId(t.id)}
               >
-                {m.favicon ? (
+                {t.id === 'overview' ? (
+                  <span className="shrink-0 text-[13px] leading-none text-slate-400">⌂</span>
+                ) : m.favicon ? (
                   <img
                     src={m.favicon}
                     alt=""
@@ -211,7 +217,13 @@ export default function PreviewPane({
         </div>
       </div>
 
-      <div className="relative h-[520px]">
+      <div className="relative flex-1">
+        <div
+          className="absolute inset-0 overflow-y-auto bg-slate-100"
+          style={{ visibility: activeId === 'overview' ? 'visible' : 'hidden' }}
+        >
+          {overview}
+        </div>
         {tabs.map(
           (t) =>
             t.url && (
@@ -230,6 +242,7 @@ export default function PreviewPane({
             )
         )}
         {!activeTab.url &&
+          activeTab.id !== 'overview' &&
           (activeTab.id === 'app' ? (
             <Placeholder>
               Start the environment — the running app will appear here.

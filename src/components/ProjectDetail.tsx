@@ -227,7 +227,7 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
   const projectName = project.localPath.split('/').pop();
   const appUrl = `http://localhost:${project.basePort}`;
 
-  return (
+  const overview = (
     <div className="flex flex-col gap-5 p-6">
       <header className="relative">
         <div className="absolute right-0 top-0 flex items-center gap-2">
@@ -386,17 +386,6 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
         )}
       </section>
 
-      <PreviewPane
-        appUrl={appUrl}
-        appHealthy={appHealthy}
-        ideUrl={idePort ? `http://localhost:${idePort}` : null}
-        ideHealthy={ideHealthy}
-        ideStarting={latestRun?.running === true && latestRun.handle.kind === 'ide-up'}
-        busy={busy}
-        onStartIde={() => void startIde()}
-        onStopIde={() => void stopIde()}
-      />
-
       {questionsFile && !busy && (
         <section className="rounded-lg border border-amber-300 bg-amber-50 p-4">
           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-700">
@@ -539,6 +528,20 @@ export default function ProjectDetail({ project, state, updateState, runsApi }: 
         <LogPanel run={latestRun} onStop={runsApi.stop} />
       </section>
     </div>
+  );
+
+  return (
+    <PreviewPane
+      appUrl={appUrl}
+      appHealthy={appHealthy}
+      ideUrl={idePort ? `http://localhost:${idePort}` : null}
+      ideHealthy={ideHealthy}
+      ideStarting={latestRun?.running === true && latestRun.handle.kind === 'ide-up'}
+      busy={busy}
+      onStartIde={() => void startIde()}
+      onStopIde={() => void stopIde()}
+      overview={overview}
+    />
   );
 }
 

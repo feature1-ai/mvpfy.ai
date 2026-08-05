@@ -99,6 +99,7 @@ export default function App() {
             >
               by feature1 ↗
             </button>
+            <p className="text-xs font-medium text-slate-200">The IDE for PMs</p>
             <p className="text-xs text-slate-400">story → pull request</p>
           </div>
           <button

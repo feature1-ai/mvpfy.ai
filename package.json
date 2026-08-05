@@ -4,6 +4,10 @@
   "description": "Ship Feature1 user stories as pull requests with one click — a thin desktop wrapper over Claude Code and Codex CLI.",
   "private": true,
   "license": "MIT",
+  "author": {
+    "name": "Abdul Rahman K",
+    "email": "kadkab.abdul@gmail.com"
+  },
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "npm run build:electron && concurrently -k \"vite\" \"wait-on tcp:127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",

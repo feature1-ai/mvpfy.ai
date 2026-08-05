@@ -64,18 +64,34 @@ export default function ProjectList({ state, selectedProjectId, onSelect, update
           <textarea
             value={repoUrlsText}
             onChange={(e) => setRepoUrlsText(e.target.value)}
-            placeholder={'One repo URL per line, e.g.\nhttps://github.com/org/frontend\nhttps://github.com/org/backend'}
+            placeholder={'Repo URL or local path, one per line:\nhttps://github.com/org/frontend\n~/projects/backend'}
             rows={3}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
             disabled={cloning}
           />
-          <button
-            onClick={() => void addProject()}
-            disabled={cloning || !repoUrlsText.trim()}
-            className="rounded-md bg-brand-dark px-3 py-2 text-sm font-medium text-white hover:bg-brand disabled:opacity-50"
-          >
-            {cloning ? 'Cloning…' : 'Add project'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => void addProject()}
+              disabled={cloning || !repoUrlsText.trim()}
+              className="flex-1 rounded-md bg-brand-dark px-3 py-2 text-sm font-medium text-white hover:bg-brand disabled:opacity-50"
+            >
+              {cloning ? 'Cloning…' : 'Add project'}
+            </button>
+            <button
+              onClick={() =>
+                void window.mvpfy.pickDirectory().then((dir) => {
+                  if (dir) {
+                    setRepoUrlsText((prev) => (prev.trim() ? `${prev.trimEnd()}\n${dir}` : dir));
+                  }
+                })
+              }
+              disabled={cloning}
+              title="Add a local repository folder"
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+            >
+              Browse…
+            </button>
+          </div>
           {error && <p className="whitespace-pre-wrap text-xs text-red-600">{error}</p>}
         </div>
       </div>

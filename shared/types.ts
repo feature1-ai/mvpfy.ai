@@ -145,6 +145,7 @@ export interface MvpfyApi {
   keychainSet(entry: string, value: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   createProject(repoUrls: string[]): Promise<CreateProjectResult>;
+  pickDirectory(): Promise<string | null>;
   deleteProject(workspacePath: string): Promise<{ ok: boolean; error?: string }>;
   runAgent(req: RunAgentRequest): Promise<void>;
   stopRun(runId: string): Promise<void>;

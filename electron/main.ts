@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, safeStorage } from 'electron';
 import { spawn, spawnSync, ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
@@ -25,8 +25,22 @@ const STATE_FILE = path.join(MVPFY_HOME, 'state.json');
 const SECRETS_FILE = path.join(MVPFY_HOME, 'secrets.json');
 
 // GUI apps on macOS get a minimal PATH; run commands through the user's login
-// shell so tools installed via Homebrew/nvm/etc. are found.
-const USER_SHELL = process.env.SHELL || '/bin/zsh';
+// shell so tools installed via Homebrew/nvm/etc. are found. On Windows we go
+// through cmd.exe instead.
+const IS_WIN = process.platform === 'win32';
+const USER_SHELL = process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
+
+function spawnShell(command: string, opts: Parameters<typeof spawn>[2]): ChildProcess {
+  return IS_WIN
+    ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], opts)
+    : spawn(USER_SHELL, ['-lc', command], opts);
+}
+
+function spawnShellSync(command: string, opts: { encoding: 'utf8'; timeout: number }) {
+  return IS_WIN
+    ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], opts)
+    : spawnSync(USER_SHELL, ['-lc', command], opts);
+}
 
 let mainWindow: BrowserWindow | null = null;
 const activeRuns = new Map<string, ChildProcess>();
@@ -38,6 +52,7 @@ function ensureDirs(): void {
 }
 
 function shellQuote(value: string): string {
+  if (IS_WIN) return `"${value.replace(/"/g, '""')}"`;
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -125,7 +140,7 @@ const AUTH_PROBES: Partial<Record<(typeof REQUIRED_CLIS)[number], string>> = {
 function authCheck(name: (typeof REQUIRED_CLIS)[number], found: boolean): boolean | null {
   const probe = AUTH_PROBES[name];
   if (!probe || !found) return probe ? false : null;
-  const result = spawnSync(USER_SHELL, ['-lc', probe], { encoding: 'utf8', timeout: 20_000 });
+  const result = spawnShellSync(probe, { encoding: 'utf8', timeout: 20_000 });
   if (name === 'claude') {
     return result.status === 0 && /"loggedIn":\s*true/.test(result.stdout);
   }
@@ -134,10 +149,8 @@ function authCheck(name: (typeof REQUIRED_CLIS)[number], found: boolean): boolea
 
 function cliCheck(): CliStatus[] {
   return REQUIRED_CLIS.map((name) => {
-    const result = spawnSync(USER_SHELL, ['-lc', `command -v ${name}`], {
-      encoding: 'utf8',
-      timeout: 10_000,
-    });
+    const locator = IS_WIN ? `where ${name}` : `command -v ${name}`;
+    const result = spawnShellSync(locator, { encoding: 'utf8', timeout: 10_000 });
     const found = result.status === 0 && result.stdout.trim().length > 0;
     return {
       name,
@@ -158,10 +171,7 @@ let cachedLocalDockerContext: string | null | undefined;
 
 function localDockerContext(): string | null {
   if (cachedLocalDockerContext !== undefined) return cachedLocalDockerContext;
-  const result = spawnSync(USER_SHELL, ['-lc', 'docker context ls --format "{{.Name}}"'], {
-    encoding: 'utf8',
-    timeout: 10_000,
-  });
+  const result = spawnShellSync('docker context ls --format "{{.Name}}"', { encoding: 'utf8', timeout: 10_000 });
   const names =
     result.status === 0
       ? result.stdout.split('\n').map((s) => s.trim()).filter(Boolean)
@@ -180,11 +190,15 @@ function spawnEnv(): NodeJS.ProcessEnv {
 }
 
 // If the local daemon is down, launch Docker Desktop and wait for it
-// (PMs won't know the whale needs to be running first).
-const ENSURE_DAEMON =
-  'docker info >/dev/null 2>&1 || { echo "Docker is not running — starting Docker Desktop…"; ' +
-  'open -a Docker >/dev/null 2>&1; ' +
-  'for i in $(seq 1 45); do docker info >/dev/null 2>&1 && break; sleep 2; done; }';
+// (PMs won't know the whale needs to be running first). Only macOS can
+// reliably auto-start Docker Desktop; elsewhere we fail with a clear message.
+const ENSURE_DAEMON = IS_WIN
+  ? 'docker info >NUL 2>&1 || (echo Docker is not running — start Docker Desktop and retry. && exit /b 1)'
+  : process.platform === 'darwin'
+    ? 'docker info >/dev/null 2>&1 || { echo "Docker is not running — starting Docker Desktop…"; ' +
+      'open -a Docker >/dev/null 2>&1; ' +
+      'for i in $(seq 1 45); do docker info >/dev/null 2>&1 && break; sleep 2; done; }'
+    : 'docker info >/dev/null 2>&1 || { echo "Docker daemon is not running — start it (e.g. systemctl start docker) and retry."; exit 1; }';
 
 function ideContainerName(workspacePath: string): string {
   const base = path
@@ -205,10 +219,7 @@ function startRun(runId: string, command: string, cwd: string): void {
     throw new Error(`Run ${runId} is already active`);
   }
   sendToRenderer('run-output', { runId, stream: 'info', chunk: `$ ${command}\n` });
-  const child = spawn(USER_SHELL, ['-lc', command], {
-    cwd,
-    env: spawnEnv(),
-  });
+  const child = spawnShell(command, { cwd, env: spawnEnv() });
   activeRuns.set(runId, child);
 
   child.stdout?.on('data', (data: Buffer) => {
@@ -265,9 +276,7 @@ function slugFromRepoUrl(repoUrl: string): string {
 
 function gitClone(repoUrl: string, dest: string): Promise<{ ok: boolean; error?: string }> {
   return new Promise((resolve) => {
-    const child = spawn(USER_SHELL, ['-lc', `git clone ${shellQuote(repoUrl)} ${shellQuote(dest)}`], {
-      cwd: PROJECTS_DIR,
-    });
+    const child = spawnShell(`git clone ${shellQuote(repoUrl)} ${shellQuote(dest)}`, { cwd: PROJECTS_DIR });
     let stderr = '';
     child.stderr?.on('data', (d: Buffer) => {
       stderr += d.toString('utf8');
@@ -278,6 +287,45 @@ function gitClone(repoUrl: string, dest: string): Promise<{ ok: boolean; error?:
       else resolve({ ok: false, error: stderr.trim() || `git clone exited with code ${code}` });
     });
   });
+}
+
+function expandHome(p: string): string {
+  return p === '~' || p.startsWith('~/') ? path.join(os.homedir(), p.slice(1)) : p;
+}
+
+/** Local filesystem path (absolute, ~, relative, or Windows drive letter). */
+function isLocalSource(entry: string): boolean {
+  return /^([~/.]|[A-Za-z]:[\\/])/.test(entry);
+}
+
+/**
+ * Clone a source into the workspace. Remote URLs clone as-is; local repos are
+ * cloned from disk (fast, hardlinked objects) and keep their original origin
+ * remote so push/PR flows still target the real remote.
+ */
+async function cloneSource(source: string, dest: string): Promise<{ ok: boolean; error?: string }> {
+  if (!isLocalSource(source)) return gitClone(source, dest);
+  const src = path.resolve(expandHome(source));
+  if (!fs.existsSync(src)) {
+    return { ok: false, error: `Local path does not exist: ${src}` };
+  }
+  if (!fs.existsSync(path.join(src, '.git'))) {
+    return { ok: false, error: `Not a git repository: ${src}` };
+  }
+  const res = await gitClone(src, dest);
+  if (!res.ok) return res;
+  const origin = spawnShellSync(`git -C ${shellQuote(src)} remote get-url origin`, {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  const originUrl = origin.status === 0 ? origin.stdout.trim() : '';
+  if (originUrl) {
+    spawnShellSync(`git -C ${shellQuote(dest)} remote set-url origin ${shellQuote(originUrl)}`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+  }
+  return res;
 }
 
 /**
@@ -302,7 +350,7 @@ async function createProject(repoUrls: string[]): Promise<CreateProjectResult> {
   const repos: RepoCloneOutcome[] = [];
 
   if (urls.length === 1) {
-    const res = await gitClone(urls[0], workspacePath);
+    const res = await cloneSource(urls[0], workspacePath);
     repos.push({ url: urls[0], dir: workspacePath, ...res });
   } else {
     fs.mkdirSync(workspacePath, { recursive: true });
@@ -314,7 +362,7 @@ async function createProject(repoUrls: string[]): Promise<CreateProjectResult> {
       while (used.has(repoSlug)) repoSlug = `${repoSlugBase}-${m++}`;
       used.add(repoSlug);
       const dir = path.join(workspacePath, repoSlug);
-      const res = await gitClone(url, dir);
+      const res = await cloneSource(url, dir);
       repos.push({ url, dir, ...res });
     }
   }
@@ -374,19 +422,13 @@ async function deleteProject(workspacePath: string): Promise<{ ok: boolean; erro
   try {
     // Remove the project's IDE container if one was launched.
     await new Promise<void>((resolve) => {
-      const child = spawn(USER_SHELL, ['-lc', `docker rm -f ${ideContainerName(resolved)}`], {
-        env: spawnEnv(),
-      });
+      const child = spawnShell(`docker rm -f ${ideContainerName(resolved)}`, { env: spawnEnv() });
       child.on('error', () => resolve());
       child.on('close', () => resolve());
     });
     if (fs.existsSync(path.join(resolved, 'docker-compose.mvpfy.yml'))) {
       await new Promise<void>((resolve) => {
-        const child = spawn(
-          USER_SHELL,
-          ['-lc', 'docker compose -f docker-compose.mvpfy.yml down --volumes --remove-orphans'],
-          { cwd: resolved, env: spawnEnv() }
-        );
+        const child = spawnShell('docker compose -f docker-compose.mvpfy.yml down --volumes --remove-orphans', { cwd: resolved, env: spawnEnv() });
         child.on('error', () => resolve());
         child.on('close', () => resolve());
       });
@@ -504,6 +546,13 @@ function registerIpc(): void {
     return shell.openExternal(url);
   });
   ipcMain.handle('create-project', (_ev, repoUrls: string[]) => createProject(repoUrls));
+  ipcMain.handle('pick-directory', async () => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      message: 'Choose a local git repository',
+    });
+    return res.canceled ? null : res.filePaths[0] ?? null;
+  });
   ipcMain.handle('delete-project', (_ev, workspacePath: string) => deleteProject(workspacePath));
   ipcMain.handle('run-agent', (_ev, req: RunAgentRequest) => runAgent(req));
   ipcMain.handle('stop-run', (_ev, runId: string) => {

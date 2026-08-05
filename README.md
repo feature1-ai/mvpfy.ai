@@ -49,8 +49,10 @@ npm run package    # package the macOS app into release/
 1. **Connect Feature1** — Settings → enter your tenant slug → Sign in. A browser window opens
    for OAuth; the MCP session token is stored encrypted via the OS keychain (`safeStorage`).
    The MCP endpoint is `https://<tenant>-mcp.feature1.ai/mcp/`.
-2. **Add project** — paste a GitHub/GitLab repo URL. mvpfy clones it into
-   `~/.mvpfy/projects/<slug>`.
+2. **Add project** — paste one or more GitHub/GitLab repo URLs (one per line for multi-repo
+   stacks), or add a **local repository** by path / the Browse… button. Everything is cloned
+   into `~/.mvpfy/projects/<slug>`; local repos keep their original `origin` remote so the
+   PR flow still targets the real remote.
 3. **Bootstrap environment** — the goal of this step is that you can *see the app running
    locally*. mvpfy finds a free port and asks your default agent to make the repo fully
    runnable: it generates `mvpfy.yml`, a `Dockerfile` (if missing),
@@ -83,6 +85,16 @@ The curated prompts live in `src/prompts/`:
 - `bootstrap-runtime.txt` — generate the Docker runtime files for a repo.
 - `ship-feature.txt` — the "Ship with AO" flow: implement a Feature1 story end-to-end and
   open a PR. (This automates the manual copy-paste flow from the Feature1 settings panel.)
+
+## Platform support
+
+- **macOS** — primary platform, fully supported (can auto-start Docker Desktop).
+- **Linux** — supported; start the Docker daemon yourself.
+- **Windows** — experimental beta: commands run through `cmd.exe`; Docker Desktop must be
+  running. Feedback welcome.
+
+Beta binaries are unsigned. On macOS, right-click → Open on first launch (or
+`xattr -dr com.apple.quarantine "/Applications/mvpfy by feature1.app"`).
 
 ## Notes
 

@@ -1,6 +1,6 @@
 {
   "name": "mvpfy",
-  "version": "0.1.0",
+  "version": "1.0.0-beta.1",
   "description": "Ship Feature1 user stories as pull requests with one click — a thin desktop wrapper over Claude Code and Codex CLI.",
   "private": true,
   "license": "MIT",
@@ -10,7 +10,8 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:renderer": "tsc --noEmit -p tsconfig.json && vite build",
     "build": "npm run build:electron && npm run build:renderer",
-    "package": "npm run build && electron-builder --mac --dir"
+    "package": "npm run build && electron-builder --mac --dir",
+    "package:all": "npm run build && electron-builder --mac --win --linux"
   },
   "dependencies": {
     "js-yaml": "^5.2.3",
@@ -47,7 +48,25 @@
     },
     "mac": {
       "category": "public.app-category.developer-tools",
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Development"
     }
   }
 }

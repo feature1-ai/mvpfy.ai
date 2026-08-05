@@ -42,6 +42,36 @@ function spawnShellSync(command: string, opts: { encoding: 'utf8'; timeout: numb
     : spawnSync(USER_SHELL, ['-lc', command], opts);
 }
 
+/**
+ * Finder-launched apps get a minimal PATH, and `zsh -lc` only sources
+ * ~/.zprofile — while nvm/npm tools usually configure PATH in ~/.zshrc
+ * (interactive-only). Resolve the user's real PATH once via an interactive
+ * login shell and adopt it, so claude/codex/gh installed any way are found.
+ */
+function resolveUserPath(): void {
+  if (IS_WIN) return;
+  try {
+    const result = spawnSync(USER_SHELL, ['-ilc', 'printf "__MVPFY_PATH__%s" "$PATH"'], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    const match = result.stdout?.match(/__MVPFY_PATH__([^\n]*)/);
+    const shellPath = match?.[1] ?? '';
+    const extras = [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      path.join(os.homedir(), '.local', 'bin'),
+      path.join(os.homedir(), 'bin'),
+    ];
+    const merged = new Set(
+      [...shellPath.split(':'), ...(process.env.PATH || '').split(':'), ...extras].filter(Boolean)
+    );
+    process.env.PATH = [...merged].join(':');
+  } catch {
+    // Keep the inherited PATH; the Settings checklist will surface gaps.
+  }
+}
+
 let mainWindow: BrowserWindow | null = null;
 const activeRuns = new Map<string, ChildProcess>();
 
@@ -606,6 +636,7 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+  resolveUserPath();
   ensureDirs();
   registerIpc();
   // Brand the dock in dev; packaged builds use build/icon.icns.

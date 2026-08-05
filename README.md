@@ -12,6 +12,23 @@ the agents do the actual engineering work.
 > **Bring your own agent.** mvpfy shells out to `claude` and `codex`. You must have your own
 > API keys / subscriptions for those tools, installed and authenticated on your machine.
 
+## How is this different from Cursor / Windsurf / Antigravity?
+
+Those are **code-first** tools: they open on a codebase and make engineers faster, one
+reviewed diff at a time. mvpfy is **product-first**:
+
+- The unit of work is a **user story**, not a file. The loop is story → running app → pull
+  request; the PM never reads a diff — the PR is the engineers' review artifact.
+- AI IDEs assume a working dev environment. mvpfy **manufactures one**: it dockerizes the
+  repo, finds a free port, fills in missing services with open-source stand-ins, and hands
+  the PM a URL and demo login so they can *see* the product.
+- The system of record is the **backlog**: acceptance criteria get tracked, the PR gets
+  attached, and the story moves to ready-for-testing in Feature1 automatically.
+- mvpfy doesn't compete on the agent or the editor — it orchestrates the same engines
+  (Claude Code, Codex) and embeds VS Code for when someone technical leans in.
+
+In short: Cursor makes engineers faster; mvpfy makes PMs shippers.
+
 ## Requirements
 
 The app checks for these CLIs on first launch (Settings → Required CLIs):

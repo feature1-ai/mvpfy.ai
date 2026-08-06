@@ -80,6 +80,11 @@ Rules:
   container restart, and never auto-run pending migrations at startup.
 • Reuse the existing Dockerfile/docker-compose.yml if present.
 • Use official base images only.
+• Keep images SLIM — builds run on a PM's laptop and network. Do not apt-get compiler
+  toolchains or large packages (chromium, g++, libvips-dev, …) unless the app provably
+  needs them: modern npm packages ship prebuilt binaries (sharp needs no libvips build,
+  puppeteer downloads its own chromium). If a truly heavy native dependency is required,
+  pick an official base image that already contains it instead of installing via apt.
 • Do not overwrite existing files without creating a .bak backup first.
 • Everything you generate must live under the repo root (use mvpfy/ for mock services).
 

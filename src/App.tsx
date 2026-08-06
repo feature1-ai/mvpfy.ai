@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useState } from 'react';
-import { CliStatus, MvpfyState, Project } from '../shared/types';
+import { CliStatus, MvpfyState, Project, RELEASES_URL, UpdateStatus } from '../shared/types';
 import ProjectList from './components/ProjectList';
 import ProjectDetail from './components/ProjectDetail';
 import Settings from './components/Settings';
@@ -17,6 +17,13 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [projectListCollapsed, setProjectListCollapsed] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+
+  useEffect(() => {
+    return window.mvpfy.onUpdateStatus((status) => {
+      if (status.kind !== 'error') setUpdateStatus(status);
+    });
+  }, []);
 
   const updateState = useCallback((mutate: (prev: MvpfyState) => MvpfyState) => {
     setState((prev) => {
@@ -182,6 +189,38 @@ export default function App() {
           </>
         )}
       </main>
+
+      {updateStatus && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-lg">
+          <span className="text-sm text-slate-700">
+            {updateStatus.kind === 'downloaded'
+              ? `Update ${updateStatus.version ?? ''} is ready.`
+              : `Update ${updateStatus.version ?? ''} is available.`}
+          </span>
+          {updateStatus.kind === 'downloaded' ? (
+            <button
+              onClick={() => void window.mvpfy.installUpdate()}
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover"
+            >
+              Restart to update
+            </button>
+          ) : (
+            <button
+              onClick={() => void window.mvpfy.openExternal(RELEASES_URL)}
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover"
+            >
+              Download ↗
+            </button>
+          )}
+          <button
+            onClick={() => setUpdateStatus(null)}
+            className="text-slate-400 hover:text-slate-600"
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }

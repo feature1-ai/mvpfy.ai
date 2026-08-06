@@ -131,6 +131,14 @@ export const QUESTIONS_FILE = 'mvpfy-questions.md';
 /** PM answers are saved here; the agent reads them on the next bootstrap run. */
 export const ANSWERS_FILE = 'mvpfy-answers.md';
 
+export interface UpdateStatus {
+  kind: 'available' | 'downloaded' | 'error';
+  version?: string;
+}
+
+/** Where users can always fetch the newest build by hand. */
+export const RELEASES_URL = 'https://github.com/feature1-ai/mvpfy.ai/releases/latest';
+
 /** API surface exposed to the renderer through the preload contextBridge. */
 export interface MvpfyApi {
   cliCheck(): Promise<CliStatus[]>;
@@ -153,4 +161,6 @@ export interface MvpfyApi {
   mcpFetch(req: McpFetchRequest): Promise<McpFetchResponse>;
   onRunOutput(cb: (ev: RunOutputEvent) => void): () => void;
   onRunExit(cb: (ev: RunExitEvent) => void): () => void;
+  onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
+  installUpdate(): Promise<void>;
 }

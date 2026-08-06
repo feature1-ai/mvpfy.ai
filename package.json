@@ -1,6 +1,6 @@
 {
   "name": "mvpfy",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "The IDE for PMs — ship Feature1 user stories as pull requests with one click, powered by Claude Code and Codex CLI.",
   "private": true,
   "license": "MIT",
@@ -21,6 +21,7 @@
     "format": "prettier --write \"{src,electron,shared}/**/*.{ts,tsx}\""
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "js-yaml": "^5.2.3",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
@@ -52,6 +53,11 @@
   "build": {
     "appId": "ai.feature1.mvpfy",
     "productName": "mvpfy by feature1",
+    "publish": {
+      "provider": "github",
+      "owner": "feature1-ai",
+      "repo": "mvpfy.ai"
+    },
     "files": [
       "dist/**",
       "dist-electron/**",

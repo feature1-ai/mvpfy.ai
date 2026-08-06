@@ -10,6 +10,7 @@ import { createProject, deleteProject, readRepoFiles, writeRepoFile } from './se
 import { startRun, stopRun } from './services/runs';
 import { keychainGet, keychainSet } from './services/secrets';
 import { readState, writeState } from './services/store';
+import { installUpdate } from './services/updates';
 
 /** Controller layer: routes renderer IPC calls to the service modules. */
 export function registerIpc(): void {
@@ -67,4 +68,5 @@ export function registerIpc(): void {
   ipcMain.handle('find-free-port', (_ev, start: number) => findFreePort(start));
   ipcMain.handle('probe-url', (_ev, url: string) => probeUrl(url));
   ipcMain.handle('mcp-fetch', (_ev, req: McpFetchRequest) => mcpFetch(req));
+  ipcMain.handle('install-update', () => installUpdate());
 }

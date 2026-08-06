@@ -4,6 +4,7 @@ import { registerIpc } from './ipc';
 import { ensureDirs } from './paths';
 import { setRunEventSink, stopAllRuns } from './services/runs';
 import { resolveUserPath } from './services/shell';
+import { initAutoUpdates } from './services/updates';
 
 /** App bootstrap: window lifecycle plus wiring of services to the renderer. */
 
@@ -56,6 +57,7 @@ app.whenReady().then(() => {
     exit: (ev) => sendToRenderer('run-exit', ev),
   });
   registerIpc();
+  initAutoUpdates((status) => sendToRenderer('update-status', status));
   // Brand the dock in dev; packaged builds use build/icon.icns.
   if (process.platform === 'darwin' && app.dock) {
     try {

@@ -6,6 +6,7 @@ import {
   RunAgentRequest,
   RunExitEvent,
   RunOutputEvent,
+  UpdateStatus,
 } from '../shared/types';
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -39,6 +40,8 @@ const api: MvpfyApi = {
   mcpFetch: (req: McpFetchRequest) => ipcRenderer.invoke('mcp-fetch', req),
   onRunOutput: (cb: (ev: RunOutputEvent) => void) => subscribe('run-output', cb),
   onRunExit: (cb: (ev: RunExitEvent) => void) => subscribe('run-exit', cb),
+  onUpdateStatus: (cb: (status: UpdateStatus) => void) => subscribe('update-status', cb),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
 };
 
 contextBridge.exposeInMainWorld('mvpfy', api);

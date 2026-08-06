@@ -90,6 +90,40 @@ npm run package    # package the macOS app into release/
    `gh`, and updates the Feature1 workflow via MCP. Output streams live into the log panel,
    and the PR URL is captured and shown when the run succeeds.
 
+## Architecture
+
+MVC-style separation across Electron's two processes:
+
+```
+electron/                     — MAIN PROCESS
+  main.ts                     — bootstrap: window lifecycle, service wiring
+  ipc.ts                      — controller: routes typed IPC calls to services
+  paths.ts                    — managed-directory layout + path guards
+  services/
+    shell.ts                  — platform shell layer (zsh/bash/cmd), PATH resolution
+    store.ts                  — persistent state model (~/.mvpfy/state.json)
+    secrets.ts                — safeStorage-encrypted token store
+    cli.ts                    — CLI presence + sign-in detection
+    runs.ts                   — streaming command runner (event sink injected)
+    docker.ts                 — local-context pinning, daemon checks, command builders
+    agents.ts                 — Claude Code / Codex invocation
+    projects.ts               — workspace create/clone/read/write/delete
+    net.ts                    — free ports, health probes, MCP fetch proxy
+shared/                       — types + pure helpers used by both processes
+src/                          — RENDERER
+  lib/                        — model/domain logic (MCP client, prompts, parsers) + tests
+  hooks/                      — controllers (useProjectController, useRuns)
+  components/                 — presentational views (project/* cards, PreviewPane, …)
+```
+
+Security boundaries: the renderer is sandboxed (contextIsolation, no nodeIntegration) and
+reaches the system only through the typed `MvpfyApi` bridge; every spawned command is
+confined to `~/.mvpfy/projects`; docker is pinned to the local engine; tokens are encrypted
+via the OS keychain; the MCP proxy is https-only and local probes are localhost-only.
+
+**How this repo is built:** mvpfy is built the way mvpfy works — a product owner directing
+coding agents (mostly Claude Code). This repo is itself the demo of that workflow.
+
 ## Local state
 
 - `~/.mvpfy/state.json` — tenant config, projects, settings.

@@ -23,7 +23,11 @@ export function parseMobilePreview(mvpfyYml: string | null | undefined): MobileP
   if (!mobile || typeof mobile !== 'object') return null;
   const rec = mobile as Record<string, unknown>;
   const expoUrl =
-    typeof rec.expo_url === 'string' ? rec.expo_url : typeof rec.expoUrl === 'string' ? rec.expoUrl : null;
+    typeof rec.expo_url === 'string'
+      ? rec.expo_url
+      : typeof rec.expoUrl === 'string'
+        ? rec.expoUrl
+        : null;
   const note = typeof rec.note === 'string' ? rec.note : null;
   const kind = typeof rec.kind === 'string' ? rec.kind : null;
   if (!expoUrl && !note) return null;

@@ -3,12 +3,7 @@
 export type AgentKind = 'claude' | 'codex';
 
 export type ProjectStatus =
-  | 'cloned'
-  | 'bootstrapping'
-  | 'needs-review'
-  | 'running'
-  | 'stopped'
-  | 'error';
+  'cloned' | 'bootstrapping' | 'needs-review' | 'running' | 'stopped' | 'error';
 
 export interface RepoRef {
   url: string;

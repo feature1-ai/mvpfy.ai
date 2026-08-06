@@ -77,7 +77,7 @@ export function formatLogLine(line: string): string | null {
 export function formatLog(raw: string): string {
   const endsWithNewline = raw.endsWith('\n');
   const lines = raw.split('\n');
-  const partial = endsWithNewline ? null : lines.pop() ?? null;
+  const partial = endsWithNewline ? null : (lines.pop() ?? null);
   const out: string[] = [];
   for (const line of lines) {
     if (line === '') continue;

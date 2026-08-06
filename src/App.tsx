@@ -40,7 +40,7 @@ export default function App() {
           if (kind === 'docker-down' && run.exitCode === 0) patch.status = 'stopped';
           if (kind === 'ship' && storyId) patch.lastStoryId = storyId;
           if (kind === 'ide-up') {
-            patch.idePort = run.exitCode === 0 ? run.handle.port ?? null : null;
+            patch.idePort = run.exitCode === 0 ? (run.handle.port ?? null) : null;
           }
           if (kind === 'ide-down' && run.exitCode === 0) patch.idePort = null;
           if (run.exitCode !== 0 && (kind === 'docker-up' || kind === 'bootstrap')) {
@@ -65,9 +65,7 @@ export default function App() {
   }, [refreshClis]);
 
   if (!state) {
-    return (
-      <div className="flex h-full items-center justify-center text-slate-400">Loading…</div>
-    );
+    return <div className="flex h-full items-center justify-center text-slate-400">Loading…</div>;
   }
 
   const selectedProject = state.projects.find((p) => p.id === selectedProjectId) ?? null;
@@ -86,47 +84,47 @@ export default function App() {
           </button>
         </div>
       ) : (
-      <aside className="flex w-52 shrink-0 flex-col bg-brand-dark text-slate-200">
-        <div className="flex items-start justify-between px-4 py-5">
-          <div>
-            <div className="inline-block rounded-md bg-white px-2 py-1.5">
-              <img src={logoUrl} alt="#mvpFY" className="h-8" />
+        <aside className="flex w-52 shrink-0 flex-col bg-brand-dark text-slate-200">
+          <div className="flex items-start justify-between px-4 py-5">
+            <div>
+              <div className="inline-block rounded-md bg-white px-2 py-1.5">
+                <img src={logoUrl} alt="#mvpFY" className="h-8" />
+              </div>
+              <button
+                onClick={() => void window.mvpfy.openExternal('https://feature1.ai')}
+                className="mt-1.5 block text-xs font-medium text-slate-300 hover:text-white hover:underline"
+                title="feature1.ai"
+              >
+                by feature1 ↗
+              </button>
+              <p className="text-xs font-medium text-slate-200">The IDE for PMs</p>
+              <p className="text-xs text-slate-400">story → pull request</p>
             </div>
             <button
-              onClick={() => void window.mvpfy.openExternal('https://feature1.ai')}
-              className="mt-1.5 block text-xs font-medium text-slate-300 hover:text-white hover:underline"
-              title="feature1.ai"
+              onClick={() => setSidebarCollapsed(true)}
+              title="Collapse sidebar"
+              className="rounded px-1 text-slate-500 hover:bg-brand hover:text-white"
             >
-              by feature1 ↗
+              «
             </button>
-            <p className="text-xs font-medium text-slate-200">The IDE for PMs</p>
-            <p className="text-xs text-slate-400">story → pull request</p>
           </div>
-          <button
-            onClick={() => setSidebarCollapsed(true)}
-            title="Collapse sidebar"
-            className="rounded px-1 text-slate-500 hover:bg-brand hover:text-white"
-          >
-            «
-          </button>
-        </div>
-        <nav className="flex flex-col gap-1 px-2">
-          <SidebarButton active={view === 'projects'} onClick={() => setView('projects')}>
-            Projects
-          </SidebarButton>
-          <SidebarButton active={view === 'settings'} onClick={() => setView('settings')}>
-            Settings
-            {missingClis.length > 0 && (
-              <span className="ml-2 rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-slate-900">
-                {missingClis.length}
-              </span>
-            )}
-          </SidebarButton>
-        </nav>
-        <div className="mt-auto px-4 py-3 text-xs text-slate-500">
-          {state.tenant ? `Feature1: ${state.tenant.slug}` : 'Feature1: not connected'}
-        </div>
-      </aside>
+          <nav className="flex flex-col gap-1 px-2">
+            <SidebarButton active={view === 'projects'} onClick={() => setView('projects')}>
+              Projects
+            </SidebarButton>
+            <SidebarButton active={view === 'settings'} onClick={() => setView('settings')}>
+              Settings
+              {missingClis.length > 0 && (
+                <span className="ml-2 rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-slate-900">
+                  {missingClis.length}
+                </span>
+              )}
+            </SidebarButton>
+          </nav>
+          <div className="mt-auto px-4 py-3 text-xs text-slate-500">
+            {state.tenant ? `Feature1: ${state.tenant.slug}` : 'Feature1: not connected'}
+          </div>
+        </aside>
       )}
 
       <main className="flex min-w-0 flex-1">

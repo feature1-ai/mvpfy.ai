@@ -86,9 +86,7 @@ export default function Settings({ state, cliStatuses, onRefreshClis, updateStat
       </section>
 
       <section className="mb-6 max-w-xl rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Agent
-        </h3>
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Agent</h3>
         <label className="mb-1 block text-sm font-medium">Default agent</label>
         <select
           value={state.settings.defaultAgent}
@@ -124,7 +122,10 @@ export default function Settings({ state, cliStatuses, onRefreshClis, updateStat
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
             Required CLIs
           </h3>
-          <button onClick={onRefreshClis} className="text-xs font-medium text-brand hover:underline">
+          <button
+            onClick={onRefreshClis}
+            className="text-xs font-medium text-brand hover:underline"
+          >
             Re-check
           </button>
         </div>
@@ -179,9 +180,7 @@ export default function Settings({ state, cliStatuses, onRefreshClis, updateStat
               </li>
             );
           })}
-          {cliStatuses.length === 0 && (
-            <li className="py-2 text-sm text-slate-400">Checking…</li>
-          )}
+          {cliStatuses.length === 0 && <li className="py-2 text-sm text-slate-400">Checking…</li>}
         </ul>
       </section>
     </div>

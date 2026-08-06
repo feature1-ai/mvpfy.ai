@@ -56,7 +56,9 @@ export class Feature1McpClient {
     try {
       parsed = JSON.parse(res.body);
     } catch {
-      throw new Feature1McpError(`Feature1 MCP returned non-JSON response: ${res.body.slice(0, 300)}`);
+      throw new Feature1McpError(
+        `Feature1 MCP returned non-JSON response: ${res.body.slice(0, 300)}`
+      );
     }
     if (parsed.error) {
       throw new Feature1McpError(parsed.error.message || 'Feature1 MCP returned an error');
@@ -152,9 +154,7 @@ export class Feature1McpClient {
 
   async listUserStories(): Promise<UserStory[]> {
     const raw = await this.callTool('list_user_stories');
-    const items = Array.isArray(raw)
-      ? raw
-      : ((raw as { stories?: unknown[] })?.stories ?? []);
+    const items = Array.isArray(raw) ? raw : ((raw as { stories?: unknown[] })?.stories ?? []);
     return (items as Array<Record<string, unknown>>).map((s, i) => ({
       id: String(s.id ?? s.session_id ?? s.sessionId ?? `story-${i}`),
       code: String(s.code ?? s.story_code ?? s.key ?? ''),

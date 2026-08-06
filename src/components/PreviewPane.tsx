@@ -96,7 +96,8 @@ export default function PreviewPane({
   function closeTab(id: string) {
     setCustomTabs((prev) => prev.filter((t) => t.id !== id));
     setMeta((m) => {
-      const { [id]: _gone, ...rest } = m;
+      const rest = { ...m };
+      delete rest[id];
       return rest;
     });
     if (activeId === id) setActiveId('overview');
@@ -253,9 +254,7 @@ export default function PreviewPane({
         {!activeTab.url &&
           activeTab.id !== 'overview' &&
           (activeTab.id === 'app' ? (
-            <Placeholder>
-              Start the environment — the running app will appear here.
-            </Placeholder>
+            <Placeholder>Start the environment — the running app will appear here.</Placeholder>
           ) : activeTab.id === 'ide' ? (
             ideUrl || ideStarting ? (
               <Placeholder>
@@ -271,8 +270,8 @@ export default function PreviewPane({
                   Launch VS Code IDE
                 </button>
                 <p className="mt-2 text-xs text-slate-400">
-                  Runs open-source code-server in Docker with this project mounted. First
-                  launch downloads the image (~300 MB).
+                  Runs open-source code-server in Docker with this project mounted. First launch
+                  downloads the image (~300 MB).
                 </p>
               </Placeholder>
             )

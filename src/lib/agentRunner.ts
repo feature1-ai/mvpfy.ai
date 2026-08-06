@@ -71,10 +71,7 @@ export async function startShipFeatureRun(
   return { runId, kind: 'ship', projectId: project.id, storyId };
 }
 
-export async function startDockerRun(
-  project: Project,
-  action: 'up' | 'down'
-): Promise<RunHandle> {
+export async function startDockerRun(project: Project, action: 'up' | 'down'): Promise<RunHandle> {
   const runId = makeRunId(`docker-${action}`);
   await window.mvpfy.dockerCompose(runId, project.localPath, action);
   return { runId, kind: action === 'up' ? 'docker-up' : 'docker-down', projectId: project.id };

@@ -29,7 +29,9 @@ export default function LogPanel({ run, onStop }: Props) {
               {run.running ? (
                 <span className="ml-2 text-emerald-400">running</span>
               ) : (
-                <span className={`ml-2 ${run.exitCode === 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                <span
+                  className={`ml-2 ${run.exitCode === 0 ? 'text-emerald-400' : 'text-red-400'}`}
+                >
                   exited ({run.exitCode ?? 'killed'})
                 </span>
               )}

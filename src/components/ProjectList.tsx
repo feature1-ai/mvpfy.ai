@@ -64,7 +64,9 @@ export default function ProjectList({ state, selectedProjectId, onSelect, update
           <textarea
             value={repoUrlsText}
             onChange={(e) => setRepoUrlsText(e.target.value)}
-            placeholder={'Repo URL or local path, one per line:\nhttps://github.com/org/frontend\n~/projects/backend'}
+            placeholder={
+              'Repo URL or local path, one per line:\nhttps://github.com/org/frontend\n~/projects/backend'
+            }
             rows={3}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
             disabled={cloning}
@@ -100,16 +102,16 @@ export default function ProjectList({ state, selectedProjectId, onSelect, update
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Projects
         </h2>
-        {state.projects.length === 0 && (
-          <p className="text-sm text-slate-400">No projects yet.</p>
-        )}
+        {state.projects.length === 0 && <p className="text-sm text-slate-400">No projects yet.</p>}
         <ul className="flex flex-col gap-1">
           {state.projects.map((p) => (
             <li key={p.id}>
               <button
                 onClick={() => onSelect(p.id)}
                 className={`w-full rounded-md px-3 py-2 text-left text-sm ${
-                  p.id === selectedProjectId ? 'bg-slate-100 ring-1 ring-slate-300' : 'hover:bg-slate-50'
+                  p.id === selectedProjectId
+                    ? 'bg-slate-100 ring-1 ring-slate-300'
+                    : 'hover:bg-slate-50'
                 }`}
               >
                 <span className="block truncate font-medium">

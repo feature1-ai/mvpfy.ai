@@ -20,7 +20,9 @@ export interface RunsApi {
 export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
   const [runs, setRuns] = useState<Record<string, RunState>>({});
   const finishedCb = useRef(onRunFinished);
-  finishedCb.current = onRunFinished;
+  useEffect(() => {
+    finishedCb.current = onRunFinished;
+  }, [onRunFinished]);
 
   useEffect(() => {
     const offOutput = window.mvpfy.onRunOutput((ev) => {

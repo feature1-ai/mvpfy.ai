@@ -64,7 +64,9 @@ export async function preflightAuth(
     if (!s?.found) {
       problems.push(`${help.label} is not installed (install: ${help.installHint})`);
     } else if (s.authenticated === false && help.authFix) {
-      problems.push(`${help.label} is not signed in — run "${help.authFix}" in Terminal, then retry`);
+      problems.push(
+        `${help.label} is not signed in — run "${help.authFix}" in Terminal, then retry`
+      );
     }
   };
   check(agent);

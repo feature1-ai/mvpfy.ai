@@ -11,6 +11,11 @@ interface Props {
   updateState: UpdateState;
 }
 
+let loginSeq = 0;
+function nextLoginRunId(tool: string): string {
+  return `cli-login-${tool}-${++loginSeq}`;
+}
+
 export default function SettingsView({ state, cliStatuses, onRefreshClis, updateState }: Props) {
   const [slugInput, setSlugInput] = useState(state.tenant?.slug ?? '');
   const [loginStatus, setLoginStatus] = useState<'idle' | 'waiting' | 'error'>('idle');
@@ -63,7 +68,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
   }, [loginRun, onRefreshClis]);
 
   function signIn(tool: 'gh' | 'codex') {
-    const runId = `cli-login-${tool}-${Date.now().toString(36)}`;
+    const runId = nextLoginRunId(tool);
     setLoginLog('');
     setLoginRun({ tool, runId });
     void window.mvpfy.cliLogin(runId, tool).catch(() => setLoginRun(null));

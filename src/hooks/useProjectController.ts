@@ -105,7 +105,6 @@ export function useProjectController(
   const [targetRepoDir, setTargetRepoDir] = useState(project.repos[0]?.dir ?? project.localPath);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [lastFailure, setLastFailure] = useState<'bootstrap' | 'docker-up' | null>(null);
 
   const latestRun = runsApi.latestForProject(project.id);
   const busy = latestRun?.running ?? false;
@@ -148,18 +147,20 @@ export function useProjectController(
     if (!busy) refreshFiles();
   }, [busy, refreshFiles]);
 
-  // Remember the last failed environment step so Diagnose & fix knows what
-  // to hand the agent and what to retry afterwards.
-  useEffect(() => {
-    if (!latestRun || latestRun.running) return;
-    const k = latestRun.handle.kind;
-    if (latestRun.exitCode !== 0 && (k === 'bootstrap' || k === 'docker-up')) {
-      setLastFailure(k);
-    }
-    if (latestRun.exitCode === 0 && (k === 'bootstrap' || k === 'docker-up')) {
-      setLastFailure(null);
-    }
-  }, [latestRun]);
+  // The last finished environment run (bootstrap or start) decides whether
+  // Diagnose & fix applies — derived, so a later success clears it naturally.
+  const lastEnvRun = Object.values(runsApi.runs)
+    .filter(
+      (r) =>
+        r.handle.projectId === project.id &&
+        !r.running &&
+        (r.handle.kind === 'bootstrap' || r.handle.kind === 'docker-up')
+    )
+    .pop();
+  const lastFailure =
+    lastEnvRun && lastEnvRun.exitCode !== 0
+      ? (lastEnvRun.handle.kind as 'bootstrap' | 'docker-up')
+      : null;
 
   // Poll a local port until it answers HTTP so the PM can see when the app
   // (or IDE) is actually ready, not just when its process started.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { MobilePreview } from '../../lib/mobile';
+import type { MobilePreview } from '../../lib/mobile';
 
 export default function MobilePreviewCard({ preview }: { preview: MobilePreview | null }) {
   if (!preview) return null;

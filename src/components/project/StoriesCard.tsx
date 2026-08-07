@@ -1,4 +1,4 @@
-import { ProjectController } from '../../hooks/useProjectController';
+import type { ProjectController } from '../../hooks/useProjectController';
 
 export default function StoriesCard({ c }: { c: ProjectController }) {
   const { project } = c;

@@ -1,4 +1,4 @@
-import { ProjectController } from '../../hooks/useProjectController';
+import type { ProjectController } from '../../hooks/useProjectController';
 import DemoCredentialsCard from './DemoCredentialsCard';
 import MobilePreviewCard from './MobilePreviewCard';
 

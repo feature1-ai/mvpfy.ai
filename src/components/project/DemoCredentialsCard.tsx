@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DemoCredential } from '../../lib/credentials';
+import type { DemoCredential } from '../../lib/credentials';
 
 interface Props {
   credentials: DemoCredential[];

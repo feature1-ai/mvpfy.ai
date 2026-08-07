@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatLog } from '../lib/logFormat';
-import { RunState } from '../lib/useRuns';
+import type { RunState } from '../lib/useRuns';
 
 interface Props {
   run: RunState | null;

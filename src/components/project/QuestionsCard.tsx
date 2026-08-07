@@ -1,4 +1,4 @@
-import { ProjectController } from '../../hooks/useProjectController';
+import type { ProjectController } from '../../hooks/useProjectController';
 
 export default function QuestionsCard({ c }: { c: ProjectController }) {
   if (!c.questionsFile || c.busy) return null;

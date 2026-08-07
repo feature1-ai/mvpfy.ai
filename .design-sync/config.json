@@ -1,0 +1,27 @@
+{
+  "projectId": "766dd368-602e-4c87-84a3-859f47deb6c4",
+  "shape": "package",
+  "pkg": "mvpfy",
+  "globalName": "MvpfyUI",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.json",
+  "buildCmd": "npm run build:renderer && cp dist/assets/*.css dist/ds-styles.css",
+  "cssEntry": "dist/ds-styles.css",
+  "componentSrcMap": {
+    "LogPanel": "src/components/LogPanel.tsx",
+    "ProjectList": "src/components/ProjectList.tsx",
+    "Settings": "src/components/Settings.tsx",
+    "ProjectHeader": "src/components/project/ProjectHeader.tsx",
+    "EnvironmentCard": "src/components/project/EnvironmentCard.tsx",
+    "DemoCredentialsCard": "src/components/project/DemoCredentialsCard.tsx",
+    "MobilePreviewCard": "src/components/project/MobilePreviewCard.tsx",
+    "QuestionsCard": "src/components/project/QuestionsCard.tsx",
+    "GeneratedFilesCard": "src/components/project/GeneratedFilesCard.tsx",
+    "StoriesCard": "src/components/project/StoriesCard.tsx",
+    "App": null,
+    "ProjectDetail": null,
+    "PreviewPane": null
+  },
+  "readmeHeader": ".design-sync/conventions.md",
+  "entry": "./.design-sync/entry.ts"
+}

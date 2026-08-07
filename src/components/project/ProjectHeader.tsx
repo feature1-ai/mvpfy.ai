@@ -1,4 +1,4 @@
-import { ProjectController } from '../../hooks/useProjectController';
+import type { ProjectController } from '../../hooks/useProjectController';
 
 export default function ProjectHeader({ c }: { c: ProjectController }) {
   const { project } = c;

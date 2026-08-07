@@ -1,22 +1,21 @@
-import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CliStatus, MvpfyState, Project, RELEASES_URL, UpdateStatus } from '../shared/types';
-import ProjectList from './components/ProjectList';
-import ProjectDetail from './components/ProjectDetail';
-import Settings from './components/Settings';
 import { checkClis } from './lib/cliCheck';
 import { loadState, saveState } from './lib/state';
 import { RunState, useRuns } from './lib/useRuns';
-import logoUrl from '../assets/logo.svg';
+import AddProjectView from './views/AddProjectView';
+import ProjectShell, { ProjectTab } from './views/ProjectShell';
+import SettingsView from './views/SettingsView';
+import TopBar from './views/TopBar';
 
-type View = 'projects' | 'settings';
+type Screen = 'project' | 'settings' | 'add';
 
 export default function App() {
   const [state, setState] = useState<MvpfyState | null>(null);
   const [cliStatuses, setCliStatuses] = useState<CliStatus[]>([]);
-  const [view, setView] = useState<View>('projects');
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [projectListCollapsed, setProjectListCollapsed] = useState(false);
+  const [screen, setScreen] = useState<Screen>('project');
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [tabByProject, setTabByProject] = useState<Record<string, ProjectTab>>({});
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
 
   useEffect(() => {
@@ -67,132 +66,74 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    void loadState().then(setState);
+    void loadState().then((s) => {
+      setState(s);
+      setActiveProjectId(s.projects[0]?.id ?? null);
+      if (s.projects.length === 0) setScreen('add');
+    });
     refreshClis();
   }, [refreshClis]);
 
   if (!state) {
-    return <div className="flex h-full items-center justify-center text-slate-400">Loading…</div>;
+    return <div className="flex h-full items-center justify-center text-muted">Loading…</div>;
   }
 
-  const selectedProject = state.projects.find((p) => p.id === selectedProjectId) ?? null;
-  const missingClis = cliStatuses.filter((s) => !s.found || s.authenticated === false);
+  const activeProject =
+    state.projects.find((p) => p.id === activeProjectId) ?? state.projects[0] ?? null;
+  const tab: ProjectTab = activeProject
+    ? (tabByProject[activeProject.id] ?? 'overview')
+    : 'overview';
 
   return (
-    <div className="flex h-full bg-slate-100 text-slate-900">
-      {sidebarCollapsed ? (
-        <div className="flex w-9 shrink-0 flex-col items-center bg-brand-dark py-3">
-          <button
-            onClick={() => setSidebarCollapsed(false)}
-            title="Expand sidebar"
-            className="rounded px-1 text-slate-400 hover:bg-brand hover:text-white"
-          >
-            »
-          </button>
-        </div>
-      ) : (
-        <aside className="flex w-52 shrink-0 flex-col bg-brand-dark text-slate-200">
-          <div className="flex items-start justify-between px-4 py-5">
-            <div>
-              <div className="inline-block rounded-md bg-white px-2 py-1.5">
-                <img src={logoUrl} alt="#mvpFY" className="h-8" />
-              </div>
-              <button
-                onClick={() => void window.mvpfy.openExternal('https://feature1.ai')}
-                className="mt-1.5 block text-xs font-medium text-slate-300 hover:text-white hover:underline"
-                title="feature1.ai"
-              >
-                by feature1 ↗
-              </button>
-              <p className="text-xs font-medium text-slate-200">The IDE for PMs</p>
-              <p className="text-xs text-slate-400">story → pull request</p>
-            </div>
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              title="Collapse sidebar"
-              className="rounded px-1 text-slate-500 hover:bg-brand hover:text-white"
-            >
-              «
-            </button>
-          </div>
-          <nav className="flex flex-col gap-1 px-2">
-            <SidebarButton active={view === 'projects'} onClick={() => setView('projects')}>
-              Projects
-            </SidebarButton>
-            <SidebarButton active={view === 'settings'} onClick={() => setView('settings')}>
-              Settings
-              {missingClis.length > 0 && (
-                <span className="ml-2 rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-slate-900">
-                  {missingClis.length}
-                </span>
-              )}
-            </SidebarButton>
-          </nav>
-          <div className="mt-auto px-4 py-3 text-xs text-slate-500">
-            {state.tenant ? `Feature1: ${state.tenant.slug}` : 'Feature1: not connected'}
-          </div>
-        </aside>
-      )}
+    <div className="flex h-full flex-col bg-paper">
+      <TopBar
+        projects={state.projects}
+        activeProjectId={activeProject?.id ?? null}
+        tenantConnected={state.tenant !== null}
+        tenantSlug={state.tenant?.slug ?? null}
+        onSelectProject={(id) => {
+          setActiveProjectId(id);
+          setScreen('project');
+        }}
+        onAddProject={() => setScreen('add')}
+        onOpenSettings={() => setScreen('settings')}
+      />
 
-      <main className="flex min-w-0 flex-1">
-        {view === 'settings' ? (
-          <Settings
+      {screen === 'settings' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SettingsView
             state={state}
             cliStatuses={cliStatuses}
             onRefreshClis={refreshClis}
             updateState={updateState}
           />
-        ) : (
-          <>
-            {projectListCollapsed ? (
-              <div className="flex w-8 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-3">
-                <button
-                  onClick={() => setProjectListCollapsed(false)}
-                  title="Expand projects panel"
-                  className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  »
-                </button>
-              </div>
-            ) : (
-              <div className="relative w-72 shrink-0 overflow-y-auto border-r border-slate-200 bg-white">
-                <button
-                  onClick={() => setProjectListCollapsed(true)}
-                  title="Collapse projects panel"
-                  className="absolute right-2 top-3 rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  «
-                </button>
-                <ProjectList
-                  state={state}
-                  selectedProjectId={selectedProjectId}
-                  onSelect={setSelectedProjectId}
-                  updateState={updateState}
-                />
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              {selectedProject ? (
-                <ProjectDetail
-                  key={selectedProject.id}
-                  project={selectedProject}
-                  state={state}
-                  updateState={updateState}
-                  runsApi={runsApi}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-slate-400">
-                  Add or select a project to get started.
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </main>
+        </div>
+      ) : screen === 'add' || !activeProject ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <AddProjectView
+            state={state}
+            updateState={updateState}
+            onCreated={(id) => {
+              setActiveProjectId(id);
+              setScreen('project');
+            }}
+          />
+        </div>
+      ) : (
+        <ProjectShell
+          key={activeProject.id}
+          project={activeProject}
+          state={state}
+          updateState={updateState}
+          runsApi={runsApi}
+          tab={tab}
+          onTabChange={(t) => setTabByProject((prev) => ({ ...prev, [activeProject.id]: t }))}
+        />
+      )}
 
       {updateStatus && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-lg">
-          <span className="text-sm text-slate-700">
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 shadow-[0_8px_24px_rgba(27,26,23,.10)]">
+          <span className="text-[13px] text-body">
             {updateStatus.kind === 'downloaded'
               ? `Update ${updateStatus.version ?? ''} is ready.`
               : `Update ${updateStatus.version ?? ''} is available.`}
@@ -200,21 +141,21 @@ export default function App() {
           {updateStatus.kind === 'downloaded' ? (
             <button
               onClick={() => void window.mvpfy.installUpdate()}
-              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover"
+              className="btn-primary h-[30px] px-3 text-xs"
             >
               Restart to update
             </button>
           ) : (
             <button
               onClick={() => void window.mvpfy.openExternal(RELEASES_URL)}
-              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover"
+              className="btn-primary h-[30px] px-3 text-xs"
             >
               Download ↗
             </button>
           )}
           <button
             onClick={() => setUpdateStatus(null)}
-            className="text-slate-400 hover:text-slate-600"
+            className="text-muted hover:text-ink"
             title="Dismiss"
           >
             ×
@@ -222,26 +163,5 @@ export default function App() {
         </div>
       )}
     </div>
-  );
-}
-
-function SidebarButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-        active ? 'bg-brand text-white' : 'text-slate-300 hover:bg-brand'
-      }`}
-    >
-      {children}
-    </button>
   );
 }

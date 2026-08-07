@@ -6,7 +6,13 @@ import { runAgent } from './services/agents';
 import { cliCheck } from './services/cli';
 import { composeCommand, ideCommand } from './services/docker';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
-import { createProject, deleteProject, readRepoFiles, writeRepoFile } from './services/projects';
+import {
+  createProject,
+  deleteProject,
+  readRepoBranches,
+  readRepoFiles,
+  writeRepoFile,
+} from './services/projects';
 import { startRun, stopRun } from './services/runs';
 import { keychainGet, keychainSet } from './services/secrets';
 import { readState, writeState } from './services/store';
@@ -65,6 +71,7 @@ export function registerIpc(): void {
     (_ev, repoPath: string, relativePath: string, content: string) =>
       writeRepoFile(repoPath, relativePath, content)
   );
+  ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
   ipcMain.handle('find-free-port', (_ev, start: number) => findFreePort(start));
   ipcMain.handle('probe-url', (_ev, url: string) => probeUrl(url));
   ipcMain.handle('mcp-fetch', (_ev, req: McpFetchRequest) => mcpFetch(req));

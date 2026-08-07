@@ -118,6 +118,24 @@ export async function createProject(repoUrls: string[]): Promise<CreateProjectRe
   return { ok: true, slug, workspacePath, repos };
 }
 
+/** Current branch per repo dir (empty string when not resolvable). */
+export function readRepoBranches(dirs: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const dir of dirs) {
+    const resolved = path.resolve(dir);
+    if (!isManagedPath(resolved)) {
+      out[dir] = '';
+      continue;
+    }
+    const res = spawnShellSync(`git -C ${shellQuote(resolved)} branch --show-current`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    out[dir] = res.status === 0 ? res.stdout.trim() : '';
+  }
+  return out;
+}
+
 export function readRepoFiles(repoPath: string, relativePaths: string[]): RepoFile[] {
   const root = path.resolve(repoPath);
   return relativePaths.map((rel) => {

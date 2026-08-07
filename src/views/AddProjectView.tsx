@@ -1,0 +1,111 @@
+import { useState } from 'react';
+import { MvpfyState, Project } from '../../shared/types';
+import { UpdateState } from '../hooks/useProjectController';
+import { allocateBasePort, newProjectId } from '../lib/state';
+
+interface Props {
+  state: MvpfyState;
+  updateState: UpdateState;
+  onCreated: (projectId: string) => void;
+}
+
+const STEPS = [
+  ['01', 'Clone & inspect', 'Detects services, ports and dependencies.'],
+  ['02', 'Bootstrap', 'Writes mvpfy.yml, a compose file and demo credentials.'],
+  ['03', 'Run', 'Open the live app and the editor in the same window.'],
+] as const;
+
+export default function AddProjectView({ state, updateState, onCreated }: Props) {
+  const [text, setText] = useState('');
+  const [cloning, setCloning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const firstRun = state.projects.length === 0;
+
+  async function add() {
+    const urls = text
+      .split(/[\n,]+/)
+      .map((u) => u.trim())
+      .filter(Boolean);
+    if (urls.length === 0 || cloning) return;
+    setCloning(true);
+    setError(null);
+    try {
+      const result = await window.mvpfy.createProject(urls);
+      if (!result.ok) {
+        setError(result.error || 'Clone failed');
+        return;
+      }
+      const project: Project = {
+        id: newProjectId(),
+        repos: result.repos.map(({ url, dir }) => ({ url, dir })),
+        localPath: result.workspacePath,
+        basePort: await allocateBasePort(state),
+        status: 'cloned',
+        lastStoryId: null,
+        generatedFiles: [],
+      };
+      updateState((prev) => ({ ...prev, projects: [...prev.projects, project] }));
+      setText('');
+      onCreated(project.id);
+    } finally {
+      setCloning(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-[560px] px-6 pb-20 pt-24">
+      <h1 className="mb-2 text-[26px] font-semibold tracking-[-0.02em]">
+        {firstRun ? 'Add your first project' : 'Add a project'}
+      </h1>
+      <p className="mb-7 text-sm leading-relaxed text-body [text-wrap:pretty]">
+        Paste one or more repositories. mvpfy clones them, generates the run config, and starts the
+        environment so you can open the app and read the code.
+      </p>
+
+      <label className="section-label mb-1.5 block">Repositories</label>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={
+          'https://github.com/org/frontend\nhttps://github.com/org/backend\n~/code/local-service'
+        }
+        disabled={cloning}
+        className="h-[104px] w-full resize-y rounded-lg border border-line bg-surface px-3.5 py-3 font-mono text-[13px] leading-[1.7] outline-none placeholder:text-faint focus:border-muted"
+      />
+      <div className="mt-3 flex items-center gap-2.5">
+        <button
+          onClick={() => void add()}
+          disabled={cloning || !text.trim()}
+          className="btn-primary h-[38px] px-4 text-sm disabled:opacity-50"
+        >
+          {cloning ? 'Cloning…' : 'Add project'}
+        </button>
+        <button
+          onClick={() =>
+            void window.mvpfy.pickDirectory().then((dir) => {
+              if (dir) setText((prev) => (prev.trim() ? `${prev.trimEnd()}\n${dir}` : dir));
+            })
+          }
+          disabled={cloning}
+          className="btn-secondary h-[38px] px-4 text-sm disabled:opacity-50"
+        >
+          Browse local folder…
+        </button>
+        <span className="ml-auto text-xs text-muted">One per line</span>
+      </div>
+      {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-danger">{error}</p>}
+
+      <div className="mt-10 grid gap-3.5 border-t border-line pt-6">
+        {STEPS.map(([n, title, desc]) => (
+          <div key={n} className="flex items-baseline gap-3.5">
+            <span className="font-mono text-xs text-faint">{n}</span>
+            <div>
+              <span className="text-[13px] font-medium">{title}</span>
+              <span className="ml-2 text-[13px] text-body">{desc}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

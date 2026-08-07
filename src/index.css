@@ -1,3 +1,9 @@
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,4 +12,46 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+body {
+  @apply bg-paper text-ink antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+@layer components {
+  /* 10px/600 uppercase .09em — the spec's section label */
+  .section-label {
+    @apply text-[10px] font-semibold uppercase tracking-[0.09em] text-muted;
+  }
+  .card {
+    @apply rounded-[10px] border border-line bg-surface;
+  }
+  .btn-primary {
+    @apply rounded-md bg-ink text-[13px] font-medium text-white hover:bg-ink-hover;
+  }
+  .btn-secondary {
+    @apply rounded-md border border-line bg-surface text-[13px] text-body hover:bg-paper hover:text-ink;
+  }
+  .btn-ghost {
+    @apply rounded-md border border-transparent text-[13px] text-body hover:border-line hover:bg-paper;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.dot-pulse {
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot-pulse {
+    animation: none;
+  }
 }

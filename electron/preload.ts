@@ -35,6 +35,7 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),
   writeRepoFile: (repoPath: string, relativePath: string, content: string) =>
     ipcRenderer.invoke('write-repo-file', repoPath, relativePath, content),
+  repoBranches: (dirs: string[]) => ipcRenderer.invoke('repo-branches', dirs),
   findFreePort: (start: number) => ipcRenderer.invoke('find-free-port', start),
   probeUrl: (url: string) => ipcRenderer.invoke('probe-url', url),
   mcpFetch: (req: McpFetchRequest) => ipcRenderer.invoke('mcp-fetch', req),

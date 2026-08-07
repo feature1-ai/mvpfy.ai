@@ -156,6 +156,7 @@ export interface MvpfyApi {
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
+  repoBranches(dirs: string[]): Promise<Record<string, string>>;
   findFreePort(start: number): Promise<number>;
   probeUrl(url: string): Promise<{ reachable: boolean; status: number }>;
   mcpFetch(req: McpFetchRequest): Promise<McpFetchResponse>;

@@ -130,6 +130,10 @@ export const GENERATED_FILES = [
 export const QUESTIONS_FILE = 'mvpfy-questions.md';
 /** PM answers are saved here; the agent reads them on the next bootstrap run. */
 export const ANSWERS_FILE = 'mvpfy-answers.md';
+/** The triage agent writes its plain-language diagnosis + fix summary here. */
+export const TRIAGE_FILE = 'mvpfy-triage.md';
+/** Plain-language summary of what bootstrap set up, written for the PM. */
+export const SUMMARY_FILE = 'mvpfy-summary.md';
 
 export interface UpdateStatus {
   kind: 'available' | 'downloaded' | 'error';
@@ -154,6 +158,7 @@ export interface MvpfyApi {
   stopRun(runId: string): Promise<void>;
   dockerCompose(runId: string, repoPath: string, action: 'up' | 'down'): Promise<void>;
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
+  cliLogin(runId: string, tool: 'gh' | 'codex'): Promise<void>;
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
   repoBranches(dirs: string[]): Promise<Record<string, string>>;

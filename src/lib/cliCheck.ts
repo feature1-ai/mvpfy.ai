@@ -6,6 +6,10 @@ export interface CliHelp {
   installUrl: string;
   /** Terminal command that signs the CLI in, when it has a login. */
   authFix?: string;
+  /** In-app sign-in is available (login flow survives without a TTY). */
+  inAppLogin?: boolean;
+  /** Needed only when the matching agent is selected, not always. */
+  optionalFor?: 'codex';
 }
 
 export const CLI_HELP: Record<CliName, CliHelp> = {
@@ -19,6 +23,7 @@ export const CLI_HELP: Record<CliName, CliHelp> = {
     installHint: 'brew install gh',
     installUrl: 'https://cli.github.com/',
     authFix: 'gh auth login',
+    inAppLogin: true,
   },
   docker: {
     label: 'Docker',
@@ -36,6 +41,8 @@ export const CLI_HELP: Record<CliName, CliHelp> = {
     installHint: 'npm install -g @openai/codex',
     installUrl: 'https://github.com/openai/codex',
     authFix: 'codex login',
+    inAppLogin: true,
+    optionalFor: 'codex',
   },
 };
 
@@ -52,6 +59,12 @@ export function allClisPresent(statuses: CliStatus[]): boolean {
  * spawning it, so the PM gets one clear message instead of a cryptic
  * mid-run agent failure. Returns null when everything is ready.
  */
+/** True when this CLI matters given the selected default agent. */
+export function cliRequired(name: CliName, defaultAgent: 'claude' | 'codex'): boolean {
+  const optionalFor = CLI_HELP[name].optionalFor;
+  return optionalFor === undefined || optionalFor === defaultAgent;
+}
+
 export async function preflightAuth(
   agent: 'claude' | 'codex',
   needGh: boolean

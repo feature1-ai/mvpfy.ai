@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ANSWERS_FILE,
+  SUMMARY_FILE,
+  TRIAGE_FILE,
   GENERATED_FILES,
   MvpfyState,
   Project,
@@ -12,6 +14,7 @@ import {
   startDockerRun,
   startIdeRun,
   startShipFeatureRun,
+  startTriageRun,
 } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
 import { DemoCredential, parseDemoCredentials } from '../lib/credentials';
@@ -20,6 +23,9 @@ import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
 
 export type UpdateState = (mutate: (prev: MvpfyState) => MvpfyState) => void;
+
+/** Agent-communication files shown in dedicated cards, not the file viewer. */
+const HIDDEN_FROM_VIEWER: string[] = [QUESTIONS_FILE, TRIAGE_FILE, SUMMARY_FILE];
 
 /**
  * Controller for a project's detail view: owns all project actions, file and
@@ -41,6 +47,12 @@ export interface ProjectController {
   demoCredentials: DemoCredential[];
   mobilePreview: MobilePreview | null;
   questionsFile: RepoFile | null;
+  /** Plain-language triage result (diagnosis + fix) from a Diagnose & fix run. */
+  triageContent: string | null;
+  /** Plain-language bootstrap summary the PM reads instead of the Dockerfile. */
+  summaryContent: string | null;
+  /** True when the last environment run failed and can be diagnosed. */
+  canDiagnose: boolean;
   viewerFiles: RepoFile[];
   activeFile: string | null;
   activeFileContent: string;
@@ -56,6 +68,11 @@ export interface ProjectController {
   bootstrap(): Promise<void>;
   saveAnswersAndRerun(): Promise<void>;
   docker(action: 'up' | 'down'): Promise<void>;
+  /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
+  diagnose(): Promise<void>;
+  /** Re-run the step the triage file says to retry. */
+  retryFix(): Promise<void>;
+  dismissTriage(): Promise<void>;
   refreshStories(): Promise<void>;
   implement(story: UserStory): Promise<void>;
   startIde(): Promise<void>;
@@ -88,6 +105,7 @@ export function useProjectController(
   const [targetRepoDir, setTargetRepoDir] = useState(project.repos[0]?.dir ?? project.localPath);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [lastFailure, setLastFailure] = useState<'bootstrap' | 'docker-up' | null>(null);
 
   const latestRun = runsApi.latestForProject(project.id);
   const busy = latestRun?.running ?? false;
@@ -97,11 +115,17 @@ export function useProjectController(
 
   const refreshFiles = useCallback(() => {
     void window.mvpfy
-      .readRepoFiles(project.localPath, [...GENERATED_FILES, QUESTIONS_FILE, ANSWERS_FILE])
+      .readRepoFiles(project.localPath, [
+        ...GENERATED_FILES,
+        QUESTIONS_FILE,
+        ANSWERS_FILE,
+        TRIAGE_FILE,
+        SUMMARY_FILE,
+      ])
       .then((result) => {
         setFiles(result);
         const viewable = result
-          .filter((f) => f.exists && f.relativePath !== QUESTIONS_FILE)
+          .filter((f) => f.exists && !HIDDEN_FROM_VIEWER.includes(f.relativePath))
           .map((f) => f.relativePath);
         setActiveFile((prev) => (prev && viewable.includes(prev) ? prev : (viewable[0] ?? null)));
         const generated = result
@@ -123,6 +147,19 @@ export function useProjectController(
   useEffect(() => {
     if (!busy) refreshFiles();
   }, [busy, refreshFiles]);
+
+  // Remember the last failed environment step so Diagnose & fix knows what
+  // to hand the agent and what to retry afterwards.
+  useEffect(() => {
+    if (!latestRun || latestRun.running) return;
+    const k = latestRun.handle.kind;
+    if (latestRun.exitCode !== 0 && (k === 'bootstrap' || k === 'docker-up')) {
+      setLastFailure(k);
+    }
+    if (latestRun.exitCode === 0 && (k === 'bootstrap' || k === 'docker-up')) {
+      setLastFailure(null);
+    }
+  }, [latestRun]);
 
   // Poll a local port until it answers HTTP so the PM can see when the app
   // (or IDE) is actually ready, not just when its process started.
@@ -171,6 +208,41 @@ export function useProjectController(
     guarded(async () => {
       const handle = await startDockerRun(project, action);
       runsApi.track(handle);
+    });
+
+  const diagnose = () =>
+    guarded(async () => {
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const failed = lastFailure ?? 'bootstrap';
+      const failedRun = Object.values(runsApi.runs)
+        .filter((r) => r.handle.projectId === project.id && r.handle.kind === failed)
+        .pop();
+      const handle = await startTriageRun(
+        project,
+        state.settings,
+        failed === 'docker-up' ? 'starting the environment (docker compose up)' : 'bootstrap',
+        (failedRun?.log ?? '').slice(-4000)
+      );
+      runsApi.track(handle);
+    });
+
+  const retryFix = () =>
+    guarded(async () => {
+      const wantsStart = /retry:\s*start/i.test(contentOf(files, TRIAGE_FILE) ?? '');
+      await window.mvpfy.writeRepoFile(project.localPath, TRIAGE_FILE, '');
+      if (wantsStart || lastFailure === 'docker-up') {
+        const handle = await startDockerRun(project, 'up');
+        runsApi.track(handle);
+      } else {
+        await bootstrap();
+      }
+    });
+
+  const dismissTriage = () =>
+    guarded(async () => {
+      await window.mvpfy.writeRepoFile(project.localPath, TRIAGE_FILE, '');
+      refreshFiles();
     });
 
   const refreshStories = () =>
@@ -246,7 +318,10 @@ export function useProjectController(
     demoCredentials: parseDemoCredentials(mvpfyYmlContent),
     mobilePreview: parseMobilePreview(mvpfyYmlContent),
     questionsFile: files.find((f) => f.relativePath === QUESTIONS_FILE && f.exists) ?? null,
-    viewerFiles: files.filter((f) => f.exists && f.relativePath !== QUESTIONS_FILE),
+    triageContent: contentOf(files, TRIAGE_FILE),
+    summaryContent: contentOf(files, SUMMARY_FILE),
+    canDiagnose: lastFailure !== null,
+    viewerFiles: files.filter((f) => f.exists && !HIDDEN_FROM_VIEWER.includes(f.relativePath)),
     activeFile,
     activeFileContent: files.find((f) => f.relativePath === activeFile)?.content ?? '',
     stories,
@@ -260,6 +335,9 @@ export function useProjectController(
     bootstrap,
     saveAnswersAndRerun,
     docker,
+    diagnose,
+    retryFix,
+    dismissTriage,
     refreshStories,
     implement,
     startIde,
@@ -273,6 +351,13 @@ export function useProjectController(
     setConfirmRemove,
     openExternal: (url: string) => void window.mvpfy.openExternal(url),
   };
+}
+
+/** Non-empty trimmed content of a repo file from the loaded set, or null. */
+function contentOf(files: RepoFile[], name: string): string | null {
+  const f = files.find((x) => x.relativePath === name && x.exists);
+  const text = f?.content?.trim();
+  return text ? text : null;
 }
 
 /** Poll http://localhost:<port> until it responds; reset when port is null. */

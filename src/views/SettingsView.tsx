@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AgentKind, CliStatus, MvpfyState } from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
-import { CLI_HELP } from '../lib/cliCheck';
+import { CLI_HELP, cliRequired } from '../lib/cliCheck';
 import { Feature1McpClient, mcpHost, tokenKeychainEntry } from '../lib/feature1Mcp';
 
 interface Props {
@@ -40,6 +40,34 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
   }
 
   const gh = cliStatuses.find((s) => s.name === 'gh');
+  const [loginRun, setLoginRun] = useState<{ tool: string; runId: string } | null>(null);
+  const [loginLog, setLoginLog] = useState('');
+
+  // Stream the in-app sign-in output so device codes / URLs are visible.
+  useEffect(() => {
+    if (!loginRun) return;
+    const offOut = window.mvpfy.onRunOutput((ev) => {
+      if (ev.runId === loginRun.runId) setLoginLog((prev) => (prev + ev.chunk).slice(-2000));
+    });
+    const offExit = window.mvpfy.onRunExit((ev) => {
+      if (ev.runId === loginRun.runId) {
+        setLoginRun(null);
+        setLoginLog('');
+        onRefreshClis();
+      }
+    });
+    return () => {
+      offOut();
+      offExit();
+    };
+  }, [loginRun, onRefreshClis]);
+
+  function signIn(tool: 'gh' | 'codex') {
+    const runId = `cli-login-${tool}-${Date.now().toString(36)}`;
+    setLoginLog('');
+    setLoginRun({ tool, runId });
+    void window.mvpfy.cliLogin(runId, tool).catch(() => setLoginRun(null));
+  }
 
   return (
     <div className="mx-auto w-full max-w-[660px] px-6 pb-16 pt-9">
@@ -151,21 +179,43 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
       <section className="card mb-7 grid gap-3 px-[18px] py-4">
         {cliStatuses.map((cli) => {
           const help = CLI_HELP[cli.name];
+          const required = cliRequired(cli.name, state.settings.defaultAgent);
           const needsLogin = cli.found && cli.authenticated === false;
+          const signingIn = loginRun?.tool === cli.name;
           return (
             <div key={cli.name} className="flex items-center gap-3">
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  !cli.found ? 'bg-danger' : needsLogin ? 'bg-warn-text' : 'bg-go'
+                  !cli.found
+                    ? required
+                      ? 'bg-danger'
+                      : 'bg-dot-idle'
+                    : needsLogin
+                      ? required
+                        ? 'bg-warn-text'
+                        : 'bg-dot-idle'
+                      : 'bg-go'
                 }`}
               />
-              <span className="w-24 text-[13px] font-medium">{help.label}</span>
+              <span className="w-24 text-[13px] font-medium">
+                {help.label}
+                {!required && <span className="ml-1 text-[10px] text-faint">optional</span>}
+              </span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">
                 {cli.found ? cli.path : help.installHint}
               </span>
-              {needsLogin && help.authFix && (
+              {needsLogin && help.inAppLogin && (
+                <button
+                  onClick={() => signIn(cli.name as 'gh' | 'codex')}
+                  disabled={loginRun !== null}
+                  className="btn-primary h-6 px-2.5 text-[11.5px] disabled:opacity-50"
+                >
+                  {signingIn ? 'Waiting…' : 'Sign in'}
+                </button>
+              )}
+              {needsLogin && !help.inAppLogin && help.authFix && (
                 <span className="text-[11.5px] text-warn-text">
-                  run <code className="font-mono">{help.authFix}</code>
+                  run <code className="font-mono">{help.authFix}</code> in Terminal
                 </span>
               )}
               {!cli.found && (
@@ -179,6 +229,11 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
             </div>
           );
         })}
+        {loginRun && (
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-line-subtle bg-sunken p-3 font-mono text-[11.5px] leading-relaxed text-body">
+            {loginLog || 'Opening your browser to sign in…'}
+          </pre>
+        )}
         {cliStatuses.length === 0 && <p className="text-[13px] text-muted">Checking…</p>}
       </section>
 

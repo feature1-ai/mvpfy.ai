@@ -23,6 +23,7 @@ function envState(c: ProjectController): EnvState {
     if (k === 'bootstrap') return { kind: 'working', label: 'Bootstrapping…' };
     if (k === 'docker-up') return { kind: 'working', label: 'Starting…' };
     if (k === 'docker-down') return { kind: 'working', label: 'Stopping…' };
+    if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
   }
   switch (c.project.status) {
     case 'running':
@@ -68,7 +69,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
     fresh: {
       title: 'Not bootstrapped yet',
       bodyText:
-        'mvpfy will install dependencies and write the run config. Takes about two minutes the first time.',
+        'mvpfy will install dependencies and write the run config. Takes about two minutes the first time and runs on your agent subscription.',
     },
     review: {
       title: 'Review the generated files',
@@ -93,7 +94,8 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
     },
     error: {
       title: 'Something failed',
-      bodyText: 'The last run did not finish. Check the logs, then retry.',
+      bodyText:
+        'The last run did not finish. mvpfy can look at what happened, explain it in plain language, and fix it.',
       red: true,
     },
   };
@@ -197,10 +199,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                       View logs
                     </button>
                     <button
-                      onClick={() => void c.bootstrap()}
+                      onClick={() => void c.diagnose()}
                       className="btn-primary h-[34px] px-3.5"
                     >
-                      Retry
+                      Diagnose & fix
                     </button>
                   </>
                 )}
@@ -222,6 +224,50 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </button>
             </div>
           </section>
+
+          {/* Triage result — plain-language diagnosis after Diagnose & fix */}
+          {c.triageContent && !c.busy && (
+            <section className="card border-go-border">
+              <div className="flex items-start gap-3 px-5 py-4">
+                <span className="mt-1.5 h-[9px] w-[9px] shrink-0 rounded-full bg-go" />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-[15px] font-semibold">mvpfy found and fixed the problem</h2>
+                  <div className="mt-1 grid gap-1 text-[13px] leading-normal text-body">
+                    {c.triageContent
+                      .split('\n')
+                      .filter((l) => l.trim() && !/^retry:/i.test(l.trim()))
+                      .slice(0, 4)
+                      .map((l, i) => (
+                        <p key={i}>{l.replace(/^[-*]\s*/, '')}</p>
+                      ))}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => void c.dismissTriage()}
+                    className="btn-secondary h-[34px] px-3.5"
+                  >
+                    Dismiss
+                  </button>
+                  <button onClick={() => void c.retryFix()} className="btn-primary h-[34px] px-3.5">
+                    Retry now
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Plain-language bootstrap summary — what the PM reviews */}
+          {env.kind === 'review' && c.summaryContent && (
+            <section className="card">
+              <div className="border-b border-line px-5 py-3.5">
+                <span className="section-label">What mvpfy set up</span>
+              </div>
+              <p className="whitespace-pre-wrap px-5 py-4 text-[13px] leading-relaxed text-body [text-wrap:pretty]">
+                {c.summaryContent}
+              </p>
+            </section>
+          )}
 
           {/* Generated files card */}
           <section className="card">
@@ -266,6 +312,9 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
           <section className="card">
             <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
               <span className="section-label">Feature1 stories</span>
+              <span className="hidden text-[11px] text-faint min-[1000px]:inline">
+                a few minutes per story, on your agent subscription
+              </span>
               {project.repos.length > 1 && (
                 <select
                   value={c.targetRepoDir}

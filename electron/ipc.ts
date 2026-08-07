@@ -1,7 +1,7 @@
 import { dialog, ipcMain, shell } from 'electron';
 import * as path from 'node:path';
 import { McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
-import { isManagedPath } from './paths';
+import { isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
 import { cliCheck } from './services/cli';
 import { composeCommand, ideCommand } from './services/docker';
@@ -72,6 +72,17 @@ export function registerIpc(): void {
       writeRepoFile(repoPath, relativePath, content)
   );
   ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
+  ipcMain.handle('cli-login', (_ev, runId: string, tool: string) => {
+    // In-app sign-in for tools whose login flows survive without a TTY. The
+    // output streams to the renderer so device codes/URLs are visible.
+    const commands: Record<string, string> = {
+      gh: 'gh auth login --hostname github.com --git-protocol https --web',
+      codex: 'codex login',
+    };
+    const command = commands[tool];
+    if (!command) throw new Error(`No in-app sign-in for "${tool}"`);
+    startRun(runId, command, TMP_DIR);
+  });
   ipcMain.handle('find-free-port', (_ev, start: number) => findFreePort(start));
   ipcMain.handle('probe-url', (_ev, url: string) => probeUrl(url));
   ipcMain.handle('mcp-fetch', (_ev, req: McpFetchRequest) => mcpFetch(req));

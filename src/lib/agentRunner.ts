@@ -1,8 +1,10 @@
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
+import triageTemplate from '../prompts/triage.txt?raw';
 import { AgentKind, Project, Settings } from '../../shared/types';
 
-export type RunKind = 'bootstrap' | 'ship' | 'docker-up' | 'docker-down' | 'ide-up' | 'ide-down';
+export type RunKind =
+  'bootstrap' | 'ship' | 'docker-up' | 'docker-down' | 'ide-up' | 'ide-down' | 'triage';
 
 export interface RunHandle {
   runId: string;
@@ -75,6 +77,26 @@ export async function startDockerRun(project: Project, action: 'up' | 'down'): P
   const runId = makeRunId(`docker-${action}`);
   await window.mvpfy.dockerCompose(runId, project.localPath, action);
   return { runId, kind: action === 'up' ? 'docker-up' : 'docker-down', projectId: project.id };
+}
+
+export async function startTriageRun(
+  project: Project,
+  settings: Settings,
+  failedStep: string,
+  logTail: string
+): Promise<RunHandle> {
+  const runId = makeRunId('triage');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(triageTemplate, {
+      repoPath: project.localPath,
+      failedStep,
+      logTail,
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'triage', projectId: project.id };
 }
 
 export async function startIdeRun(

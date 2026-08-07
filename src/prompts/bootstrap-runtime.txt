@@ -68,6 +68,10 @@ Follow these steps:
    • docker-compose.mvpfy.yml — one compose file that runs every repo's app plus every
      dependent service from step 3; build contexts point at the right subdirectory
    • .env.mvpfy.example — safe local defaults for every environment variable the product needs
+   • mvpfy-summary.md — 5–8 plain-language lines FOR THE PRODUCT MANAGER: what will run,
+     the ports, what was mocked or disabled, roughly how long the first build takes, and a
+     closing line confirming everything runs locally on their machine. No jargon — they
+     read this instead of the Dockerfile.
 
 Rules:
 • The main user-facing app must be exposed on host port {basePort}; give other repos' apps

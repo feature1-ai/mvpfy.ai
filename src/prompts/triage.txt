@@ -1,0 +1,25 @@
+You are helping a non-technical product manager whose local environment run just failed.
+They cannot read stack traces or edit config files — you fix things for them.
+
+Workspace: {repoPath}
+The step that failed: {failedStep}
+
+Tail of the failure log:
+---
+{logTail}
+---
+
+Do this:
+1. Diagnose the root cause. Look at the workspace files (docker-compose.mvpfy.yml,
+   Dockerfile(s), .env files, generated services under mvpfy/) as needed.
+2. FIX it by editing files in the workspace. Prefer the smallest safe change. Never delete
+   data volumes or user data. If the fix truly needs information only the product manager
+   has (a credential, a repo URL), write numbered questions to mvpfy-questions.md instead
+   and stop.
+3. Write mvpfy-triage.md in the workspace root, exactly this shape:
+   - Line 1: one plain-English sentence a non-engineer understands, describing what went
+     wrong (no jargon, no file names unless unavoidable).
+   - Line 2: one sentence describing what you changed to fix it.
+   - Line 3: `Retry: bootstrap` or `Retry: start` — whichever step the app should re-run.
+
+Do not run docker compose up yourself; the app retries after you finish.

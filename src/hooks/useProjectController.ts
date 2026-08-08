@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ANSWERS_FILE,
+  CHANGE_FILE,
   SUMMARY_FILE,
   TRIAGE_FILE,
   GENERATED_FILES,
@@ -13,6 +14,7 @@ import {
   startBootstrapRun,
   startDockerRun,
   startIdeRun,
+  startInstructRun,
   startShipFeatureRun,
   startTriageRun,
 } from '../lib/agentRunner';
@@ -25,7 +27,7 @@ import { RunsApi, RunState } from '../lib/useRuns';
 export type UpdateState = (mutate: (prev: MvpfyState) => MvpfyState) => void;
 
 /** Agent-communication files shown in dedicated cards, not the file viewer. */
-const HIDDEN_FROM_VIEWER: string[] = [QUESTIONS_FILE, TRIAGE_FILE, SUMMARY_FILE];
+const HIDDEN_FROM_VIEWER: string[] = [QUESTIONS_FILE, TRIAGE_FILE, SUMMARY_FILE, CHANGE_FILE];
 
 /**
  * Controller for a project's detail view: owns all project actions, file and
@@ -73,6 +75,12 @@ export interface ProjectController {
   /** Re-run the step the triage file says to retry. */
   retryFix(): Promise<void>;
   dismissTriage(): Promise<void>;
+  /** Free-form PM instruction ("add env var X…") applied by the agent. */
+  instruct(instruction: string): Promise<void>;
+  dismissChange(): Promise<void>;
+  /** True when the last change report says the environment must restart. */
+  changeNeedsRestart: boolean;
+  changeContent: string | null;
   refreshStories(): Promise<void>;
   implement(story: UserStory): Promise<void>;
   startIde(): Promise<void>;
@@ -120,6 +128,7 @@ export function useProjectController(
         ANSWERS_FILE,
         TRIAGE_FILE,
         SUMMARY_FILE,
+        CHANGE_FILE,
       ])
       .then((result) => {
         setFiles(result);
@@ -251,6 +260,23 @@ export function useProjectController(
       refreshFiles();
     });
 
+  const instruct = (instruction: string) =>
+    guarded(async () => {
+      const text = instruction.trim();
+      if (!text) return;
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      await window.mvpfy.writeRepoFile(project.localPath, CHANGE_FILE, '');
+      const handle = await startInstructRun(project, state.settings, text);
+      runsApi.track(handle);
+    });
+
+  const dismissChange = () =>
+    guarded(async () => {
+      await window.mvpfy.writeRepoFile(project.localPath, CHANGE_FILE, '');
+      refreshFiles();
+    });
+
   const refreshStories = () =>
     guarded(async () => {
       if (!state.tenant) {
@@ -326,6 +352,8 @@ export function useProjectController(
     questionsFile: files.find((f) => f.relativePath === QUESTIONS_FILE && f.exists) ?? null,
     triageContent: contentOf(files, TRIAGE_FILE),
     summaryContent: contentOf(files, SUMMARY_FILE),
+    changeContent: contentOf(files, CHANGE_FILE),
+    changeNeedsRestart: /restart:\s*yes/i.test(contentOf(files, CHANGE_FILE) ?? ''),
     canDiagnose: lastFailure !== null,
     viewerFiles: files.filter((f) => f.exists && !HIDDEN_FROM_VIEWER.includes(f.relativePath)),
     activeFile,
@@ -344,6 +372,8 @@ export function useProjectController(
     diagnose,
     retryFix,
     dismissTriage,
+    instruct,
+    dismissChange,
     refreshStories,
     implement,
     startIde,

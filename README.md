@@ -84,7 +84,12 @@ npm run package    # package the macOS app into release/
    click *Start environment*, which runs `docker compose -f docker-compose.mvpfy.yml up -d`.
    The app then polls the port and shows a green "App is up" link once the app actually
    responds.
-4. **Implement a story** — refresh the story list (loaded from the Feature1 MCP server), click
+4. **Ask mvpfy to change something** — a plain-language box on the project Overview:
+   "Add an environment variable STRIPE_API_KEY=… to the backend", "move the app to port
+   5000". The agent applies the smallest safe change (secrets go into the local env file,
+   never into code), reports back in plain language, and offers a one-click restart when
+   the environment needs it.
+5. **Implement a story** — refresh the story list (loaded from the Feature1 MCP server), click
    *Implement*. mvpfy invokes the agent with the ship-feature prompt: it loads the workflow,
    implements every acceptance criterion, runs the tests, commits, pushes, opens a PR with
    `gh`, and updates the Feature1 workflow via MCP. Output streams live into the log panel,

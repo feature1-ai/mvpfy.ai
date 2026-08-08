@@ -24,6 +24,7 @@ function envState(c: ProjectController): EnvState {
     if (k === 'docker-up') return { kind: 'working', label: 'Starting…' };
     if (k === 'docker-down') return { kind: 'working', label: 'Stopping…' };
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
+    if (k === 'instruct') return { kind: 'working', label: 'Making your change…' };
   }
   switch (c.project.status) {
     case 'running':
@@ -44,6 +45,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   const [branches, setBranches] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [askDraft, setAskDraft] = useState('');
 
   useEffect(() => {
     void window.mvpfy.repoBranches(project.repos.map((r) => r.dir)).then(setBranches);
@@ -225,6 +227,46 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
             </div>
           </section>
 
+          {/* Change report — result of an Ask-mvpfy instruction */}
+          {c.changeContent && !c.busy && (
+            <section className="card border-go-border">
+              <div className="flex items-start gap-3 px-5 py-4">
+                <span className="mt-1.5 h-[9px] w-[9px] shrink-0 rounded-full bg-go" />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-[15px] font-semibold">Done — here's what changed</h2>
+                  <div className="mt-1 grid gap-1 text-[13px] leading-normal text-body">
+                    {c.changeContent
+                      .split('\n')
+                      .filter((l) => l.trim() && !/^restart:/i.test(l.trim()))
+                      .slice(0, 4)
+                      .map((l, i) => (
+                        <p key={i}>{l.replace(/^[-*]\s*/, '')}</p>
+                      ))}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => void c.dismissChange()}
+                    className="btn-secondary h-[34px] px-3.5"
+                  >
+                    Dismiss
+                  </button>
+                  {c.changeNeedsRestart && (
+                    <button
+                      onClick={() => {
+                        void c.dismissChange();
+                        void c.docker('up');
+                      }}
+                      className="btn-primary h-[34px] px-3.5"
+                    >
+                      Restart to apply
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* Triage result — plain-language diagnosis after Diagnose & fix */}
           {c.triageContent && !c.busy && (
             <section className="card border-go-border">
@@ -308,6 +350,47 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </>
             )}
           </section>
+          {/* Ask mvpfy — free-form change requests applied by the agent */}
+          <section className="card">
+            <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
+              <span className="section-label">Ask mvpfy to change something</span>
+              <span className="hidden text-[11px] text-faint min-[1000px]:inline">
+                about a minute, on your agent subscription
+              </span>
+            </div>
+            <div className="flex flex-col gap-2.5 px-5 py-4">
+              <textarea
+                value={askDraft}
+                onChange={(e) => setAskDraft(e.target.value)}
+                placeholder={
+                  'Describe the change in plain language, e.g.\n' +
+                  'Add an environment variable STRIPE_API_KEY=sk_test_123 to the backend\n' +
+                  'Move the app to port 5000 · Turn on email sending using Mailhog'
+                }
+                rows={3}
+                disabled={c.busy}
+                className="w-full resize-y rounded-lg border border-line bg-surface px-3.5 py-3 text-[13px] leading-relaxed outline-none placeholder:text-faint focus:border-muted"
+              />
+              <div className="flex items-center">
+                <span className="text-[11.5px] text-muted">
+                  mvpfy edits the run config for you — secrets go into the local env file, never
+                  into code.
+                </span>
+                <button
+                  onClick={() => {
+                    const text = askDraft;
+                    setAskDraft('');
+                    void c.instruct(text);
+                  }}
+                  disabled={c.busy || !askDraft.trim()}
+                  className="btn-primary ml-auto h-[34px] px-3.5 disabled:opacity-50"
+                >
+                  Make the change
+                </button>
+              </div>
+            </div>
+          </section>
+
           {/* Feature1 stories card */}
           <section className="card">
             <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">

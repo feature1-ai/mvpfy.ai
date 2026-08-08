@@ -1,10 +1,18 @@
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import triageTemplate from '../prompts/triage.txt?raw';
+import instructTemplate from '../prompts/instruct.txt?raw';
 import { AgentKind, Project, Settings } from '../../shared/types';
 
 export type RunKind =
-  'bootstrap' | 'ship' | 'docker-up' | 'docker-down' | 'ide-up' | 'ide-down' | 'triage';
+  | 'bootstrap'
+  | 'ship'
+  | 'docker-up'
+  | 'docker-down'
+  | 'ide-up'
+  | 'ide-down'
+  | 'triage'
+  | 'instruct';
 
 export interface RunHandle {
   runId: string;
@@ -97,6 +105,24 @@ export async function startTriageRun(
     ...agentFor(settings),
   });
   return { runId, kind: 'triage', projectId: project.id };
+}
+
+export async function startInstructRun(
+  project: Project,
+  settings: Settings,
+  instruction: string
+): Promise<RunHandle> {
+  const runId = makeRunId('instruct');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(instructTemplate, {
+      repoPath: project.localPath,
+      instruction,
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'instruct', projectId: project.id };
 }
 
 export async function startIdeRun(

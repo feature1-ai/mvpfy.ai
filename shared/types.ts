@@ -134,6 +134,8 @@ export const ANSWERS_FILE = 'mvpfy-answers.md';
 export const TRIAGE_FILE = 'mvpfy-triage.md';
 /** Plain-language summary of what bootstrap set up, written for the PM. */
 export const SUMMARY_FILE = 'mvpfy-summary.md';
+/** The instruct agent's report: what it changed and whether to restart. */
+export const CHANGE_FILE = 'mvpfy-change.md';
 
 export interface UpdateStatus {
   kind: 'available' | 'downloaded' | 'error';

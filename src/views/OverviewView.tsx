@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ProjectController } from '../hooks/useProjectController';
 import { parsePorts } from '../lib/ports';
+import EnvVarsCard from './EnvVarsCard';
 
 interface Props {
   c: ProjectController;
@@ -516,6 +517,8 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </div>
             </section>
           )}
+
+          <EnvVarsCard c={c} />
 
           <div className="px-1">
             {confirmRemove ? (

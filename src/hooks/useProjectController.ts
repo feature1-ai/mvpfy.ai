@@ -21,13 +21,20 @@ import {
 import { preflightAuth } from '../lib/cliCheck';
 import { DemoCredential, parseDemoCredentials } from '../lib/credentials';
 import { Feature1McpClient, UserStory } from '../lib/feature1Mcp';
+import { ENV_FILE_CANDIDATES } from '../lib/envFile';
 import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
 
 export type UpdateState = (mutate: (prev: MvpfyState) => MvpfyState) => void;
 
 /** Agent-communication files shown in dedicated cards, not the file viewer. */
-const HIDDEN_FROM_VIEWER: string[] = [QUESTIONS_FILE, TRIAGE_FILE, SUMMARY_FILE, CHANGE_FILE];
+const HIDDEN_FROM_VIEWER: string[] = [
+  QUESTIONS_FILE,
+  TRIAGE_FILE,
+  SUMMARY_FILE,
+  CHANGE_FILE,
+  ...ENV_FILE_CANDIDATES,
+];
 
 /**
  * Controller for a project's detail view: owns all project actions, file and
@@ -81,6 +88,11 @@ export interface ProjectController {
   /** True when the last change report says the environment must restart. */
   changeNeedsRestart: boolean;
   changeContent: string | null;
+  /** The env file the editor works on: first existing candidate, or null. */
+  envFile: { name: string; content: string } | null;
+  /** Content of .env.mvpfy.example when present (seed for a new env file). */
+  envExample: string | null;
+  saveEnv(name: string, content: string): Promise<void>;
   refreshStories(): Promise<void>;
   implement(story: UserStory): Promise<void>;
   startIde(): Promise<void>;
@@ -129,6 +141,7 @@ export function useProjectController(
         TRIAGE_FILE,
         SUMMARY_FILE,
         CHANGE_FILE,
+        ...ENV_FILE_CANDIDATES,
       ])
       .then((result) => {
         setFiles(result);
@@ -277,6 +290,12 @@ export function useProjectController(
       refreshFiles();
     });
 
+  const saveEnv = (name: string, content: string) =>
+    guarded(async () => {
+      await window.mvpfy.writeRepoFile(project.localPath, name, content);
+      refreshFiles();
+    });
+
   const refreshStories = () =>
     guarded(async () => {
       if (!state.tenant) {
@@ -354,6 +373,14 @@ export function useProjectController(
     summaryContent: contentOf(files, SUMMARY_FILE),
     changeContent: contentOf(files, CHANGE_FILE),
     changeNeedsRestart: /restart:\s*yes/i.test(contentOf(files, CHANGE_FILE) ?? ''),
+    envFile: (() => {
+      for (const name of ENV_FILE_CANDIDATES) {
+        const f = files.find((x) => x.relativePath === name && x.exists);
+        if (f) return { name, content: f.content ?? '' };
+      }
+      return null;
+    })(),
+    envExample: contentOf(files, '.env.mvpfy.example'),
     canDiagnose: lastFailure !== null,
     viewerFiles: files.filter((f) => f.exists && !HIDDEN_FROM_VIEWER.includes(f.relativePath)),
     activeFile,
@@ -374,6 +401,7 @@ export function useProjectController(
     dismissTriage,
     instruct,
     dismissChange,
+    saveEnv,
     refreshStories,
     implement,
     startIde,

@@ -68,6 +68,12 @@ Follow these steps:
    • docker-compose.mvpfy.yml — one compose file that runs every repo's app plus every
      dependent service from step 3; build contexts point at the right subdirectory
    • .env.mvpfy.example — safe local defaults for every environment variable the product needs
+   • .env — the LIVE env file, same keys as the example with every value filled in with its
+     working local default (never a placeholder like "changeme" — the stack must boot with
+     exactly these values). Wire every service to it (env_file: .env or ${VAR}
+     interpolation in the compose file) so the values actually reach the containers — the
+     product manager edits this file from the app and expects changes to take effect on
+     restart. Optional third-party keys stay as empty values with the feature disabled.
    • mvpfy-summary.md — 5–8 plain-language lines FOR THE PRODUCT MANAGER: what will run,
      the ports, what was mocked or disabled, roughly how long the first build takes, and a
      closing line confirming everything runs locally on their machine. No jargon — they

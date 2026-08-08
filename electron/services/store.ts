@@ -28,7 +28,12 @@ function migrateProjects(raw: unknown[]): Project[] {
   return (raw as Array<Record<string, unknown>>).map((p) => {
     if (!p.repos && typeof p.repoUrl === 'string') {
       const { repoUrl, ...rest } = p;
-      return { ...rest, repos: [{ url: repoUrl, dir: p.localPath }] };
+      p = { ...rest, repos: [{ url: repoUrl, dir: p.localPath }] };
+    }
+    // A quit mid-bootstrap leaves 'bootstrapping' frozen in state with no run
+    // behind it; surface it as an error so Diagnose & fix can take over.
+    if (p.status === 'bootstrapping') {
+      p = { ...p, status: 'error' };
     }
     return p;
   }) as unknown as Project[];

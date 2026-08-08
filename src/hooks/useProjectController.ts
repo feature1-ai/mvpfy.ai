@@ -219,11 +219,16 @@ export function useProjectController(
       const failedRun = Object.values(runsApi.runs)
         .filter((r) => r.handle.projectId === project.id && r.handle.kind === failed)
         .pop();
+      const logTail =
+        failedRun && failedRun.log.trim()
+          ? failedRun.log.slice(-4000)
+          : '(log unavailable — the app was restarted after the failure or the run was ' +
+            'interrupted; inspect the workspace to infer what happened)';
       const handle = await startTriageRun(
         project,
         state.settings,
         failed === 'docker-up' ? 'starting the environment (docker compose up)' : 'bootstrap',
-        (failedRun?.log ?? '').slice(-4000)
+        logTail
       );
       runsApi.track(handle);
     });

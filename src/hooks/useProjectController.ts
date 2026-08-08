@@ -11,6 +11,7 @@ import {
   RepoFile,
 } from '../../shared/types';
 import {
+  startAppLogsRun,
   startBootstrapRun,
   startDockerRun,
   startIdeRun,
@@ -50,6 +51,9 @@ export interface ProjectController {
   ideStarting: boolean;
   busy: boolean;
   latestRun: RunState | null;
+  /** The follow-mode docker logs stream, when one has been started. */
+  appLogsRun: RunState | null;
+  startAppLogs(): Promise<void>;
   lastShipPrUrl: string | null;
   actionError: string | null;
   hasMvpfyYml: boolean;
@@ -126,7 +130,11 @@ export function useProjectController(
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
 
-  const latestRun = runsApi.latestForProject(project.id);
+  const projectRuns = Object.values(runsApi.runs).filter((r) => r.handle.projectId === project.id);
+  // The follow-mode app-logs stream never counts as activity: it runs for
+  // as long as the tab wants it and must not block buttons or the strip.
+  const latestRun = projectRuns.filter((r) => r.handle.kind !== 'app-logs').pop() ?? null;
+  const appLogsRun = projectRuns.filter((r) => r.handle.kind === 'app-logs').pop() ?? null;
   const busy = latestRun?.running ?? false;
   const lastShipRun = Object.values(runsApi.runs)
     .filter((r) => r.handle.projectId === project.id && r.handle.kind === 'ship')
@@ -290,6 +298,13 @@ export function useProjectController(
       refreshFiles();
     });
 
+  const startAppLogs = () =>
+    guarded(async () => {
+      if (appLogsRun?.running) return;
+      const handle = await startAppLogsRun(project);
+      runsApi.track(handle);
+    });
+
   const saveEnv = (name: string, content: string) =>
     guarded(async () => {
       await window.mvpfy.writeRepoFile(project.localPath, name, content);
@@ -363,6 +378,8 @@ export function useProjectController(
     ideStarting: latestRun?.running === true && latestRun.handle.kind === 'ide-up',
     busy,
     latestRun,
+    appLogsRun,
+    startAppLogs,
     lastShipPrUrl: lastShipRun?.prUrl ?? null,
     actionError,
     hasMvpfyYml,

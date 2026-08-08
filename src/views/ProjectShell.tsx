@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { MvpfyState, Project } from '../../shared/types';
 import { UpdateState, useProjectController } from '../hooks/useProjectController';
@@ -26,6 +27,16 @@ export default function ProjectShell({
 }: Props) {
   const c = useProjectController(project, state, updateState, runsApi);
   const mvpfyYml = c.viewerFiles.find((f) => f.relativePath === 'mvpfy.yml')?.content ?? null;
+
+  // Auto-follow container logs when the PM opens the Logs tab of a running
+  // environment; stays running until stopped or the environment goes down.
+  const appLogsActive = c.appLogsRun?.running === true;
+  useEffect(() => {
+    if (tab === 'logs' && project.status === 'running' && !appLogsActive) {
+      void c.startAppLogs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, project.status]);
 
   const tabs: Array<{ id: ProjectTab; label: string; hint?: string }> = [
     { id: 'overview', label: 'Overview' },
@@ -151,8 +162,46 @@ export default function ProjectShell({
         </Pane>
 
         <Pane active={tab === 'logs'} scroll>
-          <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-6">
-            <LogPanel run={c.latestRun} onStop={c.stopRun} />
+          <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 px-6 pb-16 pt-6">
+            <div>
+              <div className="mb-2 flex items-center gap-3">
+                <span className="section-label">App logs</span>
+                <span className="text-[11px] text-faint">
+                  live output from the running containers
+                </span>
+                {project.status === 'running' && !appLogsActive && (
+                  <button
+                    onClick={() => void c.startAppLogs()}
+                    className="ml-auto text-xs text-go hover:text-go-hover hover:underline"
+                  >
+                    Start streaming
+                  </button>
+                )}
+              </div>
+              {c.appLogsRun ? (
+                <LogPanel
+                  run={c.appLogsRun}
+                  onStop={c.stopRun}
+                  heightClass="h-[400px]"
+                  title="app logs"
+                />
+              ) : (
+                <div className="card px-5 py-6 text-[13px] text-muted">
+                  {project.status === 'running'
+                    ? 'Starting the log stream…'
+                    : 'Start the environment to stream its logs here.'}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="mb-2 flex items-center gap-3">
+                <span className="section-label">Activity</span>
+                <span className="text-[11px] text-faint">
+                  agent runs, bootstraps, and environment commands
+                </span>
+              </div>
+              <LogPanel run={c.latestRun} onStop={c.stopRun} />
+            </div>
           </div>
         </Pane>
       </div>

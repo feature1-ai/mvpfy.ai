@@ -45,7 +45,7 @@ export function registerIpc(): void {
   ipcMain.handle('stop-run', (_ev, runId: string) => stopRun(runId));
   ipcMain.handle(
     'docker-compose',
-    (_ev, runId: string, repoPath: string, action: 'up' | 'down' | 'restart') => {
+    (_ev, runId: string, repoPath: string, action: 'up' | 'down' | 'restart' | 'logs') => {
       const resolved = path.resolve(repoPath);
       if (!isManagedPath(resolved)) {
         throw new Error('docker compose is restricted to managed project directories');

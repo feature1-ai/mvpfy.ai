@@ -5,9 +5,13 @@ import type { RunState } from '../lib/useRuns';
 interface Props {
   run: RunState | null;
   onStop: (runId: string) => void;
+  /** Tailwind height class for the panel; defaults to h-64. */
+  heightClass?: string;
+  /** Panel title override (defaults to the run kind). */
+  title?: string;
 }
 
-export default function LogPanel({ run, onStop }: Props) {
+export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: Props) {
   const scrollRef = useRef<HTMLPreElement>(null);
   const [showRaw, setShowRaw] = useState(false);
 
@@ -19,12 +23,12 @@ export default function LogPanel({ run, onStop }: Props) {
   const display = run ? (showRaw ? run.log : formatLog(run.log)) : '';
 
   return (
-    <div className="flex h-64 flex-col rounded-lg border border-slate-200 bg-slate-950">
+    <div className={`flex ${heightClass} flex-col rounded-lg border border-slate-200 bg-slate-950`}>
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <div className="text-xs font-medium text-slate-300">
           {run ? (
             <>
-              {run.handle.kind}
+              {title ?? run.handle.kind}
               {run.handle.storyId ? ` · ${run.handle.storyId}` : ''}
               {run.running ? (
                 <span className="ml-2 text-emerald-400">running</span>

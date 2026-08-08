@@ -12,7 +12,8 @@ export type RunKind =
   | 'ide-up'
   | 'ide-down'
   | 'triage'
-  | 'instruct';
+  | 'instruct'
+  | 'app-logs';
 
 export interface RunHandle {
   runId: string;
@@ -83,12 +84,19 @@ export async function startShipFeatureRun(
 
 export async function startDockerRun(
   project: Project,
-  action: 'up' | 'down' | 'restart'
+  action: 'up' | 'down' | 'restart' | 'logs'
 ): Promise<RunHandle> {
   const runId = makeRunId(`docker-${action}`);
   await window.mvpfy.dockerCompose(runId, project.localPath, action);
   // 'restart' counts as an up: on success the project is running.
   return { runId, kind: action === 'down' ? 'docker-down' : 'docker-up', projectId: project.id };
+}
+
+/** Follow the running containers' logs (docker compose logs -f). */
+export async function startAppLogsRun(project: Project): Promise<RunHandle> {
+  const runId = makeRunId('applogs');
+  await window.mvpfy.dockerCompose(runId, project.localPath, 'logs');
+  return { runId, kind: 'app-logs', projectId: project.id };
 }
 
 export async function startTriageRun(

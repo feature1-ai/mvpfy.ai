@@ -29,7 +29,8 @@ export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
       setRuns((prev) => {
         const run = prev[ev.runId];
         if (!run) return prev;
-        return { ...prev, [ev.runId]: { ...run, log: run.log + ev.chunk } };
+        // Cap retained log size — follow-mode streams run indefinitely.
+        return { ...prev, [ev.runId]: { ...run, log: (run.log + ev.chunk).slice(-200_000) } };
       });
     });
     const offExit = window.mvpfy.onRunExit((ev) => {

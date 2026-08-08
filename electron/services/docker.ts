@@ -52,7 +52,11 @@ export function ideContainerName(workspacePath: string): string {
   return `mvpfy-ide-${base}`;
 }
 
-export function composeCommand(action: 'up' | 'down' | 'restart'): string {
+export function composeCommand(action: 'up' | 'down' | 'restart' | 'logs'): string {
+  // Follow-mode container logs: no daemon auto-start (fails fast when down).
+  if (action === 'logs') {
+    return 'docker compose -f docker-compose.mvpfy.yml logs -f --tail=200';
+  }
   const up = 'docker compose -f docker-compose.mvpfy.yml up -d --build';
   const down = 'docker compose -f docker-compose.mvpfy.yml down';
   const compose = action === 'up' ? up : action === 'down' ? down : `${down} && ${up}`;

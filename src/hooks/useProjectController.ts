@@ -13,6 +13,7 @@ import {
 import {
   startAppLogsRun,
   startBootstrapRun,
+  startSyncRun,
   startDockerRun,
   startIdeRun,
   startInstructRun,
@@ -54,6 +55,8 @@ export interface ProjectController {
   /** The follow-mode docker logs stream, when one has been started. */
   appLogsRun: RunState | null;
   startAppLogs(): Promise<void>;
+  /** Pull the latest changes from each repo's remote into the clone. */
+  syncRepos(): Promise<void>;
   lastShipPrUrl: string | null;
   actionError: string | null;
   hasMvpfyYml: boolean;
@@ -298,6 +301,12 @@ export function useProjectController(
       refreshFiles();
     });
 
+  const syncRepos = () =>
+    guarded(async () => {
+      const handle = await startSyncRun(project);
+      runsApi.track(handle);
+    });
+
   const startAppLogs = () =>
     guarded(async () => {
       if (appLogsRun?.running) return;
@@ -380,6 +389,7 @@ export function useProjectController(
     latestRun,
     appLogsRun,
     startAppLogs,
+    syncRepos,
     lastShipPrUrl: lastShipRun?.prUrl ?? null,
     actionError,
     hasMvpfyYml,

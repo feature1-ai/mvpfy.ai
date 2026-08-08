@@ -72,6 +72,18 @@ export function registerIpc(): void {
       writeRepoFile(repoPath, relativePath, content)
   );
   ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
+  ipcMain.handle('repo-sync', (_ev, runId: string, workspacePath: string, dirs: string[]) => {
+    const resolved = path.resolve(workspacePath);
+    if (!isManagedPath(resolved)) {
+      throw new Error('Sync is restricted to managed project directories');
+    }
+    const parts = dirs.map((d) => {
+      const dir = path.resolve(d);
+      if (!isManagedPath(dir)) throw new Error('Sync is restricted to managed project directories');
+      return `echo "── ${path.basename(dir)}" && git -C "${dir}" pull --ff-only`;
+    });
+    startRun(runId, parts.join(' && '), resolved);
+  });
   ipcMain.handle('cli-login', (_ev, runId: string, tool: string) => {
     // In-app sign-in for tools whose login flows survive without a TTY. The
     // output streams to the renderer so device codes/URLs are visible.

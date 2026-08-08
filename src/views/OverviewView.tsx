@@ -26,6 +26,7 @@ function envState(c: ProjectController): EnvState {
     if (k === 'docker-down') return { kind: 'working', label: 'Stopping…' };
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
     if (k === 'instruct') return { kind: 'working', label: 'Making your change…' };
+    if (k === 'sync') return { kind: 'working', label: 'Syncing repositories…' };
   }
   switch (c.project.status) {
     case 'running':
@@ -49,8 +50,9 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   const [askDraft, setAskDraft] = useState('');
 
   useEffect(() => {
+    if (c.busy) return;
     void window.mvpfy.repoBranches(project.repos.map((r) => r.dir)).then(setBranches);
-  }, [project.repos]);
+  }, [project.repos, c.busy]);
 
   const env = envState(c);
   const ports = parsePorts(mvpfyYml);
@@ -474,7 +476,17 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
         {/* Right column */}
         <div className="flex min-w-0 flex-col gap-5">
           <section className="card px-[18px] py-4">
-            <div className="section-label mb-3">Repositories</div>
+            <div className="mb-3 flex items-center justify-between">
+              <span className="section-label">Repositories</span>
+              <button
+                onClick={() => void c.syncRepos()}
+                disabled={c.busy}
+                className="text-[11.5px] text-go hover:text-go-hover hover:underline disabled:opacity-50"
+                title="Pull the latest changes from each repo's remote"
+              >
+                Sync
+              </button>
+            </div>
             <div className="flex min-w-0 flex-col gap-3">
               {project.repos.map((r) => (
                 <div key={r.dir}>

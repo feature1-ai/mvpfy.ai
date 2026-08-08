@@ -13,7 +13,8 @@ export type RunKind =
   | 'ide-down'
   | 'triage'
   | 'instruct'
-  | 'app-logs';
+  | 'app-logs'
+  | 'sync';
 
 export interface RunHandle {
   runId: string;
@@ -90,6 +91,17 @@ export async function startDockerRun(
   await window.mvpfy.dockerCompose(runId, project.localPath, action);
   // 'restart' counts as an up: on success the project is running.
   return { runId, kind: action === 'down' ? 'docker-down' : 'docker-up', projectId: project.id };
+}
+
+/** Fast-forward pull each repo of the workspace from its remote. */
+export async function startSyncRun(project: Project): Promise<RunHandle> {
+  const runId = makeRunId('sync');
+  await window.mvpfy.repoSync(
+    runId,
+    project.localPath,
+    project.repos.map((r) => r.dir)
+  );
+  return { runId, kind: 'sync', projectId: project.id };
 }
 
 /** Follow the running containers' logs (docker compose logs -f). */

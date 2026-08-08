@@ -158,7 +158,7 @@ export interface MvpfyApi {
   deleteProject(workspacePath: string): Promise<{ ok: boolean; error?: string }>;
   runAgent(req: RunAgentRequest): Promise<void>;
   stopRun(runId: string): Promise<void>;
-  dockerCompose(runId: string, repoPath: string, action: 'up' | 'down'): Promise<void>;
+  dockerCompose(runId: string, repoPath: string, action: 'up' | 'down' | 'restart'): Promise<void>;
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
   cliLogin(runId: string, tool: 'gh' | 'codex'): Promise<void>;
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;

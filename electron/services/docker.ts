@@ -52,11 +52,10 @@ export function ideContainerName(workspacePath: string): string {
   return `mvpfy-ide-${base}`;
 }
 
-export function composeCommand(action: 'up' | 'down'): string {
-  const compose =
-    action === 'up'
-      ? 'docker compose -f docker-compose.mvpfy.yml up -d --build'
-      : 'docker compose -f docker-compose.mvpfy.yml down';
+export function composeCommand(action: 'up' | 'down' | 'restart'): string {
+  const up = 'docker compose -f docker-compose.mvpfy.yml up -d --build';
+  const down = 'docker compose -f docker-compose.mvpfy.yml down';
+  const compose = action === 'up' ? up : action === 'down' ? down : `${down} && ${up}`;
   return `${ENSURE_DAEMON} && ${compose}`;
 }
 

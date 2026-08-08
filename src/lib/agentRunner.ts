@@ -81,10 +81,14 @@ export async function startShipFeatureRun(
   return { runId, kind: 'ship', projectId: project.id, storyId };
 }
 
-export async function startDockerRun(project: Project, action: 'up' | 'down'): Promise<RunHandle> {
+export async function startDockerRun(
+  project: Project,
+  action: 'up' | 'down' | 'restart'
+): Promise<RunHandle> {
   const runId = makeRunId(`docker-${action}`);
   await window.mvpfy.dockerCompose(runId, project.localPath, action);
-  return { runId, kind: action === 'up' ? 'docker-up' : 'docker-down', projectId: project.id };
+  // 'restart' counts as an up: on success the project is running.
+  return { runId, kind: action === 'down' ? 'docker-down' : 'docker-up', projectId: project.id };
 }
 
 export async function startTriageRun(

@@ -76,7 +76,7 @@ export interface ProjectController {
   // Actions
   bootstrap(): Promise<void>;
   saveAnswersAndRerun(): Promise<void>;
-  docker(action: 'up' | 'down'): Promise<void>;
+  docker(action: 'up' | 'down' | 'restart'): Promise<void>;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<void>;
   /** Re-run the step the triage file says to retry. */
@@ -227,7 +227,7 @@ export function useProjectController(
       await bootstrap();
     });
 
-  const docker = (action: 'up' | 'down') =>
+  const docker = (action: 'up' | 'down' | 'restart') =>
     guarded(async () => {
       const handle = await startDockerRun(project, action);
       runsApi.track(handle);

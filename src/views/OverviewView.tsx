@@ -153,6 +153,13 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                       Open localhost:{project.basePort} ↗
                     </button>
                     <button
+                      onClick={() => void c.docker('restart')}
+                      className="btn-secondary h-[34px] px-3.5"
+                      title="Stop and start the environment — applies env and config changes"
+                    >
+                      Restart
+                    </button>
+                    <button
                       onClick={() => void c.docker('down')}
                       className="btn-secondary h-[34px] px-3.5"
                     >
@@ -256,7 +263,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     <button
                       onClick={() => {
                         void c.dismissChange();
-                        void c.docker('up');
+                        void c.docker('restart');
                       }}
                       className="btn-primary h-[34px] px-3.5"
                     >

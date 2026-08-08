@@ -27,7 +27,7 @@ const api: MvpfyApi = {
   deleteProject: (workspacePath: string) => ipcRenderer.invoke('delete-project', workspacePath),
   runAgent: (req: RunAgentRequest) => ipcRenderer.invoke('run-agent', req),
   stopRun: (runId: string) => ipcRenderer.invoke('stop-run', runId),
-  dockerCompose: (runId: string, repoPath: string, action: 'up' | 'down') =>
+  dockerCompose: (runId: string, repoPath: string, action: 'up' | 'down' | 'restart') =>
     ipcRenderer.invoke('docker-compose', runId, repoPath, action),
   ide: (runId: string, workspacePath: string, action: 'up' | 'down', port?: number) =>
     ipcRenderer.invoke('ide', runId, workspacePath, action, port),

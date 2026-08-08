@@ -125,7 +125,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
       )}
 
       <div className="grid items-start gap-5 min-[900px]:grid-cols-[minmax(0,1fr)_316px]">
-        <div className="grid gap-5">
+        <div className="flex min-w-0 flex-col gap-5">
           {/* Environment card */}
           <section className="card overflow-hidden">
             <div
@@ -381,10 +381,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
         </div>
 
         {/* Right column */}
-        <div className="grid gap-5">
+        <div className="flex min-w-0 flex-col gap-5">
           <section className="card px-[18px] py-4">
             <div className="section-label mb-3">Repositories</div>
-            <div className="grid gap-3">
+            <div className="flex min-w-0 flex-col gap-3">
               {project.repos.map((r) => (
                 <div key={r.dir}>
                   <button
@@ -415,7 +415,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                   {copied === 'all' ? 'Copied' : 'Copy all'}
                 </button>
               </div>
-              <div className="grid gap-[9px]">
+              <div className="flex min-w-0 flex-col gap-[9px]">
                 {cred.fields.map((f) => (
                   <div key={f.key} className="flex items-center gap-2">
                     <span className="w-[62px] shrink-0 text-[11.5px] text-muted">{f.key}</span>

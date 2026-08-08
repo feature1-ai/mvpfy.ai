@@ -79,7 +79,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
       <h1 className="mb-7 text-[22px] font-semibold tracking-[-0.02em]">Settings</h1>
 
       <div className="section-label mb-3">Connections</div>
-      <section className="card mb-7 grid gap-4 px-[18px] py-4">
+      <section className="card mb-7 flex flex-col gap-4 px-[18px] py-4">
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1">
             <p className="text-[13.5px] font-medium">Feature1</p>
@@ -133,7 +133,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
       </section>
 
       <div className="section-label mb-3">Agent</div>
-      <section className="card mb-7 grid gap-4 px-[18px] py-4">
+      <section className="card mb-7 flex flex-col gap-4 px-[18px] py-4">
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1">
             <p className="text-[13.5px] font-medium">Default agent</p>
@@ -181,7 +181,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
           Re-check
         </button>
       </div>
-      <section className="card mb-7 grid gap-3 px-[18px] py-4">
+      <section className="card mb-7 flex flex-col gap-3 px-[18px] py-4">
         {cliStatuses.map((cli) => {
           const help = CLI_HELP[cli.name];
           const required = cliRequired(cli.name, state.settings.defaultAgent);
@@ -243,7 +243,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
       </section>
 
       <div className="section-label mb-3">Workspace</div>
-      <section className="card grid gap-2 px-[18px] py-4">
+      <section className="card flex flex-col gap-2 px-[18px] py-4">
         <p className="text-[13.5px] font-medium">Projects folder</p>
         <div className="flex h-[34px] items-center rounded-md border border-line bg-sunken px-[11px] font-mono text-[12.5px] text-body">
           ~/.mvpfy/projects

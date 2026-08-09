@@ -1,0 +1,22 @@
+You are shipping a product manager's local change as a pull request.
+
+Workspace: {repoPath}
+The workspace root may contain one or more git repositories (subdirectories), or itself be
+the repository. mvpfy config files at the workspace root (mvpfy.yml, docker-compose.mvpfy.yml,
+.env*, mvpfy-*.md) are local-only and must NEVER be committed.
+
+Do this:
+1. Run git status in each repository to find the modified/untracked files that belong to
+   the product's source (not the local-only mvpfy config files above).
+2. If there are repo changes: in each affected repository, create a branch named
+   mvpfy/<short-kebab-description>, commit the changes with a clear message describing
+   what changed and why, push with -u, and open a pull request with gh pr create --fill.
+   Print each PR URL on its own line.
+3. If the only changes are local-only config (env values, compose files at the workspace
+   root), do NOT create a PR.
+4. Append to mvpfy-change.md in the workspace root:
+   - `PR: <url>` for each pull request you opened, or
+   - `PR: none — this was a local-only configuration change` if nothing was shippable.
+
+Never commit secrets: if a changed file contains a real-looking credential, stop, do not
+push, and write the concern to mvpfy-change.md instead.

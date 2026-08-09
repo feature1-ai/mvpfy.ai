@@ -17,6 +17,7 @@ import {
   startDockerRun,
   startIdeRun,
   startInstructRun,
+  startShipChangeRun,
   startShipFeatureRun,
   startTriageRun,
 } from '../lib/agentRunner';
@@ -92,6 +93,8 @@ export interface ProjectController {
   /** Free-form PM instruction ("add env var X…") applied by the agent. */
   instruct(instruction: string): Promise<void>;
   dismissChange(): Promise<void>;
+  /** Commit + push the workspace's product changes and open PR(s). */
+  shipChange(): Promise<void>;
   /** True when the last change report says the environment must restart. */
   changeNeedsRestart: boolean;
   changeContent: string | null;
@@ -301,6 +304,15 @@ export function useProjectController(
       refreshFiles();
     });
 
+  const shipChange = () =>
+    guarded(async () => {
+      // Shipping needs the agent AND gh (push + PR creation) signed in.
+      const authProblem = await preflightAuth(state.settings.defaultAgent, true);
+      if (authProblem) throw new Error(authProblem);
+      const handle = await startShipChangeRun(project, state.settings);
+      runsApi.track(handle);
+    });
+
   const syncRepos = () =>
     guarded(async () => {
       const handle = await startSyncRun(project);
@@ -428,6 +440,7 @@ export function useProjectController(
     dismissTriage,
     instruct,
     dismissChange,
+    shipChange,
     saveEnv,
     refreshStories,
     implement,

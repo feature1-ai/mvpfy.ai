@@ -27,6 +27,7 @@ function envState(c: ProjectController): EnvState {
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
     if (k === 'instruct') return { kind: 'working', label: 'Making your change…' };
     if (k === 'sync') return { kind: 'working', label: 'Syncing repositories…' };
+    if (k === 'ship') return { kind: 'working', label: 'Shipping as a pull request…' };
   }
   switch (c.project.status) {
     case 'running':
@@ -261,6 +262,15 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                   >
                     Dismiss
                   </button>
+                  {!/^\s*PR:/m.test(c.changeContent) && (
+                    <button
+                      onClick={() => void c.shipChange()}
+                      className="btn-secondary h-[34px] px-3.5"
+                      title="Commit the change on a branch and open a pull request for your team to review"
+                    >
+                      Ship as PR
+                    </button>
+                  )}
                   {c.changeNeedsRestart && (
                     <button
                       onClick={() => {

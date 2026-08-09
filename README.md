@@ -1,7 +1,10 @@
 # mvpfy by [feature1](https://feature1.ai)
 
-**The IDE for PMs.** Turn a [Feature1](https://feature1.ai) user story into a pull request
-with one click — with a live preview of your running app and a full VS Code editor built in.
+**The IDE for PMs.** Describe any change to your product in plain language — see it running
+locally, then ship it as a pull request. Like Lovable or Replit, but on your **existing
+codebase**, on your **own machine**, with your team's PR review as the exit. Live preview of
+the running app and a full VS Code editor built in; [Feature1](https://feature1.ai) user
+stories become PRs with one click.
 
 mvpfy is a minimal Electron desktop app for non-technical product managers. It is a **thin
 wrapper over [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and
@@ -17,8 +20,9 @@ the agents do the actual engineering work.
 Those are **code-first** tools: they open on a codebase and make engineers faster, one
 reviewed diff at a time. mvpfy is **product-first**:
 
-- The unit of work is a **user story**, not a file. The loop is story → running app → pull
-  request; the PM never reads a diff — the PR is the engineers' review artifact.
+- The unit of work is a **change to the product** — a plain-language request or a user
+  story, never a file. The loop is describe → running app → pull request; the PM never
+  reads a diff — the PR is the engineers' review artifact.
 - AI IDEs assume a working dev environment. mvpfy **manufactures one**: it dockerizes the
   repo, finds a free port, fills in missing services with open-source stand-ins, and hands
   the PM a URL and demo login so they can *see* the product.
@@ -28,6 +32,15 @@ reviewed diff at a time. mvpfy is **product-first**:
   (Claude Code, Codex) and embeds VS Code for when someone technical leans in.
 
 In short: Cursor makes engineers faster; mvpfy makes PMs shippers.
+
+## And how is it different from Lovable / Replit?
+
+Same magic loop — describe, see it live, ship — but pointed at a different problem. Those
+tools excel at building **new** apps in **their** cloud. mvpfy runs that loop on the product
+your company **already has**: your real repos, cloned locally, running in Docker on your
+machine (nothing leaves it), with changes exiting through a branch and a pull request your
+engineers review — not a deploy button. It's Lovable for the other 95% of software work:
+the product that already exists.
 
 ## Requirements
 

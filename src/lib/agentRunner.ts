@@ -2,6 +2,7 @@ import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import triageTemplate from '../prompts/triage.txt?raw';
 import instructTemplate from '../prompts/instruct.txt?raw';
+import shipChangeTemplate from '../prompts/ship-change.txt?raw';
 import { AgentKind, Project, Settings } from '../../shared/types';
 
 export type RunKind =
@@ -91,6 +92,19 @@ export async function startDockerRun(
   await window.mvpfy.dockerCompose(runId, project.localPath, action);
   // 'restart' counts as an up: on success the project is running.
   return { runId, kind: action === 'down' ? 'docker-down' : 'docker-up', projectId: project.id };
+}
+
+/** Ship the workspace's uncommitted product changes as pull request(s). */
+export async function startShipChangeRun(project: Project, settings: Settings): Promise<RunHandle> {
+  const runId = makeRunId('shipchange');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(shipChangeTemplate, { repoPath: project.localPath }),
+    ...agentFor(settings),
+  });
+  // Kind 'ship' so the PR URL is extracted from the run output.
+  return { runId, kind: 'ship', projectId: project.id };
 }
 
 /** Fast-forward pull each repo of the workspace from its remote. */

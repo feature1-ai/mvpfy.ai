@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { MvpfyState, Project } from '../../shared/types';
 import { UpdateState, useProjectController } from '../hooks/useProjectController';
@@ -27,6 +27,10 @@ export default function ProjectShell({
 }: Props) {
   const c = useProjectController(project, state, updateState, runsApi);
   const mvpfyYml = c.viewerFiles.find((f) => f.relativePath === 'mvpfy.yml')?.content ?? null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const appWebview = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ideWebview = useRef<any>(null);
 
   // Auto-follow container logs when the PM opens the Logs tab of a running
   // environment; stays running until stopped or the environment goes down.
@@ -70,6 +74,13 @@ export default function ProjectShell({
                 localhost:{project.basePort}
               </span>
               <button
+                onClick={() => appWebview.current?.reloadIgnoringCache?.()}
+                className="text-go hover:text-go-hover hover:underline"
+                title="Force refresh — reloads the app ignoring cached files"
+              >
+                Refresh
+              </button>
+              <button
                 onClick={() => c.openExternal(c.appUrl)}
                 className="text-go hover:text-go-hover hover:underline"
               >
@@ -79,6 +90,12 @@ export default function ProjectShell({
           )}
           {tab === 'code' && c.ideUrl && (
             <>
+              <button
+                onClick={() => ideWebview.current?.reload?.()}
+                className="text-go hover:text-go-hover hover:underline"
+              >
+                Reload
+              </button>
               <button
                 onClick={() => c.ideUrl && c.openExternal(c.ideUrl)}
                 className="text-go hover:text-go-hover hover:underline"
@@ -110,6 +127,7 @@ export default function ProjectShell({
             <div className="h-full p-4">
               <div className="h-full overflow-hidden rounded-[10px] border border-line bg-surface">
                 <webview
+                  ref={appWebview}
                   src={c.appUrl}
                   partition="persist:mvpfy-embedded"
                   style={{ display: 'flex', width: '100%', height: '100%' }}
@@ -136,6 +154,7 @@ export default function ProjectShell({
             <div className="h-full p-4">
               <div className="h-full overflow-hidden rounded-[10px] border border-line bg-surface">
                 <webview
+                  ref={ideWebview}
                   src={c.ideUrl}
                   partition="persist:mvpfy-embedded"
                   style={{ display: 'flex', width: '100%', height: '100%' }}

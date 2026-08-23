@@ -28,7 +28,7 @@
   "@type": "SoftwareApplication",
   "name": "mvpfy",
   "alternateName": "mvpfy by feature1",
-  "description": "mvpfy is a free, open-source desktop IDE for product managers. It clones a company's existing repositories, runs the product locally in Docker with a live preview and an embedded VS Code editor, and lets a PM describe changes in plain language that an AI coding agent applies and ships as pull requests. PMs can also plan whole features: mvpfy writes a minimal PRD with user stories in the Feature1 style and executes each story to a pull request the PM tests before marking done.",
+  "description": "mvpfy is a free, open-source desktop IDE for product managers. It clones a company's existing repositories, runs the product locally in Docker with a live preview and an embedded VS Code editor, and lets a PM describe changes in plain language that an AI coding agent applies and ships as pull requests. PMs can also plan whole features: mvpfy writes a minimal PRD in the Feature1 style for the PM to review and agree, then puts its user stories on a per-feature board and executes each story to a pull request the PM tests before marking done — with several features plannable in parallel.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Windows, Linux",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -251,10 +251,11 @@
     <h1>The IDE for product managers.</h1>
     <p class="sub"><strong>mvpfy</strong> is a free, open-source desktop app that runs your company's
     <strong>existing product</strong> locally — describe a change in plain language, watch it live,
-    and ship it as a <strong>pull request</strong> your engineers review. Or plan a whole feature:
-    mvpfy writes a minimal PRD in the <a href="https://feature1.ai">Feature1</a> style, breaks it
-    into user stories, and executes them to pull requests one by one. Like Lovable or Replit,
-    but for the product you already have, on your own machine.</p>
+    and ship it as a <strong>pull request</strong> your engineers review. Or plan whole features:
+    mvpfy writes a minimal PRD in the <a href="https://feature1.ai">Feature1</a> style for you to
+    review and agree, then breaks it into user stories on a board — one board per feature — and
+    executes them to pull requests one by one. Like Lovable or Replit, but for the product you
+    already have, on your own machine.</p>
     <div class="cta">
       <a class="btn btn-ink btn-lg" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download for macOS&nbsp;·&nbsp;beta</a>
       <a class="btn btn-line btn-lg" href="https://github.com/feature1-ai/mvpfy.ai">View on GitHub</a>
@@ -362,9 +363,10 @@
         <p>Credentials to get into the app and editable environment variables sit on the overview —
         save, restart, applied.</p></div>
       <div class="feat"><h3><span class="dot"></span>Plan features, <a href="https://feature1.ai">Feature1</a>-style</h3>
-        <p>Describe a feature and get a minimal PRD plus user stories with acceptance criteria,
-        on a board — To&nbsp;do → Coding → Testing → Done. Each story exits Coding as a pull
-        request; only you, after testing it live, move it to Done.</p></div>
+        <p>Describe a feature and review the PRD mvpfy writes; agree, and its user stories open on
+        their own board — To&nbsp;do → Coding → Testing → Done. Each story exits Coding as a pull
+        request; only you, after testing it live, move it to Done. Plan as many features as you
+        like — each gets its own board, and you can plan the next while one is still being built.</p></div>
       <div class="feat"><h3><span class="dot"></span>Local, private, MIT</h3>
         <p>Repos clone to your machine, the product runs in local Docker, and mvpfy has no server.
         Agents run under your own Claude&nbsp;Code or Codex account.</p></div>

@@ -21,9 +21,11 @@ Key facts:
   MailHog) for missing services; live app preview and embedded VS Code in tabs; demo
   logins and an editable env-vars card; plain-language change requests ("Ask mvpfy");
   self-healing failed runs (plain-English diagnosis + one-click fix/retry); container log
-  streaming; repo sync; feature planning in the Feature1 style — a minimal PRD plus user
-  stories with acceptance criteria on a board (To do → Coding → Testing → Done), each story
-  implemented by the agent and shipped as a pull request the PM tests before marking done.
+  streaming; repo sync; feature planning in the Feature1 style — a minimal PRD the PM
+  reviews and agrees, then user stories with acceptance criteria on a per-feature board
+  (To do → Coding → Testing → Done), each story implemented by the agent and shipped as a
+  pull request the PM tests before marking done; multiple features plannable in parallel,
+  each with its own board.
 - Maker: feature1 (https://feature1.ai). Source: https://github.com/feature1-ai/mvpfy.ai
 - Download: https://github.com/feature1-ai/mvpfy.ai/releases/latest
 

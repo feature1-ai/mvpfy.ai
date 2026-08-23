@@ -7,8 +7,10 @@ in plain language — see it running locally, then ship it as a pull request. Li
 Replit, but on your **existing codebase**, on your **own machine**, with your team's PR
 review as the exit. Live preview of the running app and a full VS Code editor built in. And
 you can **plan any feature**: mvpfy writes a minimal PRD in the
-[Feature1](https://feature1.ai) style, breaks it into user stories, and executes them one by
-one — each story lands as a pull request you test before calling it done.
+[Feature1](https://feature1.ai) style for you to review and agree, then breaks it into user
+stories on the feature's own board and executes them one by one — each story lands as a pull
+request you test before calling it done. Plan as many features as you like, each with its
+own board, even while another feature is still being built.
 
 mvpfy is a minimal Electron desktop app for non-technical product managers. It is a **thin
 wrapper over [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and
@@ -108,13 +110,17 @@ npm run package    # package the macOS app into release/
    studies your actual codebase and writes a **minimal PRD in the Feature1 style** —
    problem, solution, target users, success metrics, scope in/out, flows, requirements —
    plus **user stories** written as user outcomes, each with acceptance criteria and an
-   estimate, every spec item covered by a story.
-5. **Execute the stories** — the stories live on a board: **To do → Coding → Testing →
-   Done**. Click *Implement* and the agent moves the story to Coding, implements every
-   acceptance criterion with tests on its own branch, and opens a pull request — the story
-   arrives in Testing with the PR attached. **You** test it in the live app and drag it to
-   Done, or send it back with feedback in plain language and the agent re-runs with your
-   notes. The agent never moves a story to Done — shipping is a human decision.
+   estimate, every spec item covered by a story. The **PRD is shown first**: refine it in
+   plain language until it reads right, and the story board opens once you agree. Plan as
+   many features as you like — each gets its own board, and you can plan the next feature
+   while another one's stories are still being implemented.
+5. **Execute the stories** — each feature's stories live on its own board: **To do →
+   Coding → Testing → Done**. Click *Implement* and the agent moves the story to Coding,
+   implements every acceptance criterion with tests on its own branch, and opens a pull
+   request — the story arrives in Testing with the PR attached. **You** test it in the
+   live app and drag it to Done, or send it back with feedback in plain language and the
+   agent re-runs with your notes. The agent never moves a story to Done — shipping is a
+   human decision.
 
 ## Architecture
 

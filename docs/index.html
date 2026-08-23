@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mvpfy — The open-source IDE for product managers</title>
-<meta name="description" content="Run your company's existing product locally and ship changes as pull requests. mvpfy is a free, open-source PM IDE: describe a change in plain language, see it running, ship it for engineering review. Like Lovable — for the product you already have.">
+<title>mvpfy by feature1 — The open-source IDE for product managers</title>
+<meta name="description" content="Run your company's existing product locally and ship changes as pull requests. mvpfy by feature1 is a free, open-source PM IDE: describe a change or plan a whole feature — PRD, user stories, a board per feature — and ship every story as a PR. Like Lovable, for the product you already have.">
 <link rel="canonical" href="https://mvpfy.ai/">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.png">
@@ -12,13 +12,13 @@
 <!-- Open Graph / Twitter -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="mvpfy by feature1">
-<meta property="og:title" content="mvpfy — The open-source IDE for product managers">
-<meta property="og:description" content="Describe a change to your existing product, see it running locally, ship it as a pull request. Free, MIT-licensed, bring your own AI agent.">
+<meta property="og:title" content="mvpfy by feature1 — The open-source IDE for product managers">
+<meta property="og:description" content="Describe a change to your existing product, see it running locally, ship it as a pull request — or plan whole features: PRD, user stories, a board per feature. Free, MIT-licensed, bring your own AI agent.">
 <meta property="og:url" content="https://mvpfy.ai/">
 <meta property="og:image" content="https://mvpfy.ai/icon.png">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="mvpfy — The open-source IDE for product managers">
-<meta name="twitter:description" content="Describe a change to your existing product, see it running locally, ship it as a pull request. Free, MIT-licensed, bring your own AI agent.">
+<meta name="twitter:title" content="mvpfy by feature1 — The open-source IDE for product managers">
+<meta name="twitter:description" content="Describe a change to your existing product, see it running locally, ship it as a pull request — or plan whole features: PRD, user stories, a board per feature. Free, MIT-licensed, bring your own AI agent.">
 <meta name="twitter:image" content="https://mvpfy.ai/icon.png">
 
 <!-- Structured data: SoftwareApplication -->
@@ -47,7 +47,8 @@
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    {"@type": "Question", "name": "What is mvpfy?", "acceptedAnswer": {"@type": "Answer", "text": "mvpfy is a free, open-source desktop IDE for product managers. It clones your company's existing repositories, runs the product locally in Docker with a live preview and an embedded VS Code editor, and lets you describe changes in plain language that an AI coding agent applies and ships as pull requests for your engineers to review."}},
+    {"@type": "Question", "name": "What is mvpfy?", "acceptedAnswer": {"@type": "Answer", "text": "mvpfy is a free, open-source desktop IDE for product managers, built by feature1 (feature1.ai). It clones your company's existing repositories, runs the product locally in Docker with a live preview and an embedded VS Code editor, and lets you describe changes in plain language that an AI coding agent applies and ships as pull requests for your engineers to review. You can also plan whole features: mvpfy writes a minimal PRD you review and agree, then executes its user stories from a per-feature board."}},
+    {"@type": "Question", "name": "Can mvpfy plan features and write PRDs?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Describe a feature in a sentence or two and mvpfy studies your codebase and writes a minimal PRD in the Feature1 style — problem, solution, target users, success metrics, scope, flows, requirements. You review and refine the PRD in plain language; once you agree, its user stories open on the feature's own board (To do, Coding, Testing, Done). The agent implements each story and opens a pull request; only you, after testing the story in the running app, can mark it done. You can plan several features in parallel — each gets its own board."}},
     {"@type": "Question", "name": "Is mvpfy free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. mvpfy is MIT-licensed and free. It is a thin wrapper over AI coding agents you bring yourself — Claude Code (required) and optionally Codex CLI — so agent runs use your own Anthropic or OpenAI subscription."}},
     {"@type": "Question", "name": "How is mvpfy different from Cursor or Windsurf?", "acceptedAnswer": {"@type": "Answer", "text": "Cursor and Windsurf are code-first editors that make engineers faster, one reviewed diff at a time. mvpfy is product-first: the unit of work is a change to the product, described in plain language or picked from a user story. The PM never reads a diff — the output is a running app to look at and a pull request for engineers to review."}},
     {"@type": "Question", "name": "How is mvpfy different from Lovable or Replit?", "acceptedAnswer": {"@type": "Answer", "text": "Lovable and Replit excel at building new apps in their cloud. mvpfy runs the same describe-see-ship loop on the product your company already has: your real repositories, cloned locally, running in Docker on your machine, with changes exiting through a pull request your engineers review rather than a deploy button."}},
@@ -399,10 +400,22 @@
     <div class="faq">
       <details>
         <summary>What is mvpfy?</summary>
-        <p>mvpfy is a free, open-source desktop IDE for product managers. It clones your company's
-        existing repositories, runs the product locally in Docker with a live preview and an embedded
-        VS&nbsp;Code editor, and lets you describe changes in plain language that an AI coding agent
-        applies and ships as pull requests for your engineers to review.</p>
+        <p>mvpfy is a free, open-source desktop IDE for product managers, built by
+        <a href="https://feature1.ai">feature1</a>. It clones your company's existing repositories,
+        runs the product locally in Docker with a live preview and an embedded VS&nbsp;Code editor,
+        and lets you describe changes in plain language that an AI coding agent applies and ships as
+        pull requests for your engineers to review. You can also plan whole features: mvpfy writes a
+        minimal PRD you review and agree, then executes its user stories from a per-feature board.</p>
+      </details>
+      <details>
+        <summary>Can mvpfy plan features and write PRDs?</summary>
+        <p>Yes. Describe a feature in a sentence or two and mvpfy studies your codebase and writes a
+        minimal PRD in the <a href="https://feature1.ai">Feature1</a> style — problem, solution,
+        target users, success metrics, scope, flows, requirements. You review and refine the PRD in
+        plain language; once you agree, its user stories open on the feature's own board (To&nbsp;do,
+        Coding, Testing, Done). The agent implements each story and opens a pull request; only you,
+        after testing the story in the running app, can mark it done. You can plan several features
+        in parallel — each gets its own board.</p>
       </details>
       <details>
         <summary>Is mvpfy free?</summary>

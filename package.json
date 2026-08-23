@@ -1,7 +1,7 @@
 {
   "name": "mvpfy",
-  "version": "1.0.0-beta.2",
-  "description": "The IDE for PMs — ship Feature1 user stories as pull requests with one click, powered by Claude Code and Codex CLI.",
+  "version": "1.0.0-beta.3",
+  "description": "The IDE for PMs \u2014 ship Feature1 user stories as pull requests with one click, powered by Claude Code and Codex CLI.",
   "private": true,
   "license": "MIT",
   "author": {

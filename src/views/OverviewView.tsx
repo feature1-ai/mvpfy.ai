@@ -6,7 +6,7 @@ import EnvVarsCard from './EnvVarsCard';
 interface Props {
   c: ProjectController;
   mvpfyYml: string | null;
-  onOpenTab: (tab: 'app' | 'code' | 'logs') => void;
+  onOpenTab: (tab: 'plan' | 'app' | 'code' | 'logs') => void;
 }
 
 type EnvState =
@@ -50,7 +50,6 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   const [branches, setBranches] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [askDraft, setAskDraft] = useState('');
 
   useEffect(() => {
     if (c.busy) return;
@@ -372,116 +371,62 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </>
             )}
           </section>
-          {/* Ask mvpfy — free-form change requests applied by the agent */}
+          {/* Planned work — summary of the Plan board */}
           <section className="card">
             <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
-              <span className="section-label">Ask mvpfy to change something</span>
-              <span className="hidden text-[11px] text-faint min-[1000px]:inline">
-                about a minute, on your agent subscription
-              </span>
-            </div>
-            <div className="flex flex-col gap-2.5 px-5 py-4">
-              <textarea
-                value={askDraft}
-                onChange={(e) => setAskDraft(e.target.value)}
-                placeholder={
-                  'Describe the change in plain language, e.g.\n' +
-                  'Add an environment variable STRIPE_API_KEY=sk_test_123 to the backend\n' +
-                  'Move the app to port 5000 · Turn on email sending using Mailhog'
-                }
-                rows={3}
-                disabled={c.busy}
-                className="w-full resize-y rounded-lg border border-line bg-surface px-3.5 py-3 text-[13px] leading-relaxed outline-none placeholder:text-faint focus:border-muted"
-              />
-              <div className="flex items-center">
-                <span className="text-[11.5px] text-muted">
-                  mvpfy edits the run config for you — secrets go into the local env file, never
-                  into code.
+              <span className="section-label">Planned work</span>
+              {c.plan && (
+                <span className="text-[11px] text-faint">
+                  {c.plan.stories.filter((s) => s.lane === 'done').length}/{c.plan.stories.length}{' '}
+                  stories done
                 </span>
-                <button
-                  onClick={() => {
-                    const text = askDraft;
-                    setAskDraft('');
-                    void c.instruct(text);
-                  }}
-                  disabled={c.busy || !askDraft.trim()}
-                  className="btn-primary ml-auto h-[34px] px-3.5 disabled:opacity-50"
-                >
-                  Make the change
-                </button>
-              </div>
-            </div>
-          </section>
-
-          {/* Feature1 stories card */}
-          <section className="card">
-            <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
-              <span className="section-label">Feature1 stories</span>
-              <span className="hidden text-[11px] text-faint min-[1000px]:inline">
-                a few minutes per story, on your agent subscription
-              </span>
-              {project.repos.length > 1 && (
-                <select
-                  value={c.targetRepoDir}
-                  onChange={(e) => c.setTargetRepoDir(e.target.value)}
-                  className="h-6 rounded border border-line bg-surface px-1 text-[11px] text-body"
-                >
-                  {project.repos.map((r) => (
-                    <option key={r.dir} value={r.dir}>
-                      implement in {r.dir.split('/').pop()}
-                    </option>
-                  ))}
-                </select>
               )}
               <button
-                onClick={() => void c.refreshStories()}
-                disabled={c.loadingStories}
-                className="ml-auto text-xs text-go hover:text-go-hover hover:underline disabled:opacity-50"
+                onClick={() => onOpenTab('plan')}
+                className="ml-auto text-xs text-go hover:text-go-hover hover:underline"
               >
-                {c.loadingStories ? 'Loading…' : 'Refresh'}
+                {c.plan ? 'Open board' : 'Plan a feature'}
               </button>
             </div>
-            {c.storiesError && (
-              <p className="px-5 pt-3 text-[13px] text-danger">{c.storiesError}</p>
-            )}
-            {c.stories.length === 0 && !c.storiesError ? (
+            {!c.plan ? (
               <p className="px-5 py-5 text-[13px] text-muted">
-                {c.tenantConnected
-                  ? 'Click refresh to load stories from Feature1.'
-                  : 'Connect Feature1 in Settings to turn stories into pull requests.'}
+                Nothing planned yet. Describe a feature in the Plan tab and mvpfy writes the spec,
+                breaks it into stories, and runs them one by one.
               </p>
             ) : (
-              <div className="divide-y divide-line-subtle px-5">
-                {c.stories.map((story) => (
-                  <div key={story.id} className="flex items-center gap-3 py-2.5">
-                    <span className="font-mono text-xs text-muted">{story.code}</span>
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{story.title}</span>
-                    <span className="rounded-full bg-paper px-2 py-0.5 text-[11px] text-muted">
-                      {story.status}
-                    </span>
-                    <button
-                      onClick={() => void c.implement(story)}
-                      disabled={c.busy}
-                      className="btn-primary h-7 px-3 text-xs disabled:opacity-50"
-                    >
-                      Implement
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <>
+                <p className="px-5 pt-3 text-[13px] font-medium">{c.plan.spec.feature}</p>
+                <div className="divide-y divide-line-subtle px-5 pb-2">
+                  {c.plan.stories.map((story) => (
+                    <div key={story.code} className="flex items-center gap-3 py-2.5">
+                      <span className="font-mono text-xs text-muted">{story.code}</span>
+                      <span className="min-w-0 flex-1 truncate text-[13px]">{story.title}</span>
+                      {story.prUrl && (
+                        <button
+                          onClick={() => c.openExternal(story.prUrl!)}
+                          className="font-mono text-[10.5px] text-go hover:underline"
+                        >
+                          PR ↗
+                        </button>
+                      )}
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] ${
+                          story.lane === 'done'
+                            ? 'bg-go-bg text-go'
+                            : story.lane === 'testing'
+                              ? 'bg-warn-bg text-warn-text'
+                              : story.lane === 'coding'
+                                ? 'bg-paper text-body'
+                                : 'bg-paper text-muted'
+                        }`}
+                      >
+                        {story.lane === 'todo' ? 'to do' : story.lane}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
-            {c.lastShipPrUrl && (
-              <div className="mx-5 mb-4 mt-2 rounded-md border border-go-border bg-go-bgalt px-3 py-2 text-[13px]">
-                Pull request ready:{' '}
-                <button
-                  onClick={() => c.openExternal(c.lastShipPrUrl!)}
-                  className="font-medium text-go underline hover:text-go-hover"
-                >
-                  {c.lastShipPrUrl}
-                </button>
-              </div>
-            )}
-            {c.stories.length > 0 && <div className="pb-2" />}
           </section>
         </div>
 

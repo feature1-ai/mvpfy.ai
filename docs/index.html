@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mvpfy — The open-source IDE for product managers</title>
+<meta name="description" content="Run your company's existing product locally and ship changes as pull requests. mvpfy is a free, open-source PM IDE: describe a change in plain language, see it running, ship it for engineering review. Like Lovable — for the product you already have.">
+<link rel="canonical" href="https://feature1-ai.github.io/mvpfy.ai/">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.png">
+
+<!-- Open Graph / Twitter -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="mvpfy by feature1">
+<meta property="og:title" content="mvpfy — The open-source IDE for product managers">
+<meta property="og:description" content="Describe a change to your existing product, see it running locally, ship it as a pull request. Free, MIT-licensed, bring your own AI agent.">
+<meta property="og:url" content="https://feature1-ai.github.io/mvpfy.ai/">
+<meta property="og:image" content="https://feature1-ai.github.io/mvpfy.ai/icon.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="mvpfy — The open-source IDE for product managers">
+<meta name="twitter:description" content="Describe a change to your existing product, see it running locally, ship it as a pull request. Free, MIT-licensed, bring your own AI agent.">
+<meta name="twitter:image" content="https://feature1-ai.github.io/mvpfy.ai/icon.png">
+
+<!-- Structured data: SoftwareApplication -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "mvpfy",
+  "alternateName": "mvpfy by feature1",
+  "description": "mvpfy is a free, open-source desktop IDE for product managers. It clones a company's existing repositories, runs the product locally in Docker with a live preview and an embedded VS Code editor, and lets a PM describe changes in plain language that an AI coding agent applies and ships as pull requests.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Windows, Linux",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "license": "https://github.com/feature1-ai/mvpfy.ai/blob/main/LICENSE",
+  "downloadUrl": "https://github.com/feature1-ai/mvpfy.ai/releases/latest",
+  "softwareHelp": "https://github.com/feature1-ai/mvpfy.ai#readme",
+  "url": "https://feature1-ai.github.io/mvpfy.ai/",
+  "sameAs": ["https://github.com/feature1-ai/mvpfy.ai"],
+  "author": { "@type": "Organization", "name": "feature1", "url": "https://feature1.ai" }
+}
+</script>
+
+<!-- Structured data: FAQ -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "What is mvpfy?", "acceptedAnswer": {"@type": "Answer", "text": "mvpfy is a free, open-source desktop IDE for product managers. It clones your company's existing repositories, runs the product locally in Docker with a live preview and an embedded VS Code editor, and lets you describe changes in plain language that an AI coding agent applies and ships as pull requests for your engineers to review."}},
+    {"@type": "Question", "name": "Is mvpfy free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. mvpfy is MIT-licensed and free. It is a thin wrapper over AI coding agents you bring yourself — Claude Code (required) and optionally Codex CLI — so agent runs use your own Anthropic or OpenAI subscription."}},
+    {"@type": "Question", "name": "How is mvpfy different from Cursor or Windsurf?", "acceptedAnswer": {"@type": "Answer", "text": "Cursor and Windsurf are code-first editors that make engineers faster, one reviewed diff at a time. mvpfy is product-first: the unit of work is a change to the product, described in plain language or picked from a user story. The PM never reads a diff — the output is a running app to look at and a pull request for engineers to review."}},
+    {"@type": "Question", "name": "How is mvpfy different from Lovable or Replit?", "acceptedAnswer": {"@type": "Answer", "text": "Lovable and Replit excel at building new apps in their cloud. mvpfy runs the same describe-see-ship loop on the product your company already has: your real repositories, cloned locally, running in Docker on your machine, with changes exiting through a pull request your engineers review rather than a deploy button."}},
+    {"@type": "Question", "name": "Does my code leave my machine?", "acceptedAnswer": {"@type": "Answer", "text": "The product runs entirely locally: repositories are cloned to your machine and the app runs in local Docker containers. When you ask the AI agent to make a change, the agent sends relevant code to its model API (Anthropic or OpenAI) under your own account — the same as using Claude Code or Codex directly. mvpfy itself has no server and collects nothing."}},
+    {"@type": "Question", "name": "What do I need to run mvpfy?", "acceptedAnswer": {"@type": "Answer", "text": "git, the GitHub CLI (gh), Docker Desktop, and Claude Code, signed in. Codex CLI is optional and only needed if you select it as your agent. mvpfy checks all of this on first launch and guides sign-in from Settings. macOS is the primary platform; Linux is supported and Windows is an experimental beta."}},
+    {"@type": "Question", "name": "Can non-technical product managers use mvpfy?", "acceptedAnswer": {"@type": "Answer", "text": "The core loop is built for non-engineers: one-click bootstrap, a running app with demo logins surfaced, plain-language change requests, and self-healing runs that explain failures in plain English and fix them. The initial tool setup (installing git, Docker, and Claude Code) still benefits from an engineer's help — after that, the day-to-day loop needs no terminal."}},
+    {"@type": "Question", "name": "Does mvpfy work with my existing repositories?", "acceptedAnswer": {"@type": "Answer", "text": "Yes — that is the point. Add one or more GitHub or GitLab URLs, or a local folder. Multi-repo products (frontend + backend + services) are cloned into one workspace and run together with a single generated Docker Compose file. Missing infrastructure is filled in with open-source stand-ins like Postgres, Redis, and MailHog."}}
+  ]
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper:#F7F5F1; --surface:#fff; --sunken:#FAF8F4; --hover:#EFEBE3;
+    --line:#E4E0D8; --line2:#EFEBE3;
+    --ink:#1B1A17; --ink2:#33302B; --body:#57534C; --muted:#8A857C; --faint:#A8A296;
+    --idle:#C9C3B8;
+    --go:#1F7A4C; --go-h:#155B38; --go-bg:#F2F9F5; --go-bg2:#E9F4EE; --go-line:#CBE5D8;
+    --red:#A32B22;
+    --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:var(--go);text-decoration:none}
+  a:hover{color:var(--go-h);text-decoration:underline}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+  .mono{font-family:var(--mono)}
+  p{text-wrap:pretty}
+
+  /* ── Nav ── */
+  .nav{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+  .nav .wrap{display:flex;align-items:center;gap:12px;height:56px}
+  .nav img{height:22px;display:block}
+  .nav .tag{font-size:11.5px;letter-spacing:.02em;color:var(--muted);padding-top:4px}
+  .nav .links{margin-left:auto;display:flex;align-items:center;gap:18px;font-size:13px}
+  .nav .links a{color:var(--body)}
+  .nav .links a:hover{color:var(--ink);text-decoration:none}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:6px;
+       font-size:13.5px;font-weight:500;padding:0 16px;height:36px;cursor:pointer;border:1px solid transparent;white-space:nowrap}
+  .btn:hover{text-decoration:none}
+  .btn-ink{background:var(--ink);color:#fff!important}
+  .btn-ink:hover{background:var(--ink2)}
+  .btn-line{background:var(--surface);border-color:var(--line);color:var(--body)!important}
+  .btn-line:hover{background:var(--paper);color:var(--ink)!important}
+  .btn-go{background:var(--go);color:#fff!important}
+  .btn-go:hover{background:var(--go-h)}
+  .btn-lg{height:42px;padding:0 20px;font-size:14.5px}
+
+  /* ── Hero ── */
+  .hero{padding:88px 0 40px;text-align:center}
+  .hero h1{font-size:46px;font-weight:600;letter-spacing:-.02em;line-height:1.12}
+  .hero .sub{max-width:640px;margin:20px auto 0;font-size:16.5px;color:var(--body)}
+  .hero .sub strong{color:var(--ink);font-weight:600}
+  .cta{display:flex;justify-content:center;gap:12px;margin-top:30px;flex-wrap:wrap}
+  .hero .fine{margin-top:16px;font-size:12.5px;color:var(--muted)}
+  .hero .fine .mono{font-size:11.5px}
+
+  /* ── App mock ── */
+  .mockwrap{padding:44px 0 8px}
+  .mock{max-width:900px;margin:0 auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;
+        box-shadow:0 24px 60px rgba(27,26,23,.08);overflow:hidden;text-align:left;font-size:13px}
+  .mock-top{display:flex;align-items:center;gap:14px;height:44px;padding:0 16px;border-bottom:1px solid var(--line)}
+  .dots span{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--line);margin-right:6px}
+  .mock-top img{height:15px}
+  .mock-proj{display:flex;align-items:center;gap:7px;background:var(--paper);border:1px solid var(--line);
+             border-radius:6px;height:26px;padding:0 9px;font-size:12px;font-weight:500}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--go);display:inline-block}
+  .dot.pulse{animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.dot.pulse{animation:none}}
+  .mock-tabs{display:flex;gap:2px;padding:0 16px;border-bottom:1px solid var(--line);height:38px;align-items:stretch}
+  .mock-tabs span{display:flex;align-items:center;gap:6px;padding:0 12px;font-size:12px;color:var(--muted);border-bottom:2px solid transparent}
+  .mock-tabs .on{color:var(--ink);font-weight:600;border-bottom-color:var(--ink)}
+  .mock-tabs .hint{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .mock-body{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:14px;padding:18px}
+  .m-card{background:var(--surface);border:1px solid var(--line);border-radius:9px;overflow:hidden;min-width:0}
+  .m-strip{display:flex;gap:12px;padding:14px 16px;background:var(--go-bg);align-items:flex-start}
+  .m-strip .dot{width:9px;height:9px;margin-top:4px;flex-shrink:0}
+  .m-strip h3{font-size:13.5px;font-weight:600}
+  .m-strip p{font-size:11.5px;color:var(--body);line-height:1.45;margin-top:2px}
+  .m-open{margin-left:auto;flex-shrink:0;background:var(--go);color:#fff;border-radius:6px;font-size:11.5px;font-weight:500;
+          padding:7px 11px;white-space:nowrap}
+  .m-ports{display:flex;gap:22px;border-top:1px solid var(--line);padding:10px 16px}
+  .m-ports b{display:block;font-size:8.5px;font-weight:600;letter-spacing:.09em;color:var(--muted);text-transform:uppercase}
+  .m-ports span{font-family:var(--mono);font-size:11.5px}
+  .m-ask{padding:12px 16px}
+  .m-ask b{font-size:9px;font-weight:600;letter-spacing:.09em;color:var(--muted);text-transform:uppercase}
+  .m-ask .box{margin-top:8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);
+              padding:9px 11px;font-size:12px;color:var(--body)}
+  .m-ask .box em{font-style:normal;color:var(--ink)}
+  .caret{display:inline-block;width:1.5px;height:13px;background:var(--ink);vertical-align:-2px;margin-left:1px;
+         animation:blink 1.1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .m-side{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .m-login{padding:12px 14px}
+  .m-login b{font-size:9px;font-weight:600;letter-spacing:.09em;color:var(--muted);text-transform:uppercase}
+  .m-login .row{display:flex;gap:8px;margin-top:7px;font-size:11px;align-items:center}
+  .m-login .k{color:var(--muted);width:54px;flex-shrink:0}
+  .m-login .v{font-family:var(--mono);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .m-login .c{margin-left:auto;flex-shrink:0;font-size:9.5px;color:var(--body);border:1px solid var(--line);
+              background:var(--paper);border-radius:4px;padding:2px 6px}
+  .m-pr{padding:11px 14px;background:var(--go-bg2);border-color:var(--go-line);font-size:11.5px}
+  .m-pr .mono{font-size:10.5px;color:var(--go);display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* ── Sections ── */
+  section{padding:72px 0}
+  .kicker{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+  h2{font-size:28px;font-weight:600;letter-spacing:-.02em;margin-top:8px}
+  .lede{max-width:620px;color:var(--body);margin-top:12px}
+
+  /* How it works */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:36px}
+  .step{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px}
+  .step .n{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .step h3{font-size:15.5px;font-weight:600;margin:10px 0 6px}
+  .step p{font-size:13.5px;color:var(--body)}
+  .step .mono{font-size:12px}
+
+  /* Features */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:36px}
+  .feat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 22px}
+  .feat h3{font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .feat h3 .dot{flex-shrink:0}
+  .feat p{font-size:13px;color:var(--body);margin-top:7px}
+
+  /* Comparison */
+  .tablewrap{margin-top:36px;overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
+  th,td{text-align:left;padding:13px 18px;border-bottom:1px solid var(--line2);vertical-align:top}
+  tr:last-child th,tr:last-child td{border-bottom:none}
+  thead th{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+           border-bottom:1px solid var(--line);background:var(--sunken)}
+  tbody th{font-weight:500;color:var(--muted);font-size:12.5px;white-space:nowrap}
+  td.hl{background:var(--go-bg);font-weight:500}
+  .tablenote{font-size:12.5px;color:var(--muted);margin-top:12px}
+
+  /* FAQ */
+  .faq{max-width:760px}
+  .faq details{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-top:12px;
+               padding:0 22px;overflow:hidden}
+  .faq summary{cursor:pointer;font-size:15px;font-weight:500;padding:16px 0;list-style:none;display:flex;align-items:center}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::after{content:"+";margin-left:auto;color:var(--muted);font-size:18px;font-weight:400}
+  .faq details[open] summary::after{content:"–"}
+  .faq details p{font-size:14px;color:var(--body);padding-bottom:18px}
+  .faq details p+p{margin-top:8px}
+
+  /* Open source strip */
+  .oss{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .oss .inner{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:48px;align-items:center}
+  .oss p{color:var(--body);margin-top:12px;font-size:14.5px}
+  .clone{background:var(--sunken);border:1px solid var(--line2);border-radius:9px;padding:16px 18px;
+         font-family:var(--mono);font-size:12.5px;line-height:1.9;color:var(--ink2);overflow-x:auto}
+  .clone .c{color:var(--faint)}
+
+  /* Final CTA + footer */
+  .fin{text-align:center;padding:84px 0}
+  .fin h2{font-size:32px}
+  .fin p{color:var(--body);margin-top:12px}
+  footer{border-top:1px solid var(--line);padding:26px 0;font-size:12.5px;color:var(--muted)}
+  footer .wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+  footer a{color:var(--muted)}
+  footer a:hover{color:var(--ink);text-decoration:none}
+  footer .right{margin-left:auto;display:flex;gap:20px}
+
+  @media(max-width:900px){
+    .hero h1{font-size:34px}
+    .steps,.grid{grid-template-columns:1fr}
+    .mock-body{grid-template-columns:1fr}
+    .oss .inner{grid-template-columns:1fr;gap:28px}
+    .nav .tag{display:none}
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="Main">
+  <div class="wrap">
+    <a href="#" aria-label="mvpfy home"><img src="logo.svg" alt="#mvpFY logo"></a>
+    <span class="tag">the IDE for PMs</span>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#compare">Compare</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/feature1-ai/mvpfy.ai">GitHub</a>
+      <a class="btn btn-ink" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <header class="hero wrap">
+    <h1>The IDE for product managers.</h1>
+    <p class="sub"><strong>mvpfy</strong> is a free, open-source desktop app that runs your company's
+    <strong>existing product</strong> locally — describe a change in plain language, watch it live,
+    and ship it as a <strong>pull request</strong> your engineers review. Like Lovable or Replit,
+    but for the product you already have, on your own machine.</p>
+    <div class="cta">
+      <a class="btn btn-ink btn-lg" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download for macOS&nbsp;·&nbsp;beta</a>
+      <a class="btn btn-line btn-lg" href="https://github.com/feature1-ai/mvpfy.ai">View on GitHub</a>
+    </div>
+    <p class="fine">MIT-licensed · Windows &amp; Linux builds on the <a href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">releases page</a> ·
+    bring your own agent (<span class="mono">claude</span>, optionally <span class="mono">codex</span>)</p>
+  </header>
+
+  <div class="mockwrap wrap" aria-hidden="true">
+    <div class="mock">
+      <div class="mock-top">
+        <span class="dots"><span></span><span></span><span></span></span>
+        <img src="logo.svg" alt="">
+        <span class="mock-proj"><span class="dot"></span>billing-portal <span style="color:var(--muted);font-size:9px">▾</span></span>
+      </div>
+      <div class="mock-tabs">
+        <span class="on">Overview</span>
+        <span>App <span class="hint">:4101</span></span>
+        <span>Code</span>
+        <span>Logs</span>
+      </div>
+      <div class="mock-body">
+        <div>
+          <div class="m-card">
+            <div class="m-strip">
+              <span class="dot pulse"></span>
+              <div>
+                <h3>App is up</h3>
+                <p>The environment is running. Changes you make reload automatically.</p>
+              </div>
+              <span class="m-open">Open localhost:4101 ↗</span>
+            </div>
+            <div class="m-ports">
+              <div><b>App</b><span>localhost:4101</span></div>
+              <div><b>API health</b><span>localhost:4102</span></div>
+              <div><b>Mail / OTP</b><span>localhost:4103</span></div>
+            </div>
+          </div>
+          <div class="m-card" style="margin-top:14px">
+            <div class="m-ask">
+              <b>Ask mvpfy to change something</b>
+              <div class="box"><em>Add a “Download invoice as PDF” button to the billing page</em><span class="caret"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="m-side">
+          <div class="m-card m-login">
+            <b>Demo login</b>
+            <div class="row"><span class="k">email</span><span class="v">demo@example.com</span><span class="c">Copy</span></div>
+            <div class="row"><span class="k">password</span><span class="v">DemoPass123!</span><span class="c">Copy</span></div>
+          </div>
+          <div class="m-card m-pr">
+            Pull request ready
+            <span class="mono">github.com/acme/billing/pull/87</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section id="how" class="wrap">
+    <span class="kicker">How it works</span>
+    <h2>Describe → see it running → ship the PR</h2>
+    <p class="lede">mvpfy manufactures the dev environment engineers take for granted, then hands
+    the change loop to the person who owns the product.</p>
+    <div class="steps">
+      <div class="step">
+        <span class="n">01</span>
+        <h3>Add your repos</h3>
+        <p>Paste GitHub/GitLab URLs or a local folder — multi-repo products clone into one workspace.
+        One click bootstraps everything into Docker: run config, a live <span class="mono">.env</span>,
+        demo accounts, and open-source stand-ins (Postgres, Redis, MailHog) for anything missing.</p>
+      </div>
+      <div class="step">
+        <span class="n">02</span>
+        <h3>See it running</h3>
+        <p>The real product, live at <span class="mono">localhost</span>, inside the app — with demo
+        logins surfaced, editable environment variables, streaming container logs, and a full
+        VS&nbsp;Code editor one tab away. If a run fails, mvpfy diagnoses it in plain English and fixes it.</p>
+      </div>
+      <div class="step">
+        <span class="n">03</span>
+        <h3>Ship as a pull request</h3>
+        <p>Type a change in plain language — or implement a Feature1 user story with one click.
+        The agent writes the code, runs the tests, and opens a PR on your real remote.
+        Engineers review; nothing deploys behind their backs.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <span class="kicker">What's inside</span>
+    <h2>Everything between an idea and a reviewed PR</h2>
+    <div class="grid">
+      <div class="feat"><h3><span class="dot"></span>Live preview + VS Code built in</h3>
+        <p>The running app and an embedded code-server editor live in tabs next to the overview —
+        one window from idea to code.</p></div>
+      <div class="feat"><h3><span class="dot"></span>Plain-language changes</h3>
+        <p>“Add an env var”, “move the app to port 5000”, “add a PDF export button” — the agent applies
+        the smallest safe change and reports back in one sentence.</p></div>
+      <div class="feat"><h3><span class="dot"></span>Self-healing runs</h3>
+        <p>When a bootstrap or start fails, mvpfy reads the log, explains what broke in plain English,
+        fixes the workspace, and offers one-click retry.</p></div>
+      <div class="feat"><h3><span class="dot"></span>Demo logins &amp; env editor</h3>
+        <p>Credentials to get into the app and editable environment variables sit on the overview —
+        save, restart, applied.</p></div>
+      <div class="feat"><h3><span class="dot"></span>Feature1 stories → PRs</h3>
+        <p>Connected to <a href="https://feature1.ai">Feature1</a>, every user story gets an Implement
+        button: acceptance criteria in, tested pull request out, backlog updated.</p></div>
+      <div class="feat"><h3><span class="dot"></span>Local, private, MIT</h3>
+        <p>Repos clone to your machine, the product runs in local Docker, and mvpfy has no server.
+        Agents run under your own Claude&nbsp;Code or Codex account.</p></div>
+    </div>
+  </section>
+
+  <section id="compare" class="wrap">
+    <span class="kicker">Positioning</span>
+    <h2>mvpfy vs Cursor vs Lovable &amp; Replit</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col"></th><th scope="col">mvpfy</th><th scope="col">Cursor / Windsurf</th><th scope="col">Lovable / Replit</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Built for</th><td class="hl">Product managers</td><td>Engineers</td><td>Builders of new apps</td></tr>
+          <tr><th scope="row">Unit of work</th><td class="hl">A product change or user story</td><td>A file / a diff</td><td>A prompt</td></tr>
+          <tr><th scope="row">Codebase</th><td class="hl">Your existing product</td><td>Your existing product</td><td>New, generated</td></tr>
+          <tr><th scope="row">Where it runs</th><td class="hl">Locally, in Docker</td><td>Locally</td><td>Their cloud</td></tr>
+          <tr><th scope="row">Output</th><td class="hl">A running app + a pull request</td><td>Reviewed diffs</td><td>A deployed app</td></tr>
+          <tr><th scope="row">Who reviews</th><td class="hl">Your engineers, via the PR</td><td>The engineer, inline</td><td>Nobody / you</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="tablenote">In short: Cursor makes engineers faster. Lovable builds new things.
+    mvpfy makes PMs shippers on the product that already exists.</p>
+  </section>
+
+  <section id="faq" class="wrap">
+    <span class="kicker">FAQ</span>
+    <h2>Questions, answered plainly</h2>
+    <div class="faq">
+      <details>
+        <summary>What is mvpfy?</summary>
+        <p>mvpfy is a free, open-source desktop IDE for product managers. It clones your company's
+        existing repositories, runs the product locally in Docker with a live preview and an embedded
+        VS&nbsp;Code editor, and lets you describe changes in plain language that an AI coding agent
+        applies and ships as pull requests for your engineers to review.</p>
+      </details>
+      <details>
+        <summary>Is mvpfy free?</summary>
+        <p>Yes. mvpfy is MIT-licensed and free. It is a thin wrapper over AI coding agents you bring
+        yourself — Claude Code (required) and optionally Codex CLI — so agent runs use your own
+        Anthropic or OpenAI subscription.</p>
+      </details>
+      <details>
+        <summary>How is mvpfy different from Cursor or Windsurf?</summary>
+        <p>Cursor and Windsurf are code-first editors that make engineers faster, one reviewed diff at
+        a time. mvpfy is product-first: the unit of work is a change to the product, described in plain
+        language or picked from a user story. The PM never reads a diff — the output is a running app
+        to look at and a pull request for engineers to review.</p>
+      </details>
+      <details>
+        <summary>How is mvpfy different from Lovable or Replit?</summary>
+        <p>Lovable and Replit excel at building new apps in their cloud. mvpfy runs the same
+        describe-see-ship loop on the product your company already has: your real repositories, cloned
+        locally, running in Docker on your machine, with changes exiting through a pull request your
+        engineers review rather than a deploy button.</p>
+      </details>
+      <details>
+        <summary>Does my code leave my machine?</summary>
+        <p>The product runs entirely locally: repositories are cloned to your machine and the app runs
+        in local Docker containers. When you ask the AI agent to make a change, the agent sends
+        relevant code to its model API (Anthropic or OpenAI) under your own account — the same as using
+        Claude Code or Codex directly. mvpfy itself has no server and collects nothing.</p>
+      </details>
+      <details>
+        <summary>What do I need to run mvpfy?</summary>
+        <p><span class="mono">git</span>, the GitHub CLI (<span class="mono">gh</span>), Docker Desktop,
+        and Claude Code, signed in. Codex CLI is optional and only needed if you select it as your
+        agent. mvpfy checks all of this on first launch and guides sign-in from Settings. macOS is the
+        primary platform; Linux is supported and Windows is an experimental beta.</p>
+      </details>
+      <details>
+        <summary>Can non-technical product managers use mvpfy?</summary>
+        <p>The core loop is built for non-engineers: one-click bootstrap, a running app with demo
+        logins surfaced, plain-language change requests, and self-healing runs that explain failures in
+        plain English and fix them. The initial tool setup (installing git, Docker, and Claude Code)
+        still benefits from an engineer's help — after that, the day-to-day loop needs no terminal.</p>
+      </details>
+      <details>
+        <summary>Does mvpfy work with my existing repositories?</summary>
+        <p>Yes — that is the point. Add one or more GitHub or GitLab URLs, or a local folder.
+        Multi-repo products (frontend + backend + services) are cloned into one workspace and run
+        together with a single generated Docker Compose file. Missing infrastructure is filled in with
+        open-source stand-ins like Postgres, Redis, and MailHog.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="oss">
+    <div class="wrap inner">
+      <div>
+        <span class="kicker">Open source</span>
+        <h2>Built in the open — and built the way it works</h2>
+        <p>mvpfy is MIT-licensed, with CI, tests, and a documented architecture. It was built the way
+        mvpfy itself works: a product owner directing coding agents. The repo is the demo.
+        Issues and pull requests welcome — from humans and agents alike.</p>
+        <p style="margin-top:16px">
+          <a class="btn btn-line" href="https://github.com/feature1-ai/mvpfy.ai">Star on GitHub</a>
+          &nbsp;
+          <a class="btn btn-line" href="https://github.com/feature1-ai/mvpfy.ai/blob/main/CONTRIBUTING.md">Contributing guide</a>
+        </p>
+      </div>
+      <div class="clone" aria-label="Run from source">
+        <span class="c"># run from source</span><br>
+        git clone https://github.com/feature1-ai/mvpfy.ai.git<br>
+        cd mvpfy.ai &amp;&amp; npm install<br>
+        npm run dev
+      </div>
+    </div>
+  </section>
+
+  <section class="fin wrap">
+    <h2>Ship your next change yourself.</h2>
+    <p>Free, open source, and local. Your engineers still get the last word — in the PR.</p>
+    <div class="cta">
+      <a class="btn btn-go btn-lg" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download mvpfy · beta</a>
+      <a class="btn btn-line btn-lg" href="https://github.com/feature1-ai/mvpfy.ai">View source</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>mvpfy by <a href="https://feature1.ai">feature1</a></span>
+    <span>MIT license</span>
+    <div class="right">
+      <a href="https://github.com/feature1-ai/mvpfy.ai">GitHub</a>
+      <a href="https://github.com/feature1-ai/mvpfy.ai/releases">Releases</a>
+      <a href="https://github.com/feature1-ai/mvpfy.ai#readme">Docs</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

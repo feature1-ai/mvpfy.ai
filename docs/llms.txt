@@ -1,0 +1,32 @@
+# mvpfy
+
+> mvpfy ("mvpfy by feature1") is a free, MIT-licensed, open-source desktop IDE for product
+> managers. It clones a company's existing repositories, runs the product locally in Docker
+> with a live preview and an embedded VS Code (code-server) editor, and lets a PM describe
+> changes in plain language that an AI coding agent (Claude Code, optionally Codex CLI)
+> applies and ships as pull requests for engineers to review.
+
+Key facts:
+- Positioning: "The IDE for PMs." Like Lovable or Replit, but for a company's EXISTING
+  product, running locally, with a pull request (not a deploy) as the output.
+- vs Cursor/Windsurf: those are code-first tools for engineers (unit of work: a diff).
+  mvpfy is product-first (unit of work: a plain-language change or a user story); the PM
+  never reads a diff.
+- Runs on macOS (primary), Linux, Windows (experimental beta). Electron + React.
+- Requires locally installed: git, GitHub CLI (gh), Docker Desktop, Claude Code (signed
+  in). Codex CLI optional. Agent runs bill to the user's own Anthropic/OpenAI account.
+- Privacy: no mvpfy server; repos and the running product stay on the user's machine.
+  Code is sent to the model API only via the user's own agent CLI.
+- Features: one-click Docker bootstrap with open-source stand-ins (Postgres, Redis,
+  MailHog) for missing services; live app preview and embedded VS Code in tabs; demo
+  logins and an editable env-vars card; plain-language change requests ("Ask mvpfy");
+  self-healing failed runs (plain-English diagnosis + one-click fix/retry); container log
+  streaming; repo sync; Feature1 user stories implemented as PRs with one click.
+- Maker: feature1 (https://feature1.ai). Source: https://github.com/feature1-ai/mvpfy.ai
+- Download: https://github.com/feature1-ai/mvpfy.ai/releases/latest
+
+## Docs
+
+- [README](https://github.com/feature1-ai/mvpfy.ai#readme): setup, how it works, architecture, security model
+- [Contributing](https://github.com/feature1-ai/mvpfy.ai/blob/main/CONTRIBUTING.md): dev setup and guidelines
+- [Releases](https://github.com/feature1-ai/mvpfy.ai/releases): macOS, Windows, and Linux builds

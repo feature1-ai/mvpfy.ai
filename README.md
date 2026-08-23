@@ -1,5 +1,7 @@
 # mvpfy by [feature1](https://feature1.ai)
 
+**[Website](https://feature1-ai.github.io/mvpfy.ai/)** · **[Download](https://github.com/feature1-ai/mvpfy.ai/releases/latest)** · MIT
+
 **The IDE for PMs.** Describe any change to your product in plain language — see it running
 locally, then ship it as a pull request. Like Lovable or Replit, but on your **existing
 codebase**, on your **own machine**, with your team's PR review as the exit. Live preview of

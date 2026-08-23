@@ -22,6 +22,8 @@ export interface Project {
   generatedFiles: string[];
   /** Port of the running code-server IDE container, if launched. */
   idePort?: number | null;
+  /** Slugs of planned features (one plan/spec file pair per slug). */
+  planSlugs?: string[];
 }
 
 export interface TenantConfig {
@@ -140,6 +142,18 @@ export const CHANGE_FILE = 'mvpfy-change.md';
 export const PLAN_FILE = 'mvpfy-plan.json';
 /** Human-readable product spec generated alongside the plan. */
 export const SPEC_FILE = 'mvpfy-spec.md';
+
+/**
+ * A project can hold one plan per feature, each in its own file pair so
+ * planning one feature never touches another's board. The empty slug is
+ * the legacy single-plan pair from before multi-feature planning.
+ */
+export function planFileFor(slug: string): string {
+  return slug ? `mvpfy-plan.${slug}.json` : PLAN_FILE;
+}
+export function specFileFor(slug: string): string {
+  return slug ? `mvpfy-spec.${slug}.md` : SPEC_FILE;
+}
 
 export interface UpdateStatus {
   kind: 'available' | 'downloaded' | 'error';

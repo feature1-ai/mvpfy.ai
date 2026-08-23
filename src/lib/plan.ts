@@ -60,6 +60,30 @@ export interface ProjectPlan {
   generatedAt: string;
   spec: PlanSpec;
   stories: PlanStory[];
+  /** The PM has reviewed the PRD and agreed — only then does the board show. */
+  approved: boolean;
+}
+
+/**
+ * Mint a short, stable slug for a new feature plan from its description,
+ * unique among the slugs already in use in the project.
+ */
+export function slugForFeature(description: string, existing: string[]): string {
+  const base =
+    description
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 4)
+      .join('-')
+      .replace(/-+/g, '-')
+      .slice(0, 40)
+      .replace(/-$/, '') || 'feature';
+  if (!existing.includes(base)) return base;
+  let n = 2;
+  while (existing.includes(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
 }
 
 /** Snap an arbitrary estimate to the allowed Fibonacci scale. */
@@ -188,7 +212,10 @@ export function parsePlan(content: string | null | undefined): ProjectPlan | nul
     .sort((a, b) => a.order - b.order);
 
   if (!spec.feature && stories.length === 0) return null;
-  return { version: 1, generatedAt: String(raw.generatedAt ?? ''), spec, stories };
+  // Work already under way implies agreement even if the flag was lost
+  // (e.g. a spec refinement rewrote the file without it).
+  const approved = raw.approved === true || stories.some((s) => s.lane !== 'todo' || s.prUrl);
+  return { version: 1, generatedAt: String(raw.generatedAt ?? ''), spec, stories, approved };
 }
 
 export function serializePlan(plan: ProjectPlan): string {

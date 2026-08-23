@@ -371,61 +371,84 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </>
             )}
           </section>
-          {/* Planned work — summary of the Plan board */}
+          {/* Planned work — summary of the Plan boards, one per feature */}
           <section className="card">
             <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
               <span className="section-label">Planned work</span>
-              {c.plan && (
+              {c.plans.length > 0 && (
                 <span className="text-[11px] text-faint">
-                  {c.plan.stories.filter((s) => s.lane === 'done').length}/{c.plan.stories.length}{' '}
-                  stories done
+                  {c.plans.length} feature{c.plans.length === 1 ? '' : 's'}
                 </span>
               )}
               <button
                 onClick={() => onOpenTab('plan')}
                 className="ml-auto text-xs text-go hover:text-go-hover hover:underline"
               >
-                {c.plan ? 'Open board' : 'Plan a feature'}
+                {c.plans.length > 0 ? 'Open board' : 'Plan a feature'}
               </button>
             </div>
-            {!c.plan ? (
+            {c.plans.length === 0 ? (
               <p className="px-5 py-5 text-[13px] text-muted">
                 Nothing planned yet. Describe a feature in the Plan tab and mvpfy writes the spec,
                 breaks it into stories, and runs them one by one.
               </p>
             ) : (
-              <>
-                <p className="px-5 pt-3 text-[13px] font-medium">{c.plan.spec.feature}</p>
-                <div className="divide-y divide-line-subtle px-5 pb-2">
-                  {c.plan.stories.map((story) => (
-                    <div key={story.code} className="flex items-center gap-3 py-2.5">
-                      <span className="font-mono text-xs text-muted">{story.code}</span>
-                      <span className="min-w-0 flex-1 truncate text-[13px]">{story.title}</span>
-                      {story.prUrl && (
-                        <button
-                          onClick={() => c.openExternal(story.prUrl!)}
-                          className="font-mono text-[10.5px] text-go hover:underline"
-                        >
-                          PR ↗
-                        </button>
-                      )}
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] ${
-                          story.lane === 'done'
-                            ? 'bg-go-bg text-go'
-                            : story.lane === 'testing'
-                              ? 'bg-warn-bg text-warn-text'
-                              : story.lane === 'coding'
-                                ? 'bg-paper text-body'
-                                : 'bg-paper text-muted'
-                        }`}
-                      >
-                        {story.lane === 'todo' ? 'to do' : story.lane}
+              c.plans.map((feature) => (
+                <div
+                  key={feature.slug}
+                  className="border-b border-line-subtle pb-2 last:border-b-0"
+                >
+                  <p className="flex items-center gap-2 px-5 pt-3 text-[13px] font-medium">
+                    {(feature.generating || feature.runningStory) && (
+                      <span className="dot-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-go" />
+                    )}
+                    {feature.plan?.spec.feature ?? feature.slug}
+                    {feature.plan && (
+                      <span className="font-mono text-[10.5px] font-normal text-faint">
+                        {feature.plan.stories.filter((s) => s.lane === 'done').length}/
+                        {feature.plan.stories.length} done
                       </span>
+                    )}
+                  </p>
+                  {feature.generating && !feature.plan ? (
+                    <p className="px-5 py-2 text-[12.5px] text-muted">Writing the spec…</p>
+                  ) : feature.plan && !feature.plan.approved ? (
+                    <p className="px-5 py-2 text-[12.5px] text-muted">
+                      PRD ready — review and agree in the Plan tab to open its board.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-line-subtle px-5">
+                      {(feature.plan?.stories ?? []).map((story) => (
+                        <div key={story.code} className="flex items-center gap-3 py-2.5">
+                          <span className="font-mono text-xs text-muted">{story.code}</span>
+                          <span className="min-w-0 flex-1 truncate text-[13px]">{story.title}</span>
+                          {story.prUrl && (
+                            <button
+                              onClick={() => c.openExternal(story.prUrl!)}
+                              className="font-mono text-[10.5px] text-go hover:underline"
+                            >
+                              PR ↗
+                            </button>
+                          )}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] ${
+                              story.lane === 'done'
+                                ? 'bg-go-bg text-go'
+                                : story.lane === 'testing'
+                                  ? 'bg-warn-bg text-warn-text'
+                                  : story.lane === 'coding'
+                                    ? 'bg-paper text-body'
+                                    : 'bg-paper text-muted'
+                            }`}
+                          >
+                            {story.lane === 'todo' ? 'to do' : story.lane}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </>
+              ))
             )}
           </section>
         </div>

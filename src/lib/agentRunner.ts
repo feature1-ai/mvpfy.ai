@@ -5,7 +5,7 @@ import instructTemplate from '../prompts/instruct.txt?raw';
 import shipChangeTemplate from '../prompts/ship-change.txt?raw';
 import planSpecTemplate from '../prompts/plan-spec.txt?raw';
 import planImplementTemplate from '../prompts/plan-implement.txt?raw';
-import { AgentKind, Project, Settings } from '../../shared/types';
+import { AgentKind, Project, Settings, planFileFor, specFileFor } from '../../shared/types';
 
 export type RunKind =
   | 'bootstrap'
@@ -26,6 +26,8 @@ export interface RunHandle {
   kind: RunKind;
   projectId: string;
   storyId?: string;
+  /** Plan runs only: which feature's plan this run reads and writes. */
+  planSlug?: string;
   /** IDE runs only: the host port code-server was asked to bind. */
   port?: number;
 }
@@ -111,51 +113,62 @@ export async function startShipChangeRun(project: Project, settings: Settings): 
   return { runId, kind: 'ship', projectId: project.id };
 }
 
-/** Generate (or refine) the minimal product spec + story plan. */
+/** Generate (or refine) the minimal product spec + story plan for one feature. */
 export async function startPlanSpecRun(
   project: Project,
   settings: Settings,
+  planSlug: string,
   featureDescription: string,
   refinement?: string
 ): Promise<RunHandle> {
   const runId = makeRunId('planspec');
+  const planFile = planFileFor(planSlug);
+  const specFile = specFileFor(planSlug);
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(planSpecTemplate, {
       repoPath: project.localPath,
       featureDescription,
+      planFile,
+      specFile,
       refinementBlock: refinement
-        ? `A spec already exists (mvpfy-spec.md / mvpfy-plan.json). Revise it per this instruction, preserving existing story codes and the lanes/prUrl/feedback of stories that survive:\n---\n${refinement}\n---`
+        ? `A spec already exists (${specFile} / ${planFile}). Revise it per this instruction, preserving existing story codes and the lanes/prUrl/feedback of stories that survive:\n---\n${refinement}\n---`
         : '',
     }),
     ...agentFor(settings),
   });
-  return { runId, kind: 'plan-spec', projectId: project.id };
+  return { runId, kind: 'plan-spec', projectId: project.id, planSlug };
 }
 
 /** Implement one planned story; opens/updates its PR (PR lands at Testing). */
 export async function startPlanStoryRun(
   project: Project,
   settings: Settings,
+  planSlug: string,
   storyCode: string,
   storyFeedback?: string | null
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
+  const storyCodeSlug = storyCode.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(planImplementTemplate, {
       repoPath: project.localPath,
       storyCode,
-      storyCodeSlug: storyCode.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      planFile: planFileFor(planSlug),
+      specFile: specFileFor(planSlug),
+      // Legacy (pre-multi-feature) plans keep their unprefixed branch names
+      // so re-runs land on the branch the earlier round already pushed.
+      branchSlug: planSlug ? `${planSlug}-${storyCodeSlug}` : storyCodeSlug,
       feedbackBlock: storyFeedback
         ? `The product manager tested the previous round and sent it back with this feedback — address it fully:\n---\n${storyFeedback}\n---`
         : '',
     }),
     ...agentFor(settings),
   });
-  return { runId, kind: 'plan-story', projectId: project.id, storyId: storyCode };
+  return { runId, kind: 'plan-story', projectId: project.id, storyId: storyCode, planSlug };
 }
 
 /** Fast-forward pull each repo of the workspace from its remote. */

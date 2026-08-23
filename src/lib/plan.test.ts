@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canMove, itemId, parsePlan, snapEstimate, uncoveredItems } from './plan';
+import { canMove, itemId, parsePlan, slugForFeature, snapEstimate, uncoveredItems } from './plan';
 
 const rawPlan = JSON.stringify({
   generatedAt: '2026-08-23',
@@ -91,5 +91,22 @@ describe('uncoveredItems', () => {
     expect(uncovered).not.toContain('Email the PDF');
     // out-of-scope items are not tracked for coverage
     expect(uncovered).not.toContain('Bulk export');
+  });
+});
+
+describe('slugForFeature', () => {
+  it('mints a short kebab slug from the description', () => {
+    expect(slugForFeature('Multi-channel invoice reminders via WhatsApp!', [])).toBe(
+      'multi-channel-invoice-reminders-via'
+    );
+  });
+
+  it('never collides with existing slugs (legacy empty slug included)', () => {
+    expect(slugForFeature('PDF export', ['', 'pdf-export'])).toBe('pdf-export-2');
+    expect(slugForFeature('PDF export', ['', 'pdf-export', 'pdf-export-2'])).toBe('pdf-export-3');
+  });
+
+  it('falls back to "feature" when the description has no usable words', () => {
+    expect(slugForFeature('!!!', [])).toBe('feature');
   });
 });

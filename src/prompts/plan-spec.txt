@@ -13,7 +13,7 @@ fits what already exists — reference real screens and flows, never invented on
 
 Then write exactly two files in the workspace root:
 
-1. mvpfy-spec.md — the human-readable spec, in this order and nothing more:
+1. {specFile} — the human-readable spec, in this order and nothing more:
    # <Feature name>
    ## Problem  (2-3 sentences: who hurts, how, today)
    ## Solution summary  (3-5 sentences)
@@ -24,7 +24,7 @@ Then write exactly two files in the workspace root:
    ## Requirements  (Functional / Non-functional bullets)
    ## Stories  (one line per story: code — title — size)
 
-2. mvpfy-plan.json — the machine-readable plan, EXACTLY this shape:
+2. {planFile} — the machine-readable plan, EXACTLY this shape:
 {
   "generatedAt": "<ISO date>",
   "spec": {
@@ -54,4 +54,6 @@ Rules:
   "addresses" — full coverage, no orphans.
 • Points come only from 1, 2, 5, 8, 13. Every story starts in lane "todo" — the only
   lanes that exist are todo, coding, testing, done.
-• Do not modify any other file. Do not implement anything. Do not run docker or git.
+• Do not modify any other file — other mvpfy-plan.* / mvpfy-spec.* files belong to other
+  planned features; never read from or write to them. Do not implement anything. Do not
+  run docker or git.

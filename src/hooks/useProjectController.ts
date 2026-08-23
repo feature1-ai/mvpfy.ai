@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ANSWERS_FILE,
   CHANGE_FILE,
-  PLAN_FILE,
-  SPEC_FILE,
   SUMMARY_FILE,
   TRIAGE_FILE,
   GENERATED_FILES,
@@ -11,6 +9,8 @@ import {
   Project,
   QUESTIONS_FILE,
   RepoFile,
+  planFileFor,
+  specFileFor,
 } from '../../shared/types';
 import {
   startAppLogsRun,
@@ -29,7 +29,14 @@ import { preflightAuth } from '../lib/cliCheck';
 import { DemoCredential, parseDemoCredentials } from '../lib/credentials';
 import { Feature1McpClient, UserStory } from '../lib/feature1Mcp';
 import { ENV_FILE_CANDIDATES } from '../lib/envFile';
-import { canMove, parsePlan, ProjectPlan, serializePlan, StoryLane } from '../lib/plan';
+import {
+  canMove,
+  parsePlan,
+  ProjectPlan,
+  serializePlan,
+  slugForFeature,
+  StoryLane,
+} from '../lib/plan';
 import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
 
@@ -41,10 +48,23 @@ const HIDDEN_FROM_VIEWER: string[] = [
   TRIAGE_FILE,
   SUMMARY_FILE,
   CHANGE_FILE,
-  PLAN_FILE,
-  SPEC_FILE,
   ...ENV_FILE_CANDIDATES,
 ];
+
+function hiddenFromViewer(name: string): boolean {
+  return HIDDEN_FROM_VIEWER.includes(name) || /^mvpfy-(plan|spec)($|\.)/.test(name);
+}
+
+/** One planned feature: its parsed plan plus the live run state around it. */
+export interface FeaturePlan {
+  slug: string;
+  plan: ProjectPlan | null;
+  specMarkdown: string | null;
+  /** True while the spec for this feature is being generated or refined. */
+  generating: boolean;
+  /** Story code this feature's agent is currently implementing, if any. */
+  runningStory: string | null;
+}
 
 /**
  * Controller for a project's detail view: owns all project actions, file and
@@ -62,9 +82,9 @@ export interface ProjectController {
   latestRun: RunState | null;
   /** The follow-mode docker logs stream, when one has been started. */
   appLogsRun: RunState | null;
-  startAppLogs(): Promise<void>;
+  startAppLogs(): Promise<boolean>;
   /** Pull the latest changes from each repo's remote into the clone. */
-  syncRepos(): Promise<void>;
+  syncRepos(): Promise<boolean>;
   lastShipPrUrl: string | null;
   actionError: string | null;
   hasMvpfyYml: boolean;
@@ -89,19 +109,19 @@ export interface ProjectController {
   removing: boolean;
   confirmRemove: boolean;
   // Actions
-  bootstrap(): Promise<void>;
-  saveAnswersAndRerun(): Promise<void>;
-  docker(action: 'up' | 'down' | 'restart'): Promise<void>;
+  bootstrap(): Promise<boolean>;
+  saveAnswersAndRerun(): Promise<boolean>;
+  docker(action: 'up' | 'down' | 'restart'): Promise<boolean>;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
-  diagnose(): Promise<void>;
+  diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */
-  retryFix(): Promise<void>;
-  dismissTriage(): Promise<void>;
+  retryFix(): Promise<boolean>;
+  dismissTriage(): Promise<boolean>;
   /** Free-form PM instruction ("add env var X…") applied by the agent. */
-  instruct(instruction: string): Promise<void>;
-  dismissChange(): Promise<void>;
+  instruct(instruction: string): Promise<boolean>;
+  dismissChange(): Promise<boolean>;
   /** Commit + push the workspace's product changes and open PR(s). */
-  shipChange(): Promise<void>;
+  shipChange(): Promise<boolean>;
   /** True when the last change report says the environment must restart. */
   changeNeedsRestart: boolean;
   changeContent: string | null;
@@ -109,24 +129,28 @@ export interface ProjectController {
   envFile: { name: string; content: string } | null;
   /** Content of .env.mvpfy.example when present (seed for a new env file). */
   envExample: string | null;
-  saveEnv(name: string, content: string): Promise<void>;
-  /** Parsed product plan (spec items + story board), when one exists. */
-  plan: ProjectPlan | null;
-  /** Human-readable spec markdown, when one exists. */
-  specMarkdown: string | null;
-  /** Story code currently being implemented by the agent, if any. */
-  planRunningStory: string | null;
-  /** True while the spec itself is being generated/refined. */
-  planGenerating: boolean;
-  generateSpec(description: string): Promise<void>;
-  refineSpec(instruction: string): Promise<void>;
-  implementStory(code: string): Promise<void>;
-  moveStory(code: string, lane: StoryLane, feedback?: string): Promise<void>;
-  refreshStories(): Promise<void>;
-  implement(story: UserStory): Promise<void>;
-  startIde(): Promise<void>;
-  stopIde(): Promise<void>;
-  removeProject(): Promise<void>;
+  saveEnv(name: string, content: string): Promise<boolean>;
+  /** All planned features (one board each), legacy single plan included. */
+  plans: FeaturePlan[];
+  /** The feature whose board the Plan tab is showing. */
+  activePlan: FeaturePlan | null;
+  setActivePlanSlug(slug: string): void;
+  /** True while any feature's story is being implemented (one at a time). */
+  anyStoryRunning: boolean;
+  /** True when a run that mutates the workspace blocks starting a story. */
+  planBlocked: boolean;
+  /** Resolves true when the run actually started (false on a guard error). */
+  generateSpec(description: string): Promise<boolean>;
+  refineSpec(instruction: string): Promise<boolean>;
+  /** PM agrees with the PRD — reveals the active feature's story board. */
+  approvePlan(): Promise<boolean>;
+  implementStory(code: string): Promise<boolean>;
+  moveStory(code: string, lane: StoryLane, feedback?: string): Promise<boolean>;
+  refreshStories(): Promise<boolean>;
+  implement(story: UserStory): Promise<boolean>;
+  startIde(): Promise<boolean>;
+  stopIde(): Promise<boolean>;
+  removeProject(): Promise<boolean>;
   refreshFiles(): void;
   stopRun(runId: string): void;
   setActiveFile(file: string): void;
@@ -165,7 +189,9 @@ export function useProjectController(
     .filter((r) => r.handle.projectId === project.id && r.handle.kind === 'ship')
     .pop();
 
+  const planSlugsKey = (project.planSlugs ?? []).join(',');
   const refreshFiles = useCallback(() => {
+    const planSlugs = ['', ...(planSlugsKey ? planSlugsKey.split(',') : [])];
     void window.mvpfy
       .readRepoFiles(project.localPath, [
         ...GENERATED_FILES,
@@ -174,14 +200,13 @@ export function useProjectController(
         TRIAGE_FILE,
         SUMMARY_FILE,
         CHANGE_FILE,
-        PLAN_FILE,
-        SPEC_FILE,
+        ...planSlugs.flatMap((slug) => [planFileFor(slug), specFileFor(slug)]),
         ...ENV_FILE_CANDIDATES,
       ])
       .then((result) => {
         setFiles(result);
         const viewable = result
-          .filter((f) => f.exists && !HIDDEN_FROM_VIEWER.includes(f.relativePath))
+          .filter((f) => f.exists && !hiddenFromViewer(f.relativePath))
           .map((f) => f.relativePath);
         setActiveFile((prev) => (prev && viewable.includes(prev) ? prev : (viewable[0] ?? null)));
         const generated = result
@@ -197,12 +222,15 @@ export function useProjectController(
         }));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id, project.localPath]);
+  }, [project.id, project.localPath, planSlugsKey]);
 
-  // Load files on mount and again whenever a run for this project finishes.
+  // Load files on mount and again whenever a run for this project starts or
+  // finishes — with concurrent runs, "all quiet" is too rare a moment to wait
+  // for (a spec can finish while a story is still coding).
+  const runningCount = projectRuns.filter((r) => r.running).length;
   useEffect(() => {
-    if (!busy) refreshFiles();
-  }, [busy, refreshFiles]);
+    refreshFiles();
+  }, [runningCount, refreshFiles]);
 
   // The last finished environment run (bootstrap or start) decides whether
   // Diagnose & fix applies — derived, so a later success clears it naturally.
@@ -228,12 +256,14 @@ export function useProjectController(
   const hasMvpfyYml = files.some((f) => f.relativePath === 'mvpfy.yml' && f.exists);
   const mvpfyYmlContent = files.find((f) => f.relativePath === 'mvpfy.yml')?.content;
 
-  async function guarded(action: () => Promise<void>) {
+  async function guarded(action: () => Promise<void>): Promise<boolean> {
     setActionError(null);
     try {
       await action();
+      return true;
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
+      return false;
     }
   }
 
@@ -347,40 +377,67 @@ export function useProjectController(
       runsApi.track(handle);
     });
 
-  const plan = parsePlan(contentOf(files, PLAN_FILE));
-  const planRun = projectRuns.filter((r) => r.handle.kind === 'plan-story').pop() ?? null;
-  const planRunningStory =
-    planRun?.running && planRun.handle.storyId ? planRun.handle.storyId : null;
-  const planGenerating = latestRun?.running === true && latestRun.handle.kind === 'plan-spec';
+  // One FeaturePlan per known slug; the empty slug is the legacy single plan.
+  // A slug with no file yet still shows while its spec run is generating.
+  const storyRuns = projectRuns.filter((r) => r.handle.kind === 'plan-story');
+  const specRuns = projectRuns.filter((r) => r.handle.kind === 'plan-spec');
+  const plans: FeaturePlan[] = ['', ...(project.planSlugs ?? [])]
+    .map((slug): FeaturePlan => {
+      const running = storyRuns.filter((r) => r.running && (r.handle.planSlug ?? '') === slug);
+      return {
+        slug,
+        plan: parsePlan(contentOf(files, planFileFor(slug))),
+        specMarkdown: contentOf(files, specFileFor(slug)),
+        generating: specRuns.some((r) => r.running && (r.handle.planSlug ?? '') === slug),
+        runningStory: running.map((r) => r.handle.storyId ?? null).pop() ?? null,
+      };
+    })
+    .filter((f) => f.plan !== null || f.generating);
+
+  const [selectedPlanSlug, setSelectedPlanSlug] = useState<string | null>(null);
+  const activePlan =
+    plans.find((p) => p.slug === selectedPlanSlug) ?? (plans.length > 0 ? plans[0] : null);
+  const anyStoryRunning = storyRuns.some((r) => r.running);
+  // Runs that mutate repos or the environment: a story implementation must
+  // not race them. Spec generation only writes its own plan/spec pair, so it
+  // may overlap with anything — including stories of other features.
+  const planBlocked = projectRuns.some(
+    (r) => r.running && !['app-logs', 'plan-spec', 'plan-story'].includes(r.handle.kind)
+  );
   const processedPlanRuns = useRef(new Set<string>());
 
   const writePlan = useCallback(
-    async (next: ProjectPlan) => {
-      await window.mvpfy.writeRepoFile(project.localPath, PLAN_FILE, serializePlan(next));
+    async (slug: string, next: ProjectPlan) => {
+      await window.mvpfy.writeRepoFile(project.localPath, planFileFor(slug), serializePlan(next));
       refreshFiles();
     },
     [project.localPath, refreshFiles]
   );
 
-  // When a story run finishes cleanly, the agent's allowed move fires:
-  // Coding → Testing, PR recorded, feedback consumed. Only ever once per run.
+  // When a story run finishes cleanly, the agent's allowed move fires on its
+  // feature's board: Coding → Testing, PR recorded, feedback consumed. Only
+  // ever once per run, even with several features' runs finishing together.
   useEffect(() => {
-    if (!planRun || planRun.running || planRun.exitCode !== 0) return;
-    if (processedPlanRuns.current.has(planRun.handle.runId)) return;
-    const code = planRun.handle.storyId;
-    if (!plan || !code) return;
-    const story = plan.stories.find((s) => s.code === code);
-    if (!story || story.lane !== 'coding' || !canMove('coding', 'testing', 'agent')) return;
-    processedPlanRuns.current.add(planRun.handle.runId);
-    void writePlan({
-      ...plan,
-      stories: plan.stories.map((s) =>
-        s.code === code
-          ? { ...s, lane: 'testing' as StoryLane, prUrl: planRun.prUrl ?? s.prUrl, feedback: null }
-          : s
-      ),
-    });
-  }, [planRun, plan, writePlan]);
+    for (const run of storyRuns) {
+      if (run.running || run.exitCode !== 0) continue;
+      if (processedPlanRuns.current.has(run.handle.runId)) continue;
+      const slug = run.handle.planSlug ?? '';
+      const plan = plans.find((p) => p.slug === slug)?.plan;
+      const code = run.handle.storyId;
+      if (!plan || !code) continue;
+      const story = plan.stories.find((s) => s.code === code);
+      if (!story || story.lane !== 'coding' || !canMove('coding', 'testing', 'agent')) continue;
+      processedPlanRuns.current.add(run.handle.runId);
+      void writePlan(slug, {
+        ...plan,
+        stories: plan.stories.map((s) =>
+          s.code === code
+            ? { ...s, lane: 'testing' as StoryLane, prUrl: run.prUrl ?? s.prUrl, feedback: null }
+            : s
+        ),
+      });
+    }
+  }, [storyRuns, plans, writePlan]);
 
   const generateSpec = (description: string) =>
     guarded(async () => {
@@ -388,54 +445,81 @@ export function useProjectController(
       if (!text) return;
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
-      const handle = await startPlanSpecRun(project, state.settings, text);
+      const slug = slugForFeature(text, ['', ...(project.planSlugs ?? [])]);
+      const handle = await startPlanSpecRun(project, state.settings, slug, text);
       runsApi.track(handle);
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.id === project.id ? { ...p, planSlugs: [...(p.planSlugs ?? []), slug] } : p
+        ),
+      }));
+      setSelectedPlanSlug(slug);
     });
 
   const refineSpec = (instruction: string) =>
     guarded(async () => {
       const text = instruction.trim();
-      if (!text) return;
+      if (!text || !activePlan) return;
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
       const handle = await startPlanSpecRun(
         project,
         state.settings,
-        plan?.spec.feature ?? text,
+        activePlan.slug,
+        activePlan.plan?.spec.feature ?? text,
         text
       );
       runsApi.track(handle);
     });
 
+  const approvePlan = () =>
+    guarded(async () => {
+      if (!activePlan?.plan) return;
+      await writePlan(activePlan.slug, { ...activePlan.plan, approved: true });
+    });
+
   const implementStory = (code: string) =>
     guarded(async () => {
+      const slug = activePlan?.slug ?? '';
+      const plan = activePlan?.plan;
       const story = plan?.stories.find((s) => s.code === code);
       if (!plan || !story) throw new Error(`Story ${code} not found in the plan`);
+      if (!plan.approved) throw new Error('Agree with the PRD first — then the board opens');
       if (story.lane !== 'todo' && story.lane !== 'coding') {
         throw new Error(`${code} is in ${story.lane} — drag it back to To Do to re-implement`);
+      }
+      if (anyStoryRunning) {
+        throw new Error(
+          'A story is already being implemented — one at a time, so branches don’t collide'
+        );
+      }
+      if (planBlocked) {
+        throw new Error('Wait for the current environment run to finish first');
       }
       // Ship lands a PR at Testing, so the agent AND gh must be signed in.
       const authProblem = await preflightAuth(state.settings.defaultAgent, true);
       if (authProblem) throw new Error(authProblem);
       if (story.lane === 'todo') {
-        await writePlan({
+        await writePlan(slug, {
           ...plan,
           stories: plan.stories.map((s) =>
             s.code === code ? { ...s, lane: 'coding' as StoryLane } : s
           ),
         });
       }
-      const handle = await startPlanStoryRun(project, state.settings, code, story.feedback);
+      const handle = await startPlanStoryRun(project, state.settings, slug, code, story.feedback);
       runsApi.track(handle);
     });
 
   const moveStory = (code: string, lane: StoryLane, feedback?: string) =>
     guarded(async () => {
-      if (!plan) return;
+      const plan = activePlan?.plan;
+      if (!plan || !activePlan) return;
       const story = plan.stories.find((s) => s.code === code);
       if (!story || !canMove(story.lane, lane, 'user')) return;
       const bounced = story.lane === 'testing' && lane === 'coding';
-      await writePlan({
+      await writePlan(activePlan.slug, {
         ...plan,
         stories: plan.stories.map((s) =>
           s.code === code
@@ -548,7 +632,7 @@ export function useProjectController(
     })(),
     envExample: contentOf(files, '.env.mvpfy.example'),
     canDiagnose: lastFailure !== null,
-    viewerFiles: files.filter((f) => f.exists && !HIDDEN_FROM_VIEWER.includes(f.relativePath)),
+    viewerFiles: files.filter((f) => f.exists && !hiddenFromViewer(f.relativePath)),
     activeFile,
     activeFileContent: files.find((f) => f.relativePath === activeFile)?.content ?? '',
     stories,
@@ -569,12 +653,14 @@ export function useProjectController(
     dismissChange,
     shipChange,
     saveEnv,
-    plan,
-    specMarkdown: contentOf(files, SPEC_FILE),
-    planRunningStory,
-    planGenerating,
+    plans,
+    activePlan,
+    setActivePlanSlug: setSelectedPlanSlug,
+    anyStoryRunning,
+    planBlocked,
     generateSpec,
     refineSpec,
+    approvePlan,
     implementStory,
     moveStory,
     refreshStories,

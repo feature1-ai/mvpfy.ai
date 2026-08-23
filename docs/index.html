@@ -28,7 +28,7 @@
   "@type": "SoftwareApplication",
   "name": "mvpfy",
   "alternateName": "mvpfy by feature1",
-  "description": "mvpfy is a free, open-source desktop IDE for product managers. It clones a company's existing repositories, runs the product locally in Docker with a live preview and an embedded VS Code editor, and lets a PM describe changes in plain language that an AI coding agent applies and ships as pull requests.",
+  "description": "mvpfy is a free, open-source desktop IDE for product managers. It clones a company's existing repositories, runs the product locally in Docker with a live preview and an embedded VS Code editor, and lets a PM describe changes in plain language that an AI coding agent applies and ships as pull requests. PMs can also plan whole features: mvpfy writes a minimal PRD with user stories in the Feature1 style and executes each story to a pull request the PM tests before marking done.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Windows, Linux",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -88,6 +88,8 @@
   .nav .wrap{display:flex;align-items:center;gap:12px;height:56px}
   .nav img{height:22px;display:block}
   .nav .tag{font-size:11.5px;letter-spacing:.02em;color:var(--muted);padding-top:4px}
+  .nav .tag a{color:inherit;text-decoration:none}
+  .nav .tag a:hover{text-decoration:underline}
   .nav .links{margin-left:auto;display:flex;align-items:center;gap:18px;font-size:13px}
   .nav .links a{color:var(--body)}
   .nav .links a:hover{color:var(--ink);text-decoration:none}
@@ -233,7 +235,7 @@
 <nav class="nav" aria-label="Main">
   <div class="wrap">
     <a href="#" aria-label="mvpfy home"><img src="logo.svg" alt="#mvpFY logo"></a>
-    <span class="tag">the IDE for PMs</span>
+    <span class="tag">the IDE for PMs · by <a href="https://feature1.ai">feature1</a></span>
     <div class="links">
       <a href="#how">How it works</a>
       <a href="#compare">Compare</a>
@@ -249,7 +251,9 @@
     <h1>The IDE for product managers.</h1>
     <p class="sub"><strong>mvpfy</strong> is a free, open-source desktop app that runs your company's
     <strong>existing product</strong> locally — describe a change in plain language, watch it live,
-    and ship it as a <strong>pull request</strong> your engineers review. Like Lovable or Replit,
+    and ship it as a <strong>pull request</strong> your engineers review. Or plan a whole feature:
+    mvpfy writes a minimal PRD in the <a href="https://feature1.ai">Feature1</a> style, breaks it
+    into user stories, and executes them to pull requests one by one. Like Lovable or Replit,
     but for the product you already have, on your own machine.</p>
     <div class="cta">
       <a class="btn btn-ink btn-lg" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download for macOS&nbsp;·&nbsp;beta</a>
@@ -334,9 +338,9 @@
       <div class="step">
         <span class="n">03</span>
         <h3>Ship as a pull request</h3>
-        <p>Type a change in plain language — or implement a Feature1 user story with one click.
-        The agent writes the code, runs the tests, and opens a PR on your real remote.
-        Engineers review; nothing deploys behind their backs.</p>
+        <p>Type a change in plain language — or plan a feature and implement its user stories
+        one by one. The agent writes the code, runs the tests, and opens a PR on your real
+        remote. Engineers review; nothing deploys behind their backs.</p>
       </div>
     </div>
   </section>
@@ -357,9 +361,10 @@
       <div class="feat"><h3><span class="dot"></span>Demo logins &amp; env editor</h3>
         <p>Credentials to get into the app and editable environment variables sit on the overview —
         save, restart, applied.</p></div>
-      <div class="feat"><h3><span class="dot"></span>Feature1 stories → PRs</h3>
-        <p>Connected to <a href="https://feature1.ai">Feature1</a>, every user story gets an Implement
-        button: acceptance criteria in, tested pull request out, backlog updated.</p></div>
+      <div class="feat"><h3><span class="dot"></span>Plan features, <a href="https://feature1.ai">Feature1</a>-style</h3>
+        <p>Describe a feature and get a minimal PRD plus user stories with acceptance criteria,
+        on a board — To&nbsp;do → Coding → Testing → Done. Each story exits Coding as a pull
+        request; only you, after testing it live, move it to Done.</p></div>
       <div class="feat"><h3><span class="dot"></span>Local, private, MIT</h3>
         <p>Repos clone to your machine, the product runs in local Docker, and mvpfy has no server.
         Agents run under your own Claude&nbsp;Code or Codex account.</p></div>

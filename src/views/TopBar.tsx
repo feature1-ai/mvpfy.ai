@@ -48,7 +48,16 @@ export default function TopBar({
     <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
       <div className="flex items-baseline gap-2 border-r border-line pr-4">
         <img src={logoUrl} alt="#mvpFY" className="h-5 translate-y-[3px]" />
-        <span className="text-[11px] tracking-[0.02em] text-muted">the IDE for PMs</span>
+        <span className="text-[11px] tracking-[0.02em] text-muted">
+          the IDE for PMs · by{' '}
+          <button
+            onClick={() => void window.mvpfy.openExternal('https://feature1.ai')}
+            className="hover:text-body hover:underline"
+            title="feature1.ai"
+          >
+            feature1
+          </button>
+        </span>
       </div>
 
       {projects.length > 0 && (

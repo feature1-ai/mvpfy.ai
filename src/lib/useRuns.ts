@@ -41,7 +41,10 @@ export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
           ...run,
           running: false,
           exitCode: ev.code,
-          prUrl: run.handle.kind === 'ship' ? extractPrUrl(run.log) : null,
+          prUrl:
+            run.handle.kind === 'ship' || run.handle.kind === 'plan-story'
+              ? extractPrUrl(run.log)
+              : null,
         };
         queueMicrotask(() => finishedCb.current?.(finished));
         return { ...prev, [ev.runId]: finished };

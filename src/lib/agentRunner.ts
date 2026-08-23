@@ -3,6 +3,8 @@ import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import triageTemplate from '../prompts/triage.txt?raw';
 import instructTemplate from '../prompts/instruct.txt?raw';
 import shipChangeTemplate from '../prompts/ship-change.txt?raw';
+import planSpecTemplate from '../prompts/plan-spec.txt?raw';
+import planImplementTemplate from '../prompts/plan-implement.txt?raw';
 import { AgentKind, Project, Settings } from '../../shared/types';
 
 export type RunKind =
@@ -15,7 +17,9 @@ export type RunKind =
   | 'triage'
   | 'instruct'
   | 'app-logs'
-  | 'sync';
+  | 'sync'
+  | 'plan-spec'
+  | 'plan-story';
 
 export interface RunHandle {
   runId: string;
@@ -105,6 +109,53 @@ export async function startShipChangeRun(project: Project, settings: Settings): 
   });
   // Kind 'ship' so the PR URL is extracted from the run output.
   return { runId, kind: 'ship', projectId: project.id };
+}
+
+/** Generate (or refine) the minimal product spec + story plan. */
+export async function startPlanSpecRun(
+  project: Project,
+  settings: Settings,
+  featureDescription: string,
+  refinement?: string
+): Promise<RunHandle> {
+  const runId = makeRunId('planspec');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(planSpecTemplate, {
+      repoPath: project.localPath,
+      featureDescription,
+      refinementBlock: refinement
+        ? `A spec already exists (mvpfy-spec.md / mvpfy-plan.json). Revise it per this instruction, preserving existing story codes and the lanes/prUrl/feedback of stories that survive:\n---\n${refinement}\n---`
+        : '',
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'plan-spec', projectId: project.id };
+}
+
+/** Implement one planned story; opens/updates its PR (PR lands at Testing). */
+export async function startPlanStoryRun(
+  project: Project,
+  settings: Settings,
+  storyCode: string,
+  storyFeedback?: string | null
+): Promise<RunHandle> {
+  const runId = makeRunId('planstory');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(planImplementTemplate, {
+      repoPath: project.localPath,
+      storyCode,
+      storyCodeSlug: storyCode.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      feedbackBlock: storyFeedback
+        ? `The product manager tested the previous round and sent it back with this feedback — address it fully:\n---\n${storyFeedback}\n---`
+        : '',
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'plan-story', projectId: project.id, storyId: storyCode };
 }
 
 /** Fast-forward pull each repo of the workspace from its remote. */

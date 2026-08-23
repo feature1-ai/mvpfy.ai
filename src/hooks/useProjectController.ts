@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ANSWERS_FILE,
   CHANGE_FILE,
+  PLAN_FILE,
+  SPEC_FILE,
   SUMMARY_FILE,
   TRIAGE_FILE,
   GENERATED_FILES,
@@ -17,6 +19,8 @@ import {
   startDockerRun,
   startIdeRun,
   startInstructRun,
+  startPlanSpecRun,
+  startPlanStoryRun,
   startShipChangeRun,
   startShipFeatureRun,
   startTriageRun,
@@ -25,6 +29,7 @@ import { preflightAuth } from '../lib/cliCheck';
 import { DemoCredential, parseDemoCredentials } from '../lib/credentials';
 import { Feature1McpClient, UserStory } from '../lib/feature1Mcp';
 import { ENV_FILE_CANDIDATES } from '../lib/envFile';
+import { canMove, parsePlan, ProjectPlan, serializePlan, StoryLane } from '../lib/plan';
 import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
 
@@ -36,6 +41,8 @@ const HIDDEN_FROM_VIEWER: string[] = [
   TRIAGE_FILE,
   SUMMARY_FILE,
   CHANGE_FILE,
+  PLAN_FILE,
+  SPEC_FILE,
   ...ENV_FILE_CANDIDATES,
 ];
 
@@ -103,6 +110,18 @@ export interface ProjectController {
   /** Content of .env.mvpfy.example when present (seed for a new env file). */
   envExample: string | null;
   saveEnv(name: string, content: string): Promise<void>;
+  /** Parsed product plan (spec items + story board), when one exists. */
+  plan: ProjectPlan | null;
+  /** Human-readable spec markdown, when one exists. */
+  specMarkdown: string | null;
+  /** Story code currently being implemented by the agent, if any. */
+  planRunningStory: string | null;
+  /** True while the spec itself is being generated/refined. */
+  planGenerating: boolean;
+  generateSpec(description: string): Promise<void>;
+  refineSpec(instruction: string): Promise<void>;
+  implementStory(code: string): Promise<void>;
+  moveStory(code: string, lane: StoryLane, feedback?: string): Promise<void>;
   refreshStories(): Promise<void>;
   implement(story: UserStory): Promise<void>;
   startIde(): Promise<void>;
@@ -155,6 +174,8 @@ export function useProjectController(
         TRIAGE_FILE,
         SUMMARY_FILE,
         CHANGE_FILE,
+        PLAN_FILE,
+        SPEC_FILE,
         ...ENV_FILE_CANDIDATES,
       ])
       .then((result) => {
@@ -326,6 +347,112 @@ export function useProjectController(
       runsApi.track(handle);
     });
 
+  const plan = parsePlan(contentOf(files, PLAN_FILE));
+  const planRun = projectRuns.filter((r) => r.handle.kind === 'plan-story').pop() ?? null;
+  const planRunningStory =
+    planRun?.running && planRun.handle.storyId ? planRun.handle.storyId : null;
+  const planGenerating = latestRun?.running === true && latestRun.handle.kind === 'plan-spec';
+  const processedPlanRuns = useRef(new Set<string>());
+
+  const writePlan = useCallback(
+    async (next: ProjectPlan) => {
+      await window.mvpfy.writeRepoFile(project.localPath, PLAN_FILE, serializePlan(next));
+      refreshFiles();
+    },
+    [project.localPath, refreshFiles]
+  );
+
+  // When a story run finishes cleanly, the agent's allowed move fires:
+  // Coding → Testing, PR recorded, feedback consumed. Only ever once per run.
+  useEffect(() => {
+    if (!planRun || planRun.running || planRun.exitCode !== 0) return;
+    if (processedPlanRuns.current.has(planRun.handle.runId)) return;
+    const code = planRun.handle.storyId;
+    if (!plan || !code) return;
+    const story = plan.stories.find((s) => s.code === code);
+    if (!story || story.lane !== 'coding' || !canMove('coding', 'testing', 'agent')) return;
+    processedPlanRuns.current.add(planRun.handle.runId);
+    void writePlan({
+      ...plan,
+      stories: plan.stories.map((s) =>
+        s.code === code
+          ? { ...s, lane: 'testing' as StoryLane, prUrl: planRun.prUrl ?? s.prUrl, feedback: null }
+          : s
+      ),
+    });
+  }, [planRun, plan, writePlan]);
+
+  const generateSpec = (description: string) =>
+    guarded(async () => {
+      const text = description.trim();
+      if (!text) return;
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const handle = await startPlanSpecRun(project, state.settings, text);
+      runsApi.track(handle);
+    });
+
+  const refineSpec = (instruction: string) =>
+    guarded(async () => {
+      const text = instruction.trim();
+      if (!text) return;
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const handle = await startPlanSpecRun(
+        project,
+        state.settings,
+        plan?.spec.feature ?? text,
+        text
+      );
+      runsApi.track(handle);
+    });
+
+  const implementStory = (code: string) =>
+    guarded(async () => {
+      const story = plan?.stories.find((s) => s.code === code);
+      if (!plan || !story) throw new Error(`Story ${code} not found in the plan`);
+      if (story.lane !== 'todo' && story.lane !== 'coding') {
+        throw new Error(`${code} is in ${story.lane} — drag it back to To Do to re-implement`);
+      }
+      // Ship lands a PR at Testing, so the agent AND gh must be signed in.
+      const authProblem = await preflightAuth(state.settings.defaultAgent, true);
+      if (authProblem) throw new Error(authProblem);
+      if (story.lane === 'todo') {
+        await writePlan({
+          ...plan,
+          stories: plan.stories.map((s) =>
+            s.code === code ? { ...s, lane: 'coding' as StoryLane } : s
+          ),
+        });
+      }
+      const handle = await startPlanStoryRun(project, state.settings, code, story.feedback);
+      runsApi.track(handle);
+    });
+
+  const moveStory = (code: string, lane: StoryLane, feedback?: string) =>
+    guarded(async () => {
+      if (!plan) return;
+      const story = plan.stories.find((s) => s.code === code);
+      if (!story || !canMove(story.lane, lane, 'user')) return;
+      const bounced = story.lane === 'testing' && lane === 'coding';
+      await writePlan({
+        ...plan,
+        stories: plan.stories.map((s) =>
+          s.code === code
+            ? {
+                ...s,
+                lane,
+                feedback: bounced
+                  ? feedback?.trim() || s.feedback
+                  : lane === 'done'
+                    ? null
+                    : s.feedback,
+              }
+            : s
+        ),
+      });
+    });
+
   const saveEnv = (name: string, content: string) =>
     guarded(async () => {
       await window.mvpfy.writeRepoFile(project.localPath, name, content);
@@ -442,6 +569,14 @@ export function useProjectController(
     dismissChange,
     shipChange,
     saveEnv,
+    plan,
+    specMarkdown: contentOf(files, SPEC_FILE),
+    planRunningStory,
+    planGenerating,
+    generateSpec,
+    refineSpec,
+    implementStory,
+    moveStory,
     refreshStories,
     implement,
     startIde,

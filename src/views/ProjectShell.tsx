@@ -5,8 +5,9 @@ import { UpdateState, useProjectController } from '../hooks/useProjectController
 import { RunsApi } from '../lib/useRuns';
 import LogPanel from '../components/LogPanel';
 import OverviewView from './OverviewView';
+import PlanView from './PlanView';
 
-export type ProjectTab = 'overview' | 'app' | 'code' | 'logs';
+export type ProjectTab = 'overview' | 'plan' | 'app' | 'code' | 'logs';
 
 interface Props {
   project: Project;
@@ -44,6 +45,7 @@ export default function ProjectShell({
 
   const tabs: Array<{ id: ProjectTab; label: string; hint?: string }> = [
     { id: 'overview', label: 'Overview' },
+    { id: 'plan', label: 'Plan' },
     { id: 'app', label: 'App', hint: `:${project.basePort}` },
     { id: 'code', label: 'Code' },
     { id: 'logs', label: 'Logs' },
@@ -120,6 +122,10 @@ export default function ProjectShell({
             display/visibility freezes its guest at the wrong size. */}
         <Pane active={tab === 'overview'} scroll>
           <OverviewView c={c} mvpfyYml={mvpfyYml} onOpenTab={(t) => onTabChange(t)} />
+        </Pane>
+
+        <Pane active={tab === 'plan'} scroll>
+          <PlanView c={c} onOpenTab={(t) => onTabChange(t)} />
         </Pane>
 
         <Pane active={tab === 'app'}>

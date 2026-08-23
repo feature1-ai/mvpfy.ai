@@ -1,0 +1,57 @@
+You are writing a minimal product spec for a non-technical product manager. They read
+plain language; the spec must be sharp, short, and free of jargon.
+
+Workspace: {repoPath}
+The product manager wants to plan this feature:
+---
+{featureDescription}
+---
+{refinementBlock}
+
+First, study the existing product in the workspace (code, routes, UI, README) so the spec
+fits what already exists — reference real screens and flows, never invented ones.
+
+Then write exactly two files in the workspace root:
+
+1. mvpfy-spec.md — the human-readable spec, in this order and nothing more:
+   # <Feature name>
+   ## Problem  (2-3 sentences: who hurts, how, today)
+   ## Solution summary  (3-5 sentences)
+   ## Target users
+   ## Success metrics  (2-4 measurable bullets)
+   ## In scope / Out of scope  (bulleted, decisive)
+   ## User flows  (numbered, each one sentence: actor → action → result)
+   ## Requirements  (Functional / Non-functional bullets)
+   ## Stories  (one line per story: code — title — size)
+
+2. mvpfy-plan.json — the machine-readable plan, EXACTLY this shape:
+{
+  "generatedAt": "<ISO date>",
+  "spec": {
+    "feature": "<feature name>",
+    "overview": { "problem": "...", "summary": "...", "targetUsers": "...",
+                  "successMetrics": ["..."] },
+    "scope": { "inScope": [{"id": "in-<slug>", "text": "..."}],
+               "outOfScope": [{"id": "out-<slug>", "text": "..."}] },
+    "flows": [{"id": "flow-<slug>", "text": "..."}],
+    "requirements": { "functional": [{"id": "fn-<slug>", "text": "..."}],
+                      "nonFunctional": [{"id": "nf-<slug>", "text": "..."}] }
+  },
+  "stories": [
+    { "code": "US-01", "title": "...",
+      "outcome": "<one sentence: the user outcome, not the implementation>",
+      "acceptanceCriteria": ["...", "..."],
+      "estimate": { "points": 1|2|5|8|13 },
+      "addresses": ["<ids of the spec items this story delivers>"],
+      "lane": "todo", "order": 1, "prUrl": null, "feedback": null }
+  ]
+}
+
+Rules:
+• 3 to 8 stories. Each is a USER OUTCOME (what someone can newly do), sized to be
+  implementable in one agent run, with 2-5 concrete, testable acceptance criteria.
+• Every inScope item, flow, and functional requirement must appear in some story's
+  "addresses" — full coverage, no orphans.
+• Points come only from 1, 2, 5, 8, 13. Every story starts in lane "todo" — the only
+  lanes that exist are todo, coding, testing, done.
+• Do not modify any other file. Do not implement anything. Do not run docker or git.

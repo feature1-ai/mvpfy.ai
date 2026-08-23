@@ -136,6 +136,10 @@ export const TRIAGE_FILE = 'mvpfy-triage.md';
 export const SUMMARY_FILE = 'mvpfy-summary.md';
 /** The instruct agent's report: what it changed and whether to restart. */
 export const CHANGE_FILE = 'mvpfy-change.md';
+/** Machine-readable product plan: spec items + stories + board lanes. */
+export const PLAN_FILE = 'mvpfy-plan.json';
+/** Human-readable product spec generated alongside the plan. */
+export const SPEC_FILE = 'mvpfy-spec.md';
 
 export interface UpdateStatus {
   kind: 'available' | 'downloaded' | 'error';

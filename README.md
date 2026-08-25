@@ -87,7 +87,10 @@ npm run package    # package the macOS app into release/
 1. **Add project** — paste one or more GitHub/GitLab repo URLs (one per line for multi-repo
    stacks), or add a **local repository** by path / the Browse… button. Everything is cloned
    into `~/.mvpfy/projects/<slug>`; local repos keep their original `origin` remote so the
-   PR flow still targets the real remote.
+   PR flow still targets the real remote. A local folder can instead be used **in place**
+   (no copy): check *Use this folder in place* and mvpfy works directly in your working
+   copy, keeping everything it generates inside a `.mvpfy/` subfolder — removing the
+   project later removes only that subfolder and the containers, never your code.
 2. **Bootstrap environment** — the goal of this step is that you can *see the app running
    locally*. mvpfy finds a free port and asks your default agent to make the repo fully
    runnable: it generates `mvpfy.yml`, a `Dockerfile` (if missing),
@@ -161,6 +164,9 @@ coding agents (mostly Claude Code). This repo is itself the demo of that workflo
 - `~/.mvpfy/state.json` — tenant config, projects, settings.
 - `~/.mvpfy/secrets.json` — `safeStorage`-encrypted tokens (never plaintext).
 - `~/.mvpfy/projects/<slug>` — cloned repos (agents run sandboxed to these directories).
+- Linked (in-place) projects live at the folder you chose; mvpfy confines itself to that
+  folder's `.mvpfy/` subfolder for everything it generates, and agents/docker are allowed
+  only in explicitly linked folders.
 
 ## Prompt templates
 

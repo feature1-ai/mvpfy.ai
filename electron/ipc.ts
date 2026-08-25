@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
 import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
-import { cliCheck } from './services/cli';
+import { cliCheck, loginCommand } from './services/cli';
 import { composeCommand, ideCommand, ideStatus } from './services/docker';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
@@ -12,6 +12,7 @@ import {
   linkProject,
   readRepoBranches,
   readRepoFiles,
+  repoSyncCommand,
   writeRepoFile,
 } from './services/projects';
 import { startRun, stopRun } from './services/runs';
@@ -88,25 +89,11 @@ export function registerIpc(): void {
     if (!isAllowedWorkspace(resolved)) {
       throw new Error('Sync is restricted to managed and linked project directories');
     }
-    const parts = dirs.map((d) => {
-      const dir = path.resolve(d);
-      if (!isAllowedWorkspace(dir))
-        throw new Error('Sync is restricted to managed and linked project directories');
-      return `echo "── ${path.basename(dir)}" && git -C "${dir}" pull --ff-only`;
-    });
-    startRun(runId, parts.join(' && '), resolved);
+    startRun(runId, repoSyncCommand(dirs), resolved);
   });
-  ipcMain.handle('cli-login', (_ev, runId: string, tool: string) => {
-    // In-app sign-in for tools whose login flows survive without a TTY. The
-    // output streams to the renderer so device codes/URLs are visible.
-    const commands: Record<string, string> = {
-      gh: 'gh auth login --hostname github.com --git-protocol https --web',
-      codex: 'codex login',
-    };
-    const command = commands[tool];
-    if (!command) throw new Error(`No in-app sign-in for "${tool}"`);
-    startRun(runId, command, TMP_DIR);
-  });
+  ipcMain.handle('cli-login', (_ev, runId: string, tool: string) =>
+    startRun(runId, loginCommand(tool), TMP_DIR)
+  );
   ipcMain.handle('find-free-port', (_ev, start: number) => findFreePort(start));
   ipcMain.handle('probe-url', (_ev, url: string) => probeUrl(url));
   ipcMain.handle('mcp-fetch', (_ev, req: McpFetchRequest) => mcpFetch(req));

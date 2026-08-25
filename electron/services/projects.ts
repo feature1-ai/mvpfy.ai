@@ -167,6 +167,24 @@ export function linkProject(sourcePath: string): CreateProjectResult {
   return { ok: true, slug: path.basename(src), workspacePath: src, repos };
 }
 
+/**
+ * Shell command that pulls the latest changes into each repo directory, with
+ * a heading per repo so the streamed log stays readable. Every directory must
+ * be a managed or linked workspace path; anything else is rejected.
+ */
+export function repoSyncCommand(dirs: string[]): string {
+  return dirs
+    .map((d) => {
+      const dir = path.resolve(d);
+      if (!isAllowedWorkspace(dir)) {
+        throw new Error('Sync is restricted to managed and linked project directories');
+      }
+      const heading = shellQuote(`── ${path.basename(dir)}`);
+      return `echo ${heading} && git -C ${shellQuote(dir)} pull --ff-only`;
+    })
+    .join(' && ');
+}
+
 /** Current branch per repo dir (empty string when not resolvable). */
 export function readRepoBranches(dirs: string[]): Record<string, string> {
   const out: Record<string, string> = {};

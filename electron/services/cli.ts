@@ -19,6 +19,20 @@ function authCheck(name: CliName, found: boolean): boolean | null {
   return result.status === 0;
 }
 
+// In-app sign-in for tools whose login flows survive without a TTY. The
+// output streams to the renderer so device codes/URLs are visible.
+const LOGIN_COMMANDS: Record<string, string> = {
+  gh: 'gh auth login --hostname github.com --git-protocol https --web',
+  codex: 'codex login',
+};
+
+/** The shell command that signs `tool` in from inside the app. */
+export function loginCommand(tool: string): string {
+  const command = LOGIN_COMMANDS[tool];
+  if (!command) throw new Error(`No in-app sign-in for "${tool}"`);
+  return command;
+}
+
 export function cliCheck(): CliStatus[] {
   return REQUIRED_CLIS.map((name) => {
     const locator = IS_WIN ? `where ${name}` : `command -v ${name}`;

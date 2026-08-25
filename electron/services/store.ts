@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { DEFAULT_STATE, MvpfyState, Project } from '../../shared/types';
 import { ensureDirs, setLinkedRoots, STATE_FILE } from '../paths';
 
@@ -8,9 +9,10 @@ function syncLinkedRoots(projects: Project[]): void {
   setLinkedRoots(projects.filter((p) => p.mode === 'linked').map((p) => p.localPath));
 }
 
-export function readState(): MvpfyState {
+/** `file` overrides the state location — production always uses STATE_FILE. */
+export function readState(file: string = STATE_FILE): MvpfyState {
   try {
-    const raw = fs.readFileSync(STATE_FILE, 'utf8');
+    const raw = fs.readFileSync(file, 'utf8');
     const parsed = JSON.parse(raw) as Partial<MvpfyState>;
     const state = {
       tenant: parsed.tenant ?? null,
@@ -24,10 +26,12 @@ export function readState(): MvpfyState {
   }
 }
 
-export function writeState(state: MvpfyState): void {
-  ensureDirs();
+/** `file` overrides the state location — production always uses STATE_FILE. */
+export function writeState(state: MvpfyState, file: string = STATE_FILE): void {
+  if (file === STATE_FILE) ensureDirs();
+  else fs.mkdirSync(path.dirname(file), { recursive: true });
   syncLinkedRoots(state.projects);
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  fs.writeFileSync(file, JSON.stringify(state, null, 2), 'utf8');
 }
 
 /** Migrate pre-multi-repo projects ({repoUrl} → {repos: [{url, dir}]}). */

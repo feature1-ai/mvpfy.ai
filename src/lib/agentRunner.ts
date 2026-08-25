@@ -5,7 +5,36 @@ import instructTemplate from '../prompts/instruct.txt?raw';
 import shipChangeTemplate from '../prompts/ship-change.txt?raw';
 import planSpecTemplate from '../prompts/plan-spec.txt?raw';
 import planImplementTemplate from '../prompts/plan-implement.txt?raw';
-import { AgentKind, Project, Settings, planFileFor, specFileFor } from '../../shared/types';
+import {
+  AgentKind,
+  Project,
+  Settings,
+  configDirFor,
+  planFileFor,
+  specFileFor,
+} from '../../shared/types';
+
+/**
+ * Extra ground rules injected into prompts when the workspace is the user's
+ * own folder used in place rather than a managed clone: everything mvpfy
+ * writes stays inside .mvpfy/ so the repository root is never polluted.
+ */
+const LINKED_NOTE =
+  'IMPORTANT — this is a linked in-place repository (the user’s own working copy, not a ' +
+  'managed clone). Every mvpfy file — mvpfy.yml, docker-compose.mvpfy.yml, env files ' +
+  '(.env.mvpfy.example and the live env file), mvpfy-run.md, and every mvpfy-*.md/.json ' +
+  'communication file — lives in the .mvpfy/ subfolder of the workspace root; read and ' +
+  'write them THERE, never at the root. The compose file is invoked as `docker compose ' +
+  '-f .mvpfy/docker-compose.mvpfy.yml --project-directory .` from the workspace root, so ' +
+  'keep build contexts and host volume paths relative to the workspace root, and reference ' +
+  'env files as .mvpfy/.env. If a repo needs a generated Dockerfile that does not already ' +
+  'exist, write it as .mvpfy/Dockerfile.<repo> and point build.dockerfile at it; put ' +
+  'generated mock services under .mvpfy/mocks/. Ensure .mvpfy/ is in .gitignore (add it if ' +
+  'missing) and never commit anything under .mvpfy/.';
+
+function workspaceNoteFor(project: Project): string {
+  return project.mode === 'linked' ? LINKED_NOTE : '';
+}
 
 export type RunKind =
   | 'bootstrap'
@@ -52,6 +81,7 @@ export function buildBootstrapPrompt(project: Project): string {
   return fillTemplate(bootstrapTemplate, {
     repoPath: project.localPath,
     basePort: String(project.basePort),
+    workspaceNote: workspaceNoteFor(project),
   });
 }
 
@@ -106,7 +136,10 @@ export async function startShipChangeRun(project: Project, settings: Settings): 
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
-    promptText: fillTemplate(shipChangeTemplate, { repoPath: project.localPath }),
+    promptText: fillTemplate(shipChangeTemplate, {
+      repoPath: project.localPath,
+      workspaceNote: workspaceNoteFor(project),
+    }),
     ...agentFor(settings),
   });
   // Kind 'ship' so the PR URL is extracted from the run output.
@@ -122,8 +155,9 @@ export async function startPlanSpecRun(
   refinement?: string
 ): Promise<RunHandle> {
   const runId = makeRunId('planspec');
-  const planFile = planFileFor(planSlug);
-  const specFile = specFileFor(planSlug);
+  const cfg = configDirFor(project.mode);
+  const planFile = cfg + planFileFor(planSlug);
+  const specFile = cfg + specFileFor(planSlug);
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
@@ -157,8 +191,8 @@ export async function startPlanStoryRun(
     promptText: fillTemplate(planImplementTemplate, {
       repoPath: project.localPath,
       storyCode,
-      planFile: planFileFor(planSlug),
-      specFile: specFileFor(planSlug),
+      planFile: configDirFor(project.mode) + planFileFor(planSlug),
+      specFile: configDirFor(project.mode) + specFileFor(planSlug),
       // Legacy (pre-multi-feature) plans keep their unprefixed branch names
       // so re-runs land on the branch the earlier round already pushed.
       branchSlug: planSlug ? `${planSlug}-${storyCodeSlug}` : storyCodeSlug,
@@ -203,6 +237,7 @@ export async function startTriageRun(
       repoPath: project.localPath,
       failedStep,
       logTail,
+      workspaceNote: workspaceNoteFor(project),
     }),
     ...agentFor(settings),
   });
@@ -221,6 +256,7 @@ export async function startInstructRun(
     promptText: fillTemplate(instructTemplate, {
       repoPath: project.localPath,
       instruction,
+      workspaceNote: workspaceNoteFor(project),
     }),
     ...agentFor(settings),
   });

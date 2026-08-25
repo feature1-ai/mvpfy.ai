@@ -523,14 +523,20 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
             {confirmRemove ? (
               <div className="text-xs">
                 <span className="text-body">
-                  Stops Docker and deletes the local clone under ~/.mvpfy.{' '}
+                  {project.mode === 'linked'
+                    ? 'Stops Docker and removes the .mvpfy/ subfolder — your code stays untouched. '
+                    : 'Stops Docker and deletes the local clone under ~/.mvpfy. '}
                 </span>
                 <button
                   onClick={() => void c.removeProject()}
                   disabled={c.removing}
                   className="font-medium text-danger hover:text-danger-hover disabled:opacity-50"
                 >
-                  {c.removing ? 'Removing…' : 'Remove everything'}
+                  {c.removing
+                    ? 'Removing…'
+                    : project.mode === 'linked'
+                      ? 'Remove from mvpfy'
+                      : 'Remove everything'}
                 </button>
                 <span className="text-muted"> · </span>
                 <button

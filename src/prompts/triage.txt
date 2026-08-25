@@ -2,6 +2,7 @@ You are helping a non-technical product manager whose local environment run just
 They cannot read stack traces or edit config files — you fix things for them.
 
 Workspace: {repoPath}
+{workspaceNote}
 The step that failed: {failedStep}
 
 Tail of the failure log:

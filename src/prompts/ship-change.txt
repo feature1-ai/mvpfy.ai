@@ -1,6 +1,7 @@
 You are shipping a product manager's local change as a pull request.
 
 Workspace: {repoPath}
+{workspaceNote}
 The workspace root may contain one or more git repositories (subdirectories), or itself be
 the repository. mvpfy config files at the workspace root (mvpfy.yml, docker-compose.mvpfy.yml,
 .env*, mvpfy-*.md) are local-only and must NEVER be committed.

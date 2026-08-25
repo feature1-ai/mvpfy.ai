@@ -24,6 +24,17 @@ export interface Project {
   idePort?: number | null;
   /** Slugs of planned features (one plan/spec file pair per slug). */
   planSlugs?: string[];
+  /**
+   * 'managed' (default): a clone under ~/.mvpfy/projects, fully owned by
+   * mvpfy. 'linked': the user's own folder used in place — mvpfy keeps all
+   * its files inside a .mvpfy/ subfolder and never deletes the folder.
+   */
+  mode?: 'managed' | 'linked';
+}
+
+/** Where mvpfy's generated/communication files live inside a workspace. */
+export function configDirFor(mode: Project['mode']): string {
+  return mode === 'linked' ? '.mvpfy/' : '';
 }
 
 export interface TenantConfig {
@@ -171,7 +182,7 @@ export interface MvpfyApi {
   keychainGet(entry: string): Promise<string | null>;
   keychainSet(entry: string, value: string): Promise<void>;
   openExternal(url: string): Promise<void>;
-  createProject(repoUrls: string[]): Promise<CreateProjectResult>;
+  createProject(repoUrls: string[], link?: boolean): Promise<CreateProjectResult>;
   pickDirectory(): Promise<string | null>;
   deleteProject(workspacePath: string): Promise<{ ok: boolean; error?: string }>;
   runAgent(req: RunAgentRequest): Promise<void>;

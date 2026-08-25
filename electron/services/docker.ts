@@ -71,13 +71,19 @@ export function ideStatus(workspacePath: string): { running: boolean; port: numb
   return { running: true, port: m ? Number(m[1]) : null };
 }
 
-export function composeCommand(action: 'up' | 'down' | 'restart' | 'logs'): string {
+export function composeCommand(action: 'up' | 'down' | 'restart' | 'logs', linked = false): string {
+  // Linked repos keep the compose file inside .mvpfy/; --project-directory
+  // pins relative build contexts and volume paths to the workspace root so
+  // the file's content works identically in both modes.
+  const base = linked
+    ? 'docker compose -f .mvpfy/docker-compose.mvpfy.yml --project-directory .'
+    : 'docker compose -f docker-compose.mvpfy.yml';
   // Follow-mode container logs: no daemon auto-start (fails fast when down).
   if (action === 'logs') {
-    return 'docker compose -f docker-compose.mvpfy.yml logs -f --tail=200';
+    return `${base} logs -f --tail=200`;
   }
-  const up = 'docker compose -f docker-compose.mvpfy.yml up -d --build';
-  const down = 'docker compose -f docker-compose.mvpfy.yml down';
+  const up = `${base} up -d --build`;
+  const down = `${base} down`;
   const compose = action === 'up' ? up : action === 'down' ? down : `${down} && ${up}`;
   return `${ENSURE_DAEMON} && ${compose}`;
 }

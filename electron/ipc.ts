@@ -1,7 +1,7 @@
 import { dialog, ipcMain, shell } from 'electron';
 import * as path from 'node:path';
 import { McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
-import { isManagedPath, TMP_DIR } from './paths';
+import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
 import { cliCheck } from './services/cli';
 import { composeCommand, ideCommand, ideStatus } from './services/docker';
@@ -9,6 +9,7 @@ import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
   createProject,
   deleteProject,
+  linkProject,
   readRepoBranches,
   readRepoFiles,
   writeRepoFile,
@@ -32,7 +33,9 @@ export function registerIpc(): void {
     }
     return shell.openExternal(url);
   });
-  ipcMain.handle('create-project', (_ev, repoUrls: string[]) => createProject(repoUrls));
+  ipcMain.handle('create-project', (_ev, repoUrls: string[], link?: boolean) =>
+    link ? linkProject(repoUrls[0] ?? '') : createProject(repoUrls)
+  );
   ipcMain.handle('pick-directory', async () => {
     const res = await dialog.showOpenDialog({
       properties: ['openDirectory'],
@@ -47,26 +50,27 @@ export function registerIpc(): void {
     'docker-compose',
     (_ev, runId: string, repoPath: string, action: 'up' | 'down' | 'restart' | 'logs') => {
       const resolved = path.resolve(repoPath);
-      if (!isManagedPath(resolved)) {
-        throw new Error('docker compose is restricted to managed project directories');
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('docker compose is restricted to managed and linked project directories');
       }
-      startRun(runId, composeCommand(action), resolved);
+      const linked = isLinkedPath(resolved) && !isManagedPath(resolved);
+      startRun(runId, composeCommand(action, linked), resolved);
     }
   );
   ipcMain.handle(
     'ide',
     (_ev, runId: string, workspacePath: string, action: 'up' | 'down', port?: number) => {
       const resolved = path.resolve(workspacePath);
-      if (!isManagedPath(resolved)) {
-        throw new Error('IDE containers are restricted to managed project directories');
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('IDE containers are restricted to managed and linked project directories');
       }
       startRun(runId, ideCommand(resolved, action, port), resolved);
     }
   );
   ipcMain.handle('ide-status', (_ev, workspacePath: string) => {
     const resolved = path.resolve(workspacePath);
-    if (!isManagedPath(resolved)) {
-      throw new Error('IDE containers are restricted to managed project directories');
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('IDE containers are restricted to managed and linked project directories');
     }
     return ideStatus(resolved);
   });
@@ -81,12 +85,13 @@ export function registerIpc(): void {
   ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
   ipcMain.handle('repo-sync', (_ev, runId: string, workspacePath: string, dirs: string[]) => {
     const resolved = path.resolve(workspacePath);
-    if (!isManagedPath(resolved)) {
-      throw new Error('Sync is restricted to managed project directories');
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('Sync is restricted to managed and linked project directories');
     }
     const parts = dirs.map((d) => {
       const dir = path.resolve(d);
-      if (!isManagedPath(dir)) throw new Error('Sync is restricted to managed project directories');
+      if (!isAllowedWorkspace(dir))
+        throw new Error('Sync is restricted to managed and linked project directories');
       return `echo "── ${path.basename(dir)}" && git -C "${dir}" pull --ff-only`;
     });
     startRun(runId, parts.join(' && '), resolved);

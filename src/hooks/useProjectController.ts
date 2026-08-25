@@ -9,6 +9,7 @@ import {
   Project,
   QUESTIONS_FILE,
   RepoFile,
+  configDirFor,
   planFileFor,
   specFileFor,
 } from '../../shared/types';
@@ -52,8 +53,14 @@ const HIDDEN_FROM_VIEWER: string[] = [
   ...ENV_FILE_CANDIDATES,
 ];
 
+/** Strip the linked-mode config-dir prefix to compare bare file names. */
+function baseName(name: string): string {
+  return name.startsWith('.mvpfy/') ? name.slice('.mvpfy/'.length) : name;
+}
+
 function hiddenFromViewer(name: string): boolean {
-  return HIDDEN_FROM_VIEWER.includes(name) || /^mvpfy-(plan|spec)($|\.)/.test(name);
+  const base = baseName(name);
+  return HIDDEN_FROM_VIEWER.includes(base) || /^mvpfy-(plan|spec)($|\.)/.test(base);
 }
 
 /** One planned feature: its parsed plan plus the live run state around it. */
@@ -190,19 +197,26 @@ export function useProjectController(
     .filter((r) => r.handle.projectId === project.id && r.handle.kind === 'ship')
     .pop();
 
+  // Linked projects keep every mvpfy file inside .mvpfy/ — pf() maps a bare
+  // name to where it actually lives for this project.
+  const cfg = configDirFor(project.mode);
+  const pf = useCallback((name: string) => cfg + name, [cfg]);
+
   const planSlugsKey = (project.planSlugs ?? []).join(',');
   const refreshFiles = useCallback(() => {
     const planSlugs = ['', ...(planSlugsKey ? planSlugsKey.split(',') : [])];
     void window.mvpfy
       .readRepoFiles(project.localPath, [
-        ...GENERATED_FILES,
-        QUESTIONS_FILE,
-        ANSWERS_FILE,
-        TRIAGE_FILE,
-        SUMMARY_FILE,
-        CHANGE_FILE,
-        ...planSlugs.flatMap((slug) => [planFileFor(slug), specFileFor(slug)]),
-        ...ENV_FILE_CANDIDATES,
+        ...[
+          ...GENERATED_FILES,
+          QUESTIONS_FILE,
+          ANSWERS_FILE,
+          TRIAGE_FILE,
+          SUMMARY_FILE,
+          CHANGE_FILE,
+          ...planSlugs.flatMap((slug) => [planFileFor(slug), specFileFor(slug)]),
+          ...ENV_FILE_CANDIDATES,
+        ].map(pf),
       ])
       .then((result) => {
         setFiles(result);
@@ -212,7 +226,8 @@ export function useProjectController(
         setActiveFile((prev) => (prev && viewable.includes(prev) ? prev : (viewable[0] ?? null)));
         const generated = result
           .filter(
-            (f) => f.exists && (GENERATED_FILES as readonly string[]).includes(f.relativePath)
+            (f) =>
+              f.exists && (GENERATED_FILES as readonly string[]).includes(baseName(f.relativePath))
           )
           .map((f) => f.relativePath);
         updateState((prev) => ({
@@ -248,8 +263,8 @@ export function useProjectController(
       ? (lastEnvRun.handle.kind as 'bootstrap' | 'docker-up')
       : null;
 
-  const hasMvpfyYml = files.some((f) => f.relativePath === 'mvpfy.yml' && f.exists);
-  const mvpfyYmlContent = files.find((f) => f.relativePath === 'mvpfy.yml')?.content;
+  const hasMvpfyYml = files.some((f) => f.relativePath === pf('mvpfy.yml') && f.exists);
+  const mvpfyYmlContent = files.find((f) => f.relativePath === pf('mvpfy.yml'))?.content;
 
   // mvpfy.yml is the source of truth for where the app actually runs — the
   // agent may have had to shift off the assigned port at build time. Follow
@@ -316,7 +331,7 @@ export function useProjectController(
 
   const saveAnswersAndRerun = () =>
     guarded(async () => {
-      await window.mvpfy.writeRepoFile(project.localPath, ANSWERS_FILE, answersDraft);
+      await window.mvpfy.writeRepoFile(project.localPath, pf(ANSWERS_FILE), answersDraft);
       setAnswersDraft('');
       await bootstrap();
     });
@@ -351,8 +366,8 @@ export function useProjectController(
 
   const retryFix = () =>
     guarded(async () => {
-      const wantsStart = /retry:\s*start/i.test(contentOf(files, TRIAGE_FILE) ?? '');
-      await window.mvpfy.writeRepoFile(project.localPath, TRIAGE_FILE, '');
+      const wantsStart = /retry:\s*start/i.test(contentOf(files, pf(TRIAGE_FILE)) ?? '');
+      await window.mvpfy.writeRepoFile(project.localPath, pf(TRIAGE_FILE), '');
       if (wantsStart || lastFailure === 'docker-up') {
         const handle = await startDockerRun(project, 'up');
         runsApi.track(handle);
@@ -363,7 +378,7 @@ export function useProjectController(
 
   const dismissTriage = () =>
     guarded(async () => {
-      await window.mvpfy.writeRepoFile(project.localPath, TRIAGE_FILE, '');
+      await window.mvpfy.writeRepoFile(project.localPath, pf(TRIAGE_FILE), '');
       refreshFiles();
     });
 
@@ -373,14 +388,14 @@ export function useProjectController(
       if (!text) return;
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
-      await window.mvpfy.writeRepoFile(project.localPath, CHANGE_FILE, '');
+      await window.mvpfy.writeRepoFile(project.localPath, pf(CHANGE_FILE), '');
       const handle = await startInstructRun(project, state.settings, text);
       runsApi.track(handle);
     });
 
   const dismissChange = () =>
     guarded(async () => {
-      await window.mvpfy.writeRepoFile(project.localPath, CHANGE_FILE, '');
+      await window.mvpfy.writeRepoFile(project.localPath, pf(CHANGE_FILE), '');
       refreshFiles();
     });
 
@@ -415,8 +430,8 @@ export function useProjectController(
       const running = storyRuns.filter((r) => r.running && (r.handle.planSlug ?? '') === slug);
       return {
         slug,
-        plan: parsePlan(contentOf(files, planFileFor(slug))),
-        specMarkdown: contentOf(files, specFileFor(slug)),
+        plan: parsePlan(contentOf(files, pf(planFileFor(slug)))),
+        specMarkdown: contentOf(files, pf(specFileFor(slug))),
         generating: specRuns.some((r) => r.running && (r.handle.planSlug ?? '') === slug),
         runningStory: running.map((r) => r.handle.storyId ?? null).pop() ?? null,
       };
@@ -437,10 +452,14 @@ export function useProjectController(
 
   const writePlan = useCallback(
     async (slug: string, next: ProjectPlan) => {
-      await window.mvpfy.writeRepoFile(project.localPath, planFileFor(slug), serializePlan(next));
+      await window.mvpfy.writeRepoFile(
+        project.localPath,
+        pf(planFileFor(slug)),
+        serializePlan(next)
+      );
       refreshFiles();
     },
-    [project.localPath, refreshFiles]
+    [project.localPath, refreshFiles, pf]
   );
 
   // When a story run finishes cleanly, the agent's allowed move fires on its
@@ -647,19 +666,19 @@ export function useProjectController(
     hasMvpfyYml,
     demoCredentials: parseDemoCredentials(mvpfyYmlContent),
     mobilePreview: parseMobilePreview(mvpfyYmlContent),
-    questionsFile: files.find((f) => f.relativePath === QUESTIONS_FILE && f.exists) ?? null,
-    triageContent: contentOf(files, TRIAGE_FILE),
-    summaryContent: contentOf(files, SUMMARY_FILE),
-    changeContent: contentOf(files, CHANGE_FILE),
-    changeNeedsRestart: /restart:\s*yes/i.test(contentOf(files, CHANGE_FILE) ?? ''),
+    questionsFile: files.find((f) => f.relativePath === pf(QUESTIONS_FILE) && f.exists) ?? null,
+    triageContent: contentOf(files, pf(TRIAGE_FILE)),
+    summaryContent: contentOf(files, pf(SUMMARY_FILE)),
+    changeContent: contentOf(files, pf(CHANGE_FILE)),
+    changeNeedsRestart: /restart:\s*yes/i.test(contentOf(files, pf(CHANGE_FILE)) ?? ''),
     envFile: (() => {
       for (const name of ENV_FILE_CANDIDATES) {
-        const f = files.find((x) => x.relativePath === name && x.exists);
-        if (f) return { name, content: f.content ?? '' };
+        const f = files.find((x) => x.relativePath === pf(name) && x.exists);
+        if (f) return { name: pf(name), content: f.content ?? '' };
       }
       return null;
     })(),
-    envExample: contentOf(files, '.env.mvpfy.example'),
+    envExample: contentOf(files, pf('.env.mvpfy.example')),
     canDiagnose: lastFailure !== null,
     viewerFiles: files.filter((f) => f.exists && !hiddenFromViewer(f.relativePath)),
     activeFile,

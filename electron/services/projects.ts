@@ -3,7 +3,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CreateProjectResult, RepoCloneOutcome, RepoFile } from '../../shared/types';
 import { slugFromRepoUrl } from '../../shared/slug';
-import { ensureDirs, isManagedPath, PROJECTS_DIR } from '../paths';
+import {
+  ensureDirs,
+  isAllowedWorkspace,
+  isLinkedPath,
+  isManagedPath,
+  PROJECTS_DIR,
+} from '../paths';
 import { ideContainerName, spawnEnv } from './docker';
 import { shellQuote, spawnShell, spawnShellSync } from './shell';
 
@@ -118,12 +124,55 @@ export async function createProject(repoUrls: string[]): Promise<CreateProjectRe
   return { ok: true, slug, workspacePath, repos };
 }
 
+/**
+ * Use a local folder in place — no clone, mvpfy works directly in it. The
+ * folder must be a git repository, or a folder whose immediate subdirectories
+ * contain git repositories (a hand-made multi-repo workspace).
+ */
+export function linkProject(sourcePath: string): CreateProjectResult {
+  const src = path.resolve(expandHome(sourcePath.trim()));
+  const fail = (error: string): CreateProjectResult => ({
+    ok: false,
+    slug: '',
+    workspacePath: src,
+    repos: [],
+    error,
+  });
+  if (!fs.existsSync(src)) return fail(`Local path does not exist: ${src}`);
+  if (isManagedPath(src)) return fail('That folder is already a managed mvpfy workspace');
+
+  const originOf = (dir: string): string => {
+    const res = spawnShellSync(`git -C ${shellQuote(dir)} remote get-url origin`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    return res.status === 0 ? res.stdout.trim() : '';
+  };
+
+  const repos: RepoCloneOutcome[] = [];
+  if (fs.existsSync(path.join(src, '.git'))) {
+    repos.push({ url: originOf(src) || src, dir: src, ok: true });
+  } else {
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dir = path.join(src, entry.name);
+      if (fs.existsSync(path.join(dir, '.git'))) {
+        repos.push({ url: originOf(dir) || dir, dir, ok: true });
+      }
+    }
+    if (repos.length === 0) {
+      return fail(`Not a git repository (and no git repositories inside): ${src}`);
+    }
+  }
+  return { ok: true, slug: path.basename(src), workspacePath: src, repos };
+}
+
 /** Current branch per repo dir (empty string when not resolvable). */
 export function readRepoBranches(dirs: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (const dir of dirs) {
     const resolved = path.resolve(dir);
-    if (!isManagedPath(resolved)) {
+    if (!isAllowedWorkspace(resolved)) {
       out[dir] = '';
       continue;
     }
@@ -163,14 +212,17 @@ export function writeRepoFile(repoPath: string, relativePath: string, content: s
 }
 
 /**
- * Delete a project workspace: tear down its Docker stack (containers and
- * volumes) if a compose file exists, then remove the directory.
+ * Delete a project. Managed workspaces (clones under ~/.mvpfy/projects) are
+ * torn down completely — Docker stack, volumes, and the directory. Linked
+ * (in-place) folders are the user's real code: only mvpfy's containers and
+ * generated files are removed, NEVER the folder or anything else in it.
  */
 export async function deleteProject(
   workspacePath: string
 ): Promise<{ ok: boolean; error?: string }> {
   const resolved = path.resolve(workspacePath);
-  if (!isManagedPath(resolved)) {
+  const linked = isLinkedPath(resolved) && !isManagedPath(resolved);
+  if (!linked && !isManagedPath(resolved)) {
     return { ok: false, error: 'Refusing to delete outside ~/.mvpfy/projects' };
   }
   if (!fs.existsSync(resolved)) {
@@ -179,16 +231,49 @@ export async function deleteProject(
   try {
     // Remove the project's IDE container if one was launched.
     await runToCompletion(`docker rm -f ${ideContainerName(resolved)}`, undefined);
-    if (fs.existsSync(path.join(resolved, 'docker-compose.mvpfy.yml'))) {
-      await runToCompletion(
-        'docker compose -f docker-compose.mvpfy.yml down --volumes --remove-orphans',
-        resolved
-      );
+    for (const composeFile of ['docker-compose.mvpfy.yml', '.mvpfy/docker-compose.mvpfy.yml']) {
+      if (fs.existsSync(path.join(resolved, composeFile))) {
+        await runToCompletion(
+          `docker compose -f ${composeFile} --project-directory . down --volumes --remove-orphans`,
+          resolved
+        );
+      }
     }
-    fs.rmSync(resolved, { recursive: true, force: true });
+    if (linked) {
+      // Linked mode keeps everything mvpfy wrote inside .mvpfy/; the sweep of
+      // root-level names is insurance in case an agent ignored that rule.
+      fs.rmSync(path.join(resolved, '.mvpfy'), { recursive: true, force: true });
+      removeGeneratedFiles(resolved);
+    } else {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Remove only what mvpfy itself wrote into a linked folder. Deliberately
+ * conservative: a Dockerfile is left alone (it may predate mvpfy or be
+ * committed by now), as is anything not on this explicit list.
+ */
+function removeGeneratedFiles(root: string): void {
+  const exact = [
+    'mvpfy.yml',
+    'docker-compose.mvpfy.yml',
+    '.env.mvpfy.example',
+    'mvpfy-run.md',
+    'mvpfy-summary.md',
+    'mvpfy-questions.md',
+    'mvpfy-answers.md',
+    'mvpfy-triage.md',
+    'mvpfy-change.md',
+  ];
+  for (const entry of fs.readdirSync(root)) {
+    const isPlanFile = /^mvpfy-(plan|spec)($|\.)/.test(entry);
+    if (!exact.includes(entry) && !isPlanFile && entry !== 'mvpfy') continue;
+    fs.rmSync(path.join(root, entry), { recursive: true, force: true });
   }
 }
 

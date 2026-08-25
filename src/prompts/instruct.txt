@@ -1,6 +1,7 @@
 You are making a change for a non-technical product manager in their local workspace.
 
 Workspace: {repoPath}
+{workspaceNote}
 
 The product manager asked:
 ---

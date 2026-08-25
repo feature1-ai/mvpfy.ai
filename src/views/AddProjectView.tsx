@@ -18,8 +18,10 @@ const STEPS = [
 export default function AddProjectView({ state, updateState, onCreated }: Props) {
   const [text, setText] = useState('');
   const [cloning, setCloning] = useState(false);
+  const [inPlace, setInPlace] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const firstRun = state.projects.length === 0;
+  const looksLocal = /^([~/.]|[A-Za-z]:[\\/])/.test(text.trim());
 
   async function add() {
     const urls = text
@@ -27,10 +29,15 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
       .map((u) => u.trim())
       .filter(Boolean);
     if (urls.length === 0 || cloning) return;
+    const link = inPlace && looksLocal;
+    if (inPlace && urls.length > 1) {
+      setError('In-place mode takes a single local folder (it can contain multiple repos).');
+      return;
+    }
     setCloning(true);
     setError(null);
     try {
-      const result = await window.mvpfy.createProject(urls);
+      const result = await window.mvpfy.createProject(urls, link);
       if (!result.ok) {
         setError(result.error || 'Clone failed');
         return;
@@ -43,6 +50,7 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
         status: 'cloned',
         lastStoryId: null,
         generatedFiles: [],
+        mode: link ? 'linked' : 'managed',
       };
       updateState((prev) => ({ ...prev, projects: [...prev.projects, project] }));
       setText('');
@@ -93,6 +101,25 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
         </button>
         <span className="ml-auto text-xs text-muted">One per line</span>
       </div>
+      {looksLocal && (
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-sunken px-3.5 py-3">
+          <input
+            type="checkbox"
+            checked={inPlace}
+            onChange={(e) => setInPlace(e.target.checked)}
+            className="mt-0.5 accent-ink"
+          />
+          <span className="text-[12.5px] leading-relaxed text-body">
+            <span className="font-medium text-ink">
+              Use this folder in place — don&apos;t copy.
+            </span>{' '}
+            mvpfy works directly in your folder: the agent edits your working copy, and everything
+            mvpfy generates stays inside a <span className="font-mono">.mvpfy/</span> subfolder.
+            Removing the project later only removes that subfolder and the containers — never your
+            code.
+          </span>
+        </label>
+      )}
       {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-danger">{error}</p>}
 
       <div className="mt-10 grid gap-3.5 border-t border-line pt-6">

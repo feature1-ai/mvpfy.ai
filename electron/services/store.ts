@@ -1,18 +1,24 @@
 import * as fs from 'node:fs';
 import { DEFAULT_STATE, MvpfyState, Project } from '../../shared/types';
-import { ensureDirs, STATE_FILE } from '../paths';
+import { ensureDirs, setLinkedRoots, STATE_FILE } from '../paths';
 
 /** Persistent app state (~/.mvpfy/state.json) — the app's Model. */
+
+function syncLinkedRoots(projects: Project[]): void {
+  setLinkedRoots(projects.filter((p) => p.mode === 'linked').map((p) => p.localPath));
+}
 
 export function readState(): MvpfyState {
   try {
     const raw = fs.readFileSync(STATE_FILE, 'utf8');
     const parsed = JSON.parse(raw) as Partial<MvpfyState>;
-    return {
+    const state = {
       tenant: parsed.tenant ?? null,
       projects: migrateProjects(parsed.projects ?? []),
       settings: { ...DEFAULT_STATE.settings, ...parsed.settings },
     };
+    syncLinkedRoots(state.projects);
+    return state;
   } catch {
     return structuredClone(DEFAULT_STATE);
   }
@@ -20,6 +26,7 @@ export function readState(): MvpfyState {
 
 export function writeState(state: MvpfyState): void {
   ensureDirs();
+  syncLinkedRoots(state.projects);
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
 }
 

@@ -22,7 +22,8 @@ const api: MvpfyApi = {
   keychainGet: (entry: string) => ipcRenderer.invoke('keychain-get', entry),
   keychainSet: (entry: string, value: string) => ipcRenderer.invoke('keychain-set', entry, value),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
-  createProject: (repoUrls: string[]) => ipcRenderer.invoke('create-project', repoUrls),
+  createProject: (repoUrls: string[], link?: boolean) =>
+    ipcRenderer.invoke('create-project', repoUrls, link),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   deleteProject: (workspacePath: string) => ipcRenderer.invoke('delete-project', workspacePath),
   runAgent: (req: RunAgentRequest) => ipcRenderer.invoke('run-agent', req),

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DEFAULT_STATE, RunAgentRequest } from '../../shared/types';
-import { ensureDirs, isManagedPath, TMP_DIR } from '../paths';
+import { ensureDirs, isAllowedWorkspace, TMP_DIR } from '../paths';
 import { startRun } from './runs';
 import { shellQuote } from './shell';
 
@@ -9,9 +9,9 @@ import { shellQuote } from './shell';
 
 export function runAgent(req: RunAgentRequest): void {
   const repoPath = path.resolve(req.repoPath);
-  if (!isManagedPath(repoPath)) {
+  if (!isAllowedWorkspace(repoPath)) {
     throw new Error(
-      'Agent runs are restricted to managed project directories under ~/.mvpfy/projects'
+      'Agent runs are restricted to managed project directories and linked project folders'
     );
   }
   if (!fs.existsSync(repoPath)) {

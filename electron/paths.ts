@@ -19,3 +19,22 @@ export function isManagedPath(candidate: string): boolean {
   const resolved = path.resolve(candidate);
   return resolved !== PROJECTS_DIR && resolved.startsWith(PROJECTS_DIR + path.sep);
 }
+
+// Linked (in-place) projects live outside ~/.mvpfy/projects at paths the user
+// explicitly chose. The registry mirrors state.json and is refreshed on every
+// state read/write, so path guards can allow exactly those roots and no more.
+let linkedRoots: string[] = [];
+
+export function setLinkedRoots(roots: string[]): void {
+  linkedRoots = roots.map((r) => path.resolve(r));
+}
+
+export function isLinkedPath(candidate: string): boolean {
+  const resolved = path.resolve(candidate);
+  return linkedRoots.some((root) => resolved === root || resolved.startsWith(root + path.sep));
+}
+
+/** Managed clone or an explicitly linked in-place workspace. */
+export function isAllowedWorkspace(candidate: string): boolean {
+  return isManagedPath(candidate) || isLinkedPath(candidate);
+}

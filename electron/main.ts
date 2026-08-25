@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { registerIpc } from './ipc';
 import { ensureDirs } from './paths';
 import { setRunEventSink, stopAllRuns } from './services/runs';
+import { readState } from './services/store';
 import { resolveUserPath } from './services/shell';
 import { initAutoUpdates } from './services/updates';
 
@@ -52,6 +53,7 @@ function sendToRenderer(channel: string, payload: unknown): void {
 app.whenReady().then(() => {
   resolveUserPath();
   ensureDirs();
+  readState(); // seeds the linked-workspace allowlist before any IPC arrives
   setRunEventSink({
     output: (ev) => sendToRenderer('run-output', ev),
     exit: (ev) => sendToRenderer('run-exit', ev),

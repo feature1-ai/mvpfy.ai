@@ -182,6 +182,8 @@ export interface MvpfyApi {
     action: 'up' | 'down' | 'restart' | 'logs'
   ): Promise<void>;
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
+  /** Live IDE-container state from docker (stored idePort can go stale). */
+  ideStatus(workspacePath: string): Promise<{ running: boolean; port: number | null }>;
   cliLogin(runId: string, tool: 'gh' | 'codex'): Promise<void>;
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;

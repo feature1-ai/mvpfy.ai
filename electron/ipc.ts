@@ -4,7 +4,7 @@ import { McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
 import { isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
 import { cliCheck } from './services/cli';
-import { composeCommand, ideCommand } from './services/docker';
+import { composeCommand, ideCommand, ideStatus } from './services/docker';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
   createProject,
@@ -63,6 +63,13 @@ export function registerIpc(): void {
       startRun(runId, ideCommand(resolved, action, port), resolved);
     }
   );
+  ipcMain.handle('ide-status', (_ev, workspacePath: string) => {
+    const resolved = path.resolve(workspacePath);
+    if (!isManagedPath(resolved)) {
+      throw new Error('IDE containers are restricted to managed project directories');
+    }
+    return ideStatus(resolved);
+  });
   ipcMain.handle('read-repo-files', (_ev, repoPath: string, relativePaths: string[]) =>
     readRepoFiles(repoPath, relativePaths)
   );

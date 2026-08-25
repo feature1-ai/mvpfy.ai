@@ -15,7 +15,10 @@ export function spawnShell(command: string, opts: Parameters<typeof spawn>[2]): 
     : spawn(USER_SHELL, ['-lc', command], opts);
 }
 
-export function spawnShellSync(command: string, opts: { encoding: 'utf8'; timeout: number }) {
+export function spawnShellSync(
+  command: string,
+  opts: { encoding: 'utf8'; timeout: number; env?: NodeJS.ProcessEnv }
+) {
   return IS_WIN
     ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], opts)
     : spawnSync(USER_SHELL, ['-lc', command], opts);

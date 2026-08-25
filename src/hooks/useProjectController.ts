@@ -270,6 +270,21 @@ export function useProjectController(
   const idePort = project.idePort ?? null;
   useHealthPoll(idePort, setIdeHealthy, ideHealthy);
 
+  // Reconcile the stored IDE port against docker: containers die on reboot,
+  // and a stale port that some OTHER project's code-server later binds would
+  // otherwise embed the wrong project's editor in the Code tab.
+  useEffect(() => {
+    void window.mvpfy.ideStatus(project.localPath).then((s) => {
+      const actual = s.running ? (s.port ?? project.idePort ?? null) : null;
+      if ((project.idePort ?? null) === actual) return;
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, idePort: actual } : p)),
+      }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningCount, project.id, project.localPath, project.idePort]);
+
   async function guarded(action: () => Promise<void>): Promise<boolean> {
     setActionError(null);
     try {

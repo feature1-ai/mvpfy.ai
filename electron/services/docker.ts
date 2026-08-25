@@ -52,6 +52,25 @@ export function ideContainerName(workspacePath: string): string {
   return `mvpfy-ide-${base}`;
 }
 
+/**
+ * Live status of a project's IDE container, straight from docker — the
+ * stored idePort can go stale (reboots kill containers; another project's
+ * code-server may later bind the same port, which would embed the WRONG
+ * project's editor if trusted).
+ */
+export function ideStatus(workspacePath: string): { running: boolean; port: number | null } {
+  const name = ideContainerName(workspacePath);
+  const result = spawnShellSync(
+    `docker ps --filter ${shellQuote(`name=^${name}$`)} --format "{{.Ports}}"`,
+    { encoding: 'utf8', timeout: 10_000, env: spawnEnv() }
+  );
+  if (result.status !== 0) return { running: false, port: null };
+  const line = (result.stdout ?? '').trim().split('\n')[0] ?? '';
+  if (!line) return { running: false, port: null };
+  const m = line.match(/:(\d+)->8080\/tcp/);
+  return { running: true, port: m ? Number(m[1]) : null };
+}
+
 export function composeCommand(action: 'up' | 'down' | 'restart' | 'logs'): string {
   // Follow-mode container logs: no daemon auto-start (fails fast when down).
   if (action === 'logs') {

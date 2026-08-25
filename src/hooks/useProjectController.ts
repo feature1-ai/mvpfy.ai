@@ -27,6 +27,7 @@ import {
 } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
 import { DemoCredential, parseDemoCredentials } from '../lib/credentials';
+import { parseAppPort } from '../lib/ports';
 import { Feature1McpClient, UserStory } from '../lib/feature1Mcp';
 import { ENV_FILE_CANDIDATES } from '../lib/envFile';
 import {
@@ -247,14 +248,27 @@ export function useProjectController(
       ? (lastEnvRun.handle.kind as 'bootstrap' | 'docker-up')
       : null;
 
-  // Poll a local port until it answers HTTP so the PM can see when the app
-  // (or IDE) is actually ready, not just when its process started.
-  useHealthPoll(project.status === 'running' ? project.basePort : null, setAppHealthy, appHealthy);
-  const idePort = project.idePort ?? null;
-  useHealthPoll(idePort, setIdeHealthy, ideHealthy);
-
   const hasMvpfyYml = files.some((f) => f.relativePath === 'mvpfy.yml' && f.exists);
   const mvpfyYmlContent = files.find((f) => f.relativePath === 'mvpfy.yml')?.content;
+
+  // mvpfy.yml is the source of truth for where the app actually runs — the
+  // agent may have had to shift off the assigned port at build time. Follow
+  // the file, and reconcile stored state so every label shows the real port.
+  const appPort = parseAppPort(mvpfyYmlContent) ?? project.basePort;
+  useEffect(() => {
+    if (appPort === project.basePort) return;
+    updateState((prev) => ({
+      ...prev,
+      projects: prev.projects.map((p) => (p.id === project.id ? { ...p, basePort: appPort } : p)),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appPort, project.basePort, project.id]);
+
+  // Poll a local port until it answers HTTP so the PM can see when the app
+  // (or IDE) is actually ready, not just when its process started.
+  useHealthPoll(project.status === 'running' ? appPort : null, setAppHealthy, appHealthy);
+  const idePort = project.idePort ?? null;
+  useHealthPoll(idePort, setIdeHealthy, ideHealthy);
 
   async function guarded(action: () => Promise<void>): Promise<boolean> {
     setActionError(null);
@@ -603,7 +617,7 @@ export function useProjectController(
 
   return {
     project,
-    appUrl: `http://localhost:${project.basePort}`,
+    appUrl: `http://localhost:${appPort}`,
     appHealthy,
     ideUrl: idePort ? `http://localhost:${idePort}` : null,
     ideHealthy,

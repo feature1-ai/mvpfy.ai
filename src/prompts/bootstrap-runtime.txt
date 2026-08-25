@@ -82,6 +82,10 @@ Follow these steps:
 Rules:
 • The main user-facing app must be exposed on host port {basePort}; give other repos' apps
   their own nearby host ports and record them all in mvpfy.yml and mvpfy-run.md.
+• In mvpfy.yml the main app's `host_port` and the port in its `url` must be identical and
+  must be the port actually published in docker-compose.mvpfy.yml. If {basePort} truly
+  cannot be used, pick the nearest free port and write THAT consistently everywhere — the
+  app reads mvpfy.yml to know where to find the running product.
 • Use a named Docker volume for each database so data persists between restarts.
 • Initialize fresh databases from the committed schema file when the framework keeps one
   (Rails db/schema.rb or structure.sql → `rails db:schema:load`, Django, Prisma, …), NOT by

@@ -10,7 +10,7 @@ import {
 
 interface Props {
   c: ProjectController;
-  onOpenTab: (tab: 'overview' | 'logs') => void;
+  onOpenTab: (tab: 'app' | 'logs') => void;
 }
 
 const SEVERITY_BADGE: Record<Severity, string> = {
@@ -24,13 +24,13 @@ const SEVERITY_BADGE: Record<Severity, string> = {
  * product real people can use. Nothing here changes the code — it is the
  * honest list, and the decision about what to launch with is the builder's.
  */
-export default function LaunchView({ c, onOpenTab }: Props) {
+export default function ReadinessPanel({ c, onOpenTab }: Props) {
   const v = c.readinessVerdict;
   const groups = groupByArea(c.readinessFindings);
 
   if (c.readinessRunning) {
     return (
-      <Frame>
+      <div className="flex flex-col gap-5">
         <section className="card px-5 py-6">
           <div className="flex items-center gap-3">
             <span className="dot-pulse h-[9px] w-[9px] rounded-full bg-go" />
@@ -48,13 +48,13 @@ export default function LaunchView({ c, onOpenTab }: Props) {
             </button>
           </div>
         </section>
-      </Frame>
+      </div>
     );
   }
 
   if (!v) {
     return (
-      <Frame>
+      <div className="flex flex-col gap-5">
         <section className="card px-5 py-8 text-center">
           <h2 className="text-[15px] font-semibold">Is this ready for real users?</h2>
           <p className="mx-auto mt-1.5 max-w-[520px] text-[13px] leading-relaxed text-body [text-wrap:pretty]">
@@ -76,12 +76,12 @@ export default function LaunchView({ c, onOpenTab }: Props) {
             </p>
           )}
         </section>
-      </Frame>
+      </div>
     );
   }
 
   return (
-    <Frame>
+    <div className="flex flex-col gap-5">
       {c.actionError && (
         <div className="rounded-lg border border-danger/30 bg-red-50 px-4 py-2.5 text-[13px] text-danger">
           {c.actionError}
@@ -143,7 +143,7 @@ export default function LaunchView({ c, onOpenTab }: Props) {
           </div>
         </section>
       ))}
-    </Frame>
+    </div>
   );
 }
 
@@ -218,14 +218,6 @@ function Count({ label, value, danger }: { label: string; value: number; danger?
     <div>
       <div className="section-label">{label}</div>
       <div className={`font-mono text-[13px] ${danger ? 'text-danger' : ''}`}>{value}</div>
-    </div>
-  );
-}
-
-function Frame({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mx-auto flex w-full max-w-[860px] flex-col gap-5 px-6 pb-16 pt-7">
-      {children}
     </div>
   );
 }

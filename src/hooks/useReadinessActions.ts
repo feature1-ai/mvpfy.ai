@@ -1,4 +1,5 @@
-import { READINESS_FILE } from '../../shared/types';
+import { useEffect, useRef } from 'react';
+import { QUESTIONS_FILE, READINESS_FILE } from '../../shared/types';
 import { startReadinessRun } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
 import {
@@ -46,6 +47,25 @@ export function useReadinessActions(ctx: ControllerContext): ReadinessActions {
       const handle = await startReadinessRun(project, state.settings);
       runsApi.track(handle);
     });
+
+  // Readiness starts with the project, like everything else in setup: once
+  // bootstrap has worked the product out, the check runs off the back of it.
+  // It waits for bootstrap rather than starting on add because the setup's own
+  // notes — which services are stand-ins, which settings are throwaway — are
+  // its best evidence. Read-only, so it runs alongside the app starting up.
+  const chained = useRef(new Set<string>());
+  useEffect(() => {
+    for (const run of projectRuns) {
+      if (run.handle.kind !== 'bootstrap' || run.running || run.exitCode !== 0) continue;
+      if (chained.current.has(run.handle.runId)) continue;
+      // A blocked agent leaves questions and stops: the product is not set up
+      // yet, so there is nothing honest to check.
+      if (contentOf(files, pf(QUESTIONS_FILE))) continue;
+      chained.current.add(run.handle.runId);
+      void checkReadiness();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectRuns]);
 
   const setAccepted = (id: string, accepted: boolean) =>
     guarded(async () => {

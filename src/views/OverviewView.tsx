@@ -399,6 +399,32 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                 {c.plans.length > 0 ? 'Open board' : 'Plan a feature'}
               </button>
             </div>
+            {/* Launch readiness is a feature like the others — mvpfy starts it
+                with the project, so it is usually the first one here. */}
+            {(c.readinessVerdict || c.readinessRunning) && (
+              <button
+                onClick={() => onOpenTab('plan')}
+                className="flex w-full items-center gap-2 border-b border-line-subtle px-5 py-3 text-left hover:bg-hoverfill"
+              >
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    c.readinessRunning
+                      ? 'dot-pulse bg-go'
+                      : c.readinessVerdict?.kind === 'not-ready'
+                        ? 'bg-danger'
+                        : c.readinessVerdict?.kind === 'your-call'
+                          ? 'bg-warn-border'
+                          : 'bg-go'
+                  }`}
+                />
+                <span className="text-[13px] font-medium">Launch readiness</span>
+                <span className="text-[12.5px] text-muted">
+                  {c.readinessRunning
+                    ? 'checking what is left before launch…'
+                    : (c.readinessVerdict?.title ?? '')}
+                </span>
+              </button>
+            )}
             {c.plans.length === 0 ? (
               <p className="px-5 py-5 text-[13px] text-muted">
                 Nothing planned yet. Describe a feature in the Plan tab and mvpfy writes the spec,

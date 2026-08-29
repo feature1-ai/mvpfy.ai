@@ -5,10 +5,9 @@ import { UpdateState, useProjectController } from '../hooks/useProjectController
 import { RunsApi } from '../lib/useRuns';
 import LogPanel from '../components/LogPanel';
 import OverviewView from './OverviewView';
-import LaunchView from './LaunchView';
 import PlanView from './PlanView';
 
-export type ProjectTab = 'overview' | 'plan' | 'app' | 'code' | 'launch' | 'logs';
+export type ProjectTab = 'overview' | 'plan' | 'app' | 'code' | 'logs';
 
 interface Props {
   project: Project;
@@ -49,7 +48,6 @@ export default function ProjectShell({
     { id: 'plan', label: 'Plan' },
     { id: 'app', label: 'App', hint: `:${project.basePort}` },
     { id: 'code', label: 'Code' },
-    { id: 'launch', label: 'Launch' },
     { id: 'logs', label: 'Logs' },
   ];
 
@@ -186,10 +184,6 @@ export default function ProjectShell({
               }}
             />
           )}
-        </Pane>
-
-        <Pane active={tab === 'launch'} scroll>
-          <LaunchView c={c} onOpenTab={(t) => onTabChange(t)} />
         </Pane>
 
         <Pane active={tab === 'logs'} scroll>

@@ -138,8 +138,10 @@ npm run package    # package the macOS app into release/
    agent re-runs with your notes. The agent never moves a story to Done — shipping is a
    human decision.
 
-6. **Check launch readiness** — the Launch tab. A prototype that runs on your machine is not
-   a product strangers can use, and mvpfy is unusually well placed to say why: it built the
+6. **Launch readiness** — a feature like any other, sitting in the Plan tab beside the ones
+   you plan yourself, and mvpfy **starts it with the project**: it runs off the back of
+   bootstrap, so a freshly added product opens on it. A prototype that runs on your machine
+   is not a product strangers can use, and mvpfy is unusually well placed to say why: it built the
    local environment, so it knows which parts of your app are its own **stand-ins**, which
    settings are throwaway defaults, and where your data actually lives. It reads all of that
    plus your code and reports, in plain language, what would go wrong on launch day —

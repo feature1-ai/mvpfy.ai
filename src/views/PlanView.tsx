@@ -10,6 +10,7 @@ import {
   canMove,
   uncoveredItems,
 } from '../lib/plan';
+import ReadinessPanel from './ReadinessPanel';
 
 interface Props {
   c: ProjectController;
@@ -34,14 +35,26 @@ export default function PlanView({ c, onOpenTab }: Props) {
   const active = c.activePlan;
   const plan = active?.plan ?? null;
 
-  const switcher = plans.length > 0 && (
+  // Launch readiness is one of the features, not a place of its own: mvpfy
+  // starts it with the project, so on a fresh product it is the only thing
+  // there is to look at. Once real features exist, it is one chip away.
+  const [pick, setPick] = useState<'readiness' | 'plans' | null>(null);
+  const readinessKnown = c.readinessVerdict !== null || c.readinessRunning;
+  const showReadiness =
+    pick === 'readiness' || (pick === null && readinessKnown && plans.length === 0);
+
+  const switcher = (readinessKnown || plans.length > 0) && (
     <div className="mb-6 flex flex-wrap items-center gap-2">
+      {readinessKnown && (
+        <ReadinessChip c={c} selected={showReadiness} onClick={() => setPick('readiness')} />
+      )}
       {plans.map((f) => (
         <FeatureChip
           key={f.slug}
           feature={f}
-          selected={!creatingNew && f.slug === active?.slug}
+          selected={!showReadiness && !creatingNew && f.slug === active?.slug}
           onClick={() => {
+            setPick('plans');
             setCreatingNew(false);
             setBounce(null);
             c.setActivePlanSlug(f.slug);
@@ -50,7 +63,10 @@ export default function PlanView({ c, onOpenTab }: Props) {
       ))}
       {!creatingNew && (
         <button
-          onClick={() => setCreatingNew(true)}
+          onClick={() => {
+            setPick('plans');
+            setCreatingNew(true);
+          }}
           className="h-7 rounded-full border border-dashed border-line px-3 text-xs text-muted hover:border-muted hover:text-body"
         >
           + New feature
@@ -58,6 +74,17 @@ export default function PlanView({ c, onOpenTab }: Props) {
       )}
     </div>
   );
+
+  if (showReadiness) {
+    return (
+      <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
+        {switcher}
+        <div className="mx-auto w-full max-w-[880px]">
+          <ReadinessPanel c={c} onOpenTab={onOpenTab} />
+        </div>
+      </div>
+    );
+  }
 
   if (creatingNew || plans.length === 0) {
     return (
@@ -314,6 +341,54 @@ export default function PlanView({ c, onOpenTab }: Props) {
         is always allowed.
       </p>
     </div>
+  );
+}
+
+/** The launch-readiness feature: same chip shape, verdict instead of a count. */
+function ReadinessChip({
+  c,
+  selected,
+  onClick,
+}: {
+  c: ProjectController;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const v = c.readinessVerdict;
+  const dot = c.readinessRunning
+    ? 'dot-pulse bg-go'
+    : v?.kind === 'not-ready'
+      ? 'bg-danger'
+      : v?.kind === 'your-call'
+        ? 'bg-warn-border'
+        : 'bg-go';
+  const count = v?.blockers
+    ? `${v.blockers} blocker${v.blockers === 1 ? '' : 's'}`
+    : v && v.risks > 0
+      ? `${v.risks} risk${v.risks === 1 ? '' : 's'}`
+      : v
+        ? 'clear'
+        : '';
+  return (
+    <button
+      onClick={onClick}
+      title={c.readinessRunning ? 'Checking what is left before launch…' : (v?.title ?? '')}
+      className={`flex h-7 max-w-[280px] items-center gap-1.5 rounded-full border px-3 text-xs transition-colors ${
+        selected
+          ? 'border-ink bg-ink text-white'
+          : 'border-line bg-surface text-body hover:border-muted'
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected && !c.readinessRunning ? 'bg-white' : dot}`}
+      />
+      <span className="truncate">Launch readiness</span>
+      {count && (
+        <span className={`shrink-0 text-[10px] ${selected ? 'text-white/70' : 'text-faint'}`}>
+          {count}
+        </span>
+      )}
+    </button>
   );
 }
 

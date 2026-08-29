@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lovable or Replit prototype to production — what breaks, and how to fix it | mvpfy</title>
+<meta name="description" content="Your Lovable, Replit, Bolt, v0 or Emergent prototype works — but a demo login anyone can use, a database that wipes on deploy and payments in test mode are not production. mvpfy checks your app for launch blockers in plain language, then helps you fix them. Free and open source.">
+<link rel="canonical" href="https://mvpfy.ai/prototype-to-production.html">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.png">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="mvpfy by feature1">
+<meta property="og:title" content="Prototype to production: what breaks when real users arrive">
+<meta property="og:description" content="A demo login anyone can use, a database that wipes on deploy, payments in test mode. mvpfy tells you what stands between your prototype and real users — in plain language — then helps you fix it.">
+<meta property="og:url" content="https://mvpfy.ai/prototype-to-production.html">
+<meta property="og:image" content="https://mvpfy.ai/icon.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Prototype to production: what breaks when real users arrive">
+<meta name="twitter:description" content="A demo login anyone can use, a database that wipes on deploy, payments in test mode. mvpfy finds them, in plain language, and helps you fix them.">
+<meta name="twitter:image" content="https://mvpfy.ai/icon.png">
+
+<!-- Structured data: the article itself -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Prototype to production: what breaks when real users arrive",
+  "description": "The specific things that stand between an AI-built prototype (Lovable, Replit, Bolt, v0, Emergent) and real paying users — and how to find and fix them.",
+  "author": { "@type": "Organization", "name": "feature1", "url": "https://feature1.ai" },
+  "publisher": { "@type": "Organization", "name": "feature1", "url": "https://feature1.ai" },
+  "mainEntityOfPage": "https://mvpfy.ai/prototype-to-production.html",
+  "datePublished": "2026-08-30",
+  "dateModified": "2026-08-30",
+  "about": ["Lovable", "Replit", "Bolt.new", "v0", "Emergent", "vibe coding", "production readiness", "launch checklist"]
+}
+</script>
+
+<!-- Structured data: the steps -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to take a Lovable or Replit prototype to production",
+  "description": "Move an AI-built prototype from a preview environment to a product real users can pay for, without rewriting it.",
+  "totalTime": "PT1H",
+  "tool": [{"@type": "HowToTool", "name": "mvpfy"}, {"@type": "HowToTool", "name": "Docker"}, {"@type": "HowToTool", "name": "Claude Code"}],
+  "step": [
+    {"@type": "HowToStep", "name": "Get the code onto GitHub", "text": "Export or push your project from Lovable, Replit, Bolt, v0 or Emergent to a GitHub repository. All of them can do this; from here the code is yours and no longer depends on their editor."},
+    {"@type": "HowToStep", "name": "Run it on your own machine", "text": "Add the repository to mvpfy. It reads the code, works out every service the app needs, writes the Docker configuration, fills in missing pieces such as Postgres or a mail inbox, and starts the app with a demo login you can use."},
+    {"@type": "HowToStep", "name": "Check launch readiness", "text": "mvpfy audits the app for what would go wrong on launch day and reports it in plain language, graded: blockers mean real people lose money, lose data, or get access they should not have. Every finding points at the file that proves it."},
+    {"@type": "HowToStep", "name": "Fix the blockers", "text": "Work through them: delete the demo account and its seeded rows, move to a real database with backups, put live payment keys in your host's secret store, and either finish the switched-off features or stop offering them in the interface."},
+    {"@type": "HowToStep", "name": "Deploy and keep shipping", "text": "The Dockerfile mvpfy generated is what a host such as Fly, Render or Railway consumes. After launch, describe the next change in plain language and it lands as a reviewable commit."}
+  ]
+}
+</script>
+
+<!-- Structured data: FAQ -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "Is a Lovable or Replit app production ready?", "acceptedAnswer": {"@type": "Answer", "text": "Usually not as it stands, and not because the code is bad. Prototype tools optimise for showing you something working quickly, so they leave behind the shortcuts that made that possible: a demo account seeded so you could click around, sample data mixed into the same database as real records, payments in test mode, API keys left as placeholders, and features switched off to keep the preview light. None of that matters until a stranger arrives. Then each one is a way to lose money, lose data, or let someone in who should not be."}},
+    {"@type": "Question", "name": "What usually breaks when a prototype gets real users?", "acceptedAnswer": {"@type": "Answer", "text": "Six things, in rough order of how often they bite: the demo login still works, so anyone who finds the site can sign in as a full user; the database lives inside the preview container, so a redeploy wipes every customer account; checkout runs against a test or mock payment service, so customers get the product without being charged; the session secret is the same placeholder in every copy of the code, so a login can be forged; features were disabled to make local running possible and now return nothing; and there is no error tracking, so a failing checkout is silent."}},
+    {"@type": "Question", "name": "How do I move my app off Lovable or Replit?", "acceptedAnswer": {"@type": "Answer", "text": "Push the project to GitHub — every one of these tools can do that — and from then on the code is yours. Run it on your own machine to prove it works outside their environment, check it for launch blockers, fix those, then deploy the container to any host. You do not need to rewrite the app; you need to replace the stand-ins the prototype was built on."}},
+    {"@type": "Question", "name": "Do I need to rewrite my prototype before launching?", "acceptedAnswer": {"@type": "Answer", "text": "Almost never. The work is replacing stand-ins with real things — a real database with backups, real payment keys, real secrets — and deleting the demo data that let you click around. That is a list of specific changes, not a rewrite. The danger is not knowing which shortcuts are in there, which is exactly what a readiness check is for."}},
+    {"@type": "Question", "name": "What is mvpfy?", "acceptedAnswer": {"@type": "Answer", "text": "mvpfy is a free, MIT-licensed, open-source desktop app that runs an existing codebase on your own machine, checks it for launch blockers, and lets you describe changes in plain language that an AI coding agent applies. It is built by feature1. Because it sets the app up itself, it knows which parts of your product are stand-ins it had to create — which is why its readiness report can tell you what is pretend and what is real."}},
+    {"@type": "Question", "name": "Is mvpfy free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, MIT-licensed and free. It runs on top of an AI coding agent you bring yourself — Claude Code — so agent work bills to your own Anthropic account rather than to mvpfy."}}
+  ]
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F7F5F1; --surface:#fff; --sunken:#FAF8F4;
+    --line:#E4E0D8; --line2:#EFEBE3;
+    --ink:#1B1A17; --ink2:#33302B; --body:#57534C; --muted:#8A857C; --faint:#A8A296;
+    --go:#1F7A4C; --go-h:#155B38; --go-bg:#F2F9F5; --go-line:#CBE5D8;
+    --red:#A32B22; --red-bg:#FDF3F2; --red-line:#F0D5D2;
+    --amber:#8A6420; --amber-bg:#FDF8EE; --amber-line:#EDDFC4;
+    --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:var(--go);text-decoration:none}
+  a:hover{color:var(--go-h);text-decoration:underline}
+  .wrap{max-width:820px;margin:0 auto;padding:0 24px}
+  .mono{font-family:var(--mono)}
+  p{text-wrap:pretty}
+
+  .nav{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+  .nav .wrap{max-width:1060px;display:flex;align-items:center;gap:12px;height:56px}
+  .nav img{height:22px;display:block}
+  .nav .tag{font-size:11.5px;letter-spacing:.02em;color:var(--muted);padding-top:4px}
+  .nav .tag a{color:inherit}
+  .nav .links{margin-left:auto;display:flex;align-items:center;gap:18px;font-size:13px}
+  .nav .links a{color:var(--body)}
+  .nav .links a:hover{color:var(--ink);text-decoration:none}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:6px;
+       font-size:13.5px;font-weight:500;padding:0 16px;height:36px;border:1px solid transparent;white-space:nowrap}
+  .btn:hover{text-decoration:none}
+  .btn-ink{background:var(--ink);color:#fff!important}
+  .btn-ink:hover{background:var(--ink2)}
+  .btn-line{background:var(--surface);border-color:var(--line);color:var(--body)!important}
+  .btn-line:hover{background:var(--paper);color:var(--ink)!important}
+  .btn-lg{height:44px;padding:0 22px;font-size:14.5px}
+
+  .hero{padding:64px 0 8px}
+  .kicker{display:block;font-size:11.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+  h1{font-size:clamp(30px,4.6vw,42px);line-height:1.12;letter-spacing:-.025em;font-weight:600}
+  .sub{margin-top:16px;font-size:17px;line-height:1.6;color:var(--body)}
+  .sub strong{color:var(--ink);font-weight:600}
+
+  /* The lead answer — the paragraph an answer engine should be able to lift whole. */
+  .answer{margin:30px 0 8px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--go);border-radius:8px;padding:20px 22px}
+  .answer h2{font-size:15px;font-weight:600;margin-bottom:8px}
+  .answer p{font-size:14.5px;color:var(--body)}
+  .answer p + p{margin-top:10px}
+
+  section{padding:44px 0}
+  section.tight{padding:30px 0}
+  h2{font-size:clamp(22px,3vw,27px);line-height:1.2;letter-spacing:-.02em;font-weight:600}
+  h3{font-size:16px;font-weight:600;letter-spacing:-.01em}
+  .lede{margin-top:12px;font-size:15.5px;color:var(--body)}
+  section > p + p, .lede + p{margin-top:14px;color:var(--body)}
+
+  table{width:100%;border-collapse:collapse;margin-top:22px;font-size:14px}
+  th{text-align:left;font-size:11.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 14px 9px 0;border-bottom:1px solid var(--line)}
+  td{padding:13px 14px 13px 0;border-bottom:1px solid var(--line2);color:var(--body);vertical-align:top}
+  td:first-child{color:var(--ink);width:44%}
+  .tablewrap{overflow-x:auto}
+
+  .finding{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:16px 18px;margin-top:12px}
+  .finding .top{display:flex;align-items:baseline;gap:10px}
+  .finding h3{flex:1;min-width:0}
+  .sev{flex:none;font-size:11px;border-radius:99px;padding:2px 9px;white-space:nowrap}
+  .sev.b{background:var(--red-bg);color:var(--red);border:1px solid var(--red-line)}
+  .sev.r{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-line)}
+  .finding p{margin-top:7px;font-size:14px;color:var(--body)}
+  .finding .fix{margin-top:8px;font-size:13.5px}
+  .finding .fix b{color:var(--muted);font-weight:400}
+
+  ol.steps{margin-top:24px;list-style:none;counter-reset:s}
+  ol.steps li{counter-increment:s;position:relative;padding-left:44px;margin-top:22px}
+  ol.steps li::before{content:counter(s,decimal-leading-zero);position:absolute;left:0;top:1px;
+    font-family:var(--mono);font-size:12px;color:var(--faint)}
+  ol.steps h3{margin-bottom:5px}
+  ol.steps p{font-size:14.5px;color:var(--body)}
+
+  #faq{padding-top:26px}
+  .faq{border-top:1px solid var(--line)}
+  .faq .q{border-bottom:1px solid var(--line);padding:20px 0}
+  .faq h3{margin-bottom:7px}
+  .faq p{font-size:14.5px;color:var(--body)}
+
+  .cta{margin-top:26px;display:flex;gap:12px;flex-wrap:wrap}
+  .fine{margin-top:14px;font-size:12.5px;color:var(--muted);padding-bottom:10px}
+  footer{border-top:1px solid var(--line);padding:30px 0 60px;margin-top:30px;font-size:13px;color:var(--muted)}
+  footer a{color:var(--body)}
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="Main">
+  <div class="wrap">
+    <a href="/" aria-label="mvpfy home"><img src="logo.svg" alt="#mvpFY logo"></a>
+    <span class="tag">the IDE for product builders · by <a href="https://feature1.ai">feature1</a></span>
+    <div class="links">
+      <a href="/">Home</a>
+      <a href="#what-breaks">What breaks</a>
+      <a href="#steps">Steps</a>
+      <a href="#faq">FAQ</a>
+      <a class="btn btn-ink" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <header class="hero wrap">
+    <span class="kicker">Prototype → production</span>
+    <h1>Your prototype works. Production is a different question.</h1>
+    <p class="sub">You built something real in <strong>Lovable</strong>, <strong>Replit</strong>,
+    <strong>Bolt</strong>, <strong>v0</strong> or <strong>Emergent</strong> — and it works. Then you
+    try to put it in front of paying customers and discover the app was standing on things that
+    were never meant to leave the preview. <strong>mvpfy</strong> finds them, tells you in plain
+    language what each one would do on launch day, and helps you fix them.</p>
+
+    <div class="answer">
+      <h2>The short answer</h2>
+      <p>An AI-built prototype is usually not production ready, and it is not because the code is
+      bad. These tools optimise for showing you something working <em>quickly</em>, so they leave
+      the shortcuts that made that possible: a demo account seeded so you could click around, sample
+      data in the same database as real records, payments in test mode, placeholder API keys, and
+      features switched off to keep the preview light.</p>
+      <p>None of that matters until a stranger arrives. Then each one is a way to lose money, lose
+      data, or let someone in who should not be. The fix is almost never a rewrite — it is replacing
+      the stand-ins with real things. The hard part is knowing which ones are in there.</p>
+    </div>
+  </header>
+
+  <section id="what-breaks" class="wrap">
+    <h2>What actually breaks</h2>
+    <p class="lede">Not theory. These are the findings that come up again and again on prototypes
+    that have never met a real user, in rough order of how often they bite.</p>
+
+    <div class="finding">
+      <div class="top"><h3>The demo login still works</h3><span class="sev b">blocker</span></div>
+      <p>The email and password you used while building are still valid, so anyone who finds your
+      site can sign in as a full user and see every customer's data. It is the single most common
+      one, because you need that account right up until the day you don't.</p>
+      <p class="fix"><b>To fix —</b> delete the demo account and its seeded rows before the first
+      real sign-up.</p>
+    </div>
+
+    <div class="finding">
+      <div class="top"><h3>Your database is wiped every time you deploy</h3><span class="sev b">blocker</span></div>
+      <p>The data lives in a file inside the container that runs the app, which is thrown away on
+      each deploy. It looks fine right up to your first update, at which point every customer's
+      account disappears — and there is no backup, because nothing was ever configured to make one.</p>
+      <p class="fix"><b>To fix —</b> move to a managed database with backups turned on, and load the
+      schema rather than replaying migrations.</p>
+    </div>
+
+    <div class="finding">
+      <div class="top"><h3>Checkout does not take real money</h3><span class="sev b">blocker</span></div>
+      <p>Payments run against test keys or a mock service that always approves. A customer gets the
+      product, you get no money, and there is no record that it happened.</p>
+      <p class="fix"><b>To fix —</b> connect the real payment account and switch to live keys, then
+      test one real transaction end to end.</p>
+    </div>
+
+    <div class="finding">
+      <div class="top"><h3>The session secret is a placeholder</h3><span class="sev r">risk</span></div>
+      <p>It is the same value in every copy of the code — often the same value in every project the
+      tool has ever generated — so someone can forge a login as any user.</p>
+      <p class="fix"><b>To fix —</b> generate a real secret and store it with your host, never in the
+      repository.</p>
+    </div>
+
+    <div class="finding">
+      <div class="top"><h3>Features were switched off to make it run</h3><span class="sev r">risk</span></div>
+      <p>Search, file uploads, email — anything that needed a service too heavy for a preview gets
+      quietly disabled. The buttons are still there. Customers click them and get nothing.</p>
+      <p class="fix"><b>To fix —</b> connect the real service, or stop offering the feature in the
+      interface until you do.</p>
+    </div>
+
+    <div class="finding">
+      <div class="top"><h3>You would not know when it breaks</h3><span class="sev r">risk</span></div>
+      <p>No error tracking, so a failing checkout is silent. You find out when a customer bothers to
+      tell you, which most of them will not.</p>
+      <p class="fix"><b>To fix —</b> add an error tracker before you send anyone to the site.</p>
+    </div>
+  </section>
+
+  <section class="wrap tight">
+    <h2>Why mvpfy can answer this</h2>
+    <p class="lede">Most tools that audit a codebase are guessing about intent. mvpfy is not,
+    because it set the app up in the first place.</p>
+    <p>When you add a project, mvpfy works out everything the product needs to run and fills in
+    whatever is missing — a database, a mail inbox, a stand-in for a payment service that cannot run
+    offline. It writes down what it faked and why, in plain language, as it goes. So when it later
+    tells you <em>"checkout is not real"</em>, it is not inferring that from the code. It knows,
+    because it is the thing that made it pretend.</p>
+    <p>That report is graded, and mvpfy is strict about the grading: a <strong>blocker</strong> means
+    real people lose money, lose data, or get access they should not have. Every finding points at
+    the file that proves it, so you can check the claim rather than trust it. And you can decide to
+    launch with something anyway — it stays on the list, marked as your decision, because accepting
+    a risk does not make it safe.</p>
+  </section>
+
+  <section id="steps" class="wrap">
+    <h2>How to take a prototype to production</h2>
+    <ol class="steps">
+      <li>
+        <h3>Get the code onto GitHub</h3>
+        <p>Lovable, Replit, Bolt, v0 and Emergent can all push your project to a GitHub repository.
+        Do it. From that moment the code is yours and stops depending on their editor — which is the
+        actual lock-in, not the code itself.</p>
+      </li>
+      <li>
+        <h3>Run it on your own machine</h3>
+        <p>Add the repository to mvpfy. It reads the code, works out every service the app needs,
+        writes the Docker setup, fills the gaps, and starts the app with a login you can use. If it
+        cannot run outside the tool that built it, you learn that here rather than on launch day.</p>
+      </li>
+      <li>
+        <h3>Check launch readiness</h3>
+        <p>mvpfy audits the app and reports what would go wrong with real users — graded, in plain
+        language, each finding pointing at the file behind it.</p>
+      </li>
+      <li>
+        <h3>Fix the blockers</h3>
+        <p>Work down the list. Describe each fix in plain language and the agent applies it, or hand
+        the list to whoever helps you with code. Either way you now know what the list <em>is</em>.</p>
+      </li>
+      <li>
+        <h3>Deploy, then keep shipping</h3>
+        <p>The Dockerfile mvpfy generated is exactly what a host like Fly, Render or Railway wants.
+        After launch, the same loop keeps working: describe the change, see it running, ship it.</p>
+      </li>
+    </ol>
+
+    <div class="cta">
+      <a class="btn btn-ink btn-lg" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download for macOS · beta</a>
+      <a class="btn btn-line btn-lg" href="https://github.com/feature1-ai/mvpfy.ai">View on GitHub</a>
+    </div>
+    <p class="fine">Free and MIT-licensed. Runs on your machine — your code is not uploaded anywhere.
+    Bring your own agent (<span class="mono">claude</span>).</p>
+  </section>
+
+  <section id="faq" class="wrap">
+    <h2>Questions people actually ask</h2>
+    <div class="faq" style="margin-top:22px">
+      <div class="q">
+        <h3>Is a Lovable or Replit app production ready?</h3>
+        <p>Usually not as it stands, and not because the code is bad. The shortcuts that let you see
+        something working in an afternoon — seeded demo accounts, sample data, test-mode payments,
+        placeholder keys, disabled features — are exactly the things that hurt once a stranger
+        arrives. They are all fixable, and none of them require a rewrite.</p>
+      </div>
+      <div class="q">
+        <h3>Do I have to rewrite my app?</h3>
+        <p>Almost never. The work is replacing stand-ins with real things and deleting the demo data
+        that let you click around. That is a specific list of changes. The danger is not knowing
+        which shortcuts are in there.</p>
+      </div>
+      <div class="q">
+        <h3>How do I move off Lovable or Replit?</h3>
+        <p>Push to GitHub, then prove the app runs somewhere that is not their environment. Once it
+        runs on your machine in Docker, it will run on any host — and you are no longer waiting on
+        anyone's export button.</p>
+      </div>
+      <div class="q">
+        <h3>Can I do this without being technical?</h3>
+        <p>The readiness report is written for the person who built the product, not for an engineer
+        — it says what each finding means for your customers, not which config key is wrong. Fixing
+        them is plain-language instructions to an agent. Setting the tools up the first time is the
+        one step where an engineer friend helps; mvpfy installs most of them for you on macOS.</p>
+      </div>
+      <div class="q">
+        <h3>Does my code get uploaded anywhere?</h3>
+        <p>No. mvpfy has no server. Your repository is cloned to your machine and the app runs in
+        Docker locally. Code reaches a model API only through the AI agent you installed and signed
+        in yourself, under your own account.</p>
+      </div>
+      <div class="q">
+        <h3>What does it cost?</h3>
+        <p>mvpfy is free and MIT-licensed. Agent work bills to your own Anthropic account, the same
+        as using Claude Code directly.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a href="/">mvpfy</a> · by <a href="https://feature1.ai">feature1</a> ·
+    <a href="https://github.com/feature1-ai/mvpfy.ai">GitHub</a> ·
+    <a href="https://github.com/feature1-ai/mvpfy.ai/blob/main/LICENSE">MIT</a>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,14 +1,30 @@
 # mvpfy
 
 > mvpfy ("mvpfy by feature1") is a free, MIT-licensed, open-source desktop IDE for product
-> managers. It clones a company's existing repositories, runs the product locally in Docker
-> with a live preview and an embedded VS Code (code-server) editor, and lets a PM describe
-> changes in plain language that an AI coding agent (Claude Code, optionally Codex CLI)
-> applies and ships as pull requests for engineers to review.
+> builders. It runs an existing codebase locally in Docker with a live preview and an
+> embedded VS Code (code-server) editor, lets someone non-technical describe changes in
+> plain language that an AI coding agent (Claude Code, optionally Codex CLI) applies, and
+> checks the product for what stands between it and real users. Two audiences: a product
+> manager at a company, whose changes exit as pull requests engineers review; and a solo
+> builder taking an AI-built prototype (Lovable, Replit, Bolt, v0, Emergent) to production.
 
 Key facts:
-- Positioning: "The IDE for PMs." Like Lovable or Replit, but for a company's EXISTING
-  product, running locally, with a pull request (not a deploy) as the output.
+- Positioning: "The IDE for product builders." Like Lovable or Replit, but for a codebase
+  that already exists, running locally, with a pull request (not a deploy) as the output.
+- Prototype-to-production: mvpfy audits an app for launch blockers and reports them in
+  plain language, graded — a "blocker" means real people lose money, lose data, or get
+  access they should not have. Typical findings on an AI-built prototype: the demo login
+  still works so anyone can sign in as a full user; the database lives inside the
+  container and is wiped on every deploy; checkout runs against test keys or a mock so
+  customers are never charged; the session secret is a placeholder shared by every copy of
+  the code; features were switched off to make local running possible and now return
+  nothing; there is no error tracking so failures are silent. Fixing these is a list of
+  specific changes, not a rewrite.
+- Why the audit is reliable: mvpfy sets the local environment up itself, so it knows which
+  parts of the product are stand-ins it created rather than inferring intent from code.
+  Findings cite the file that proves them; the verdict is computed by mvpfy from the
+  findings, never asserted by the agent; and a builder can accept a blocker to launch
+  anyway, which keeps it on the list marked as their decision rather than clearing it.
 - vs Cursor/Windsurf: those are code-first tools for engineers (unit of work: a diff).
   mvpfy is product-first (unit of work: a plain-language change or a user story); the PM
   never reads a diff.
@@ -25,9 +41,20 @@ Key facts:
   reviews and agrees, then user stories with acceptance criteria on a per-feature board
   (To do → Coding → Testing → Done), each story implemented by the agent and shipped as a
   pull request the PM tests before marking done; multiple features plannable in parallel,
-  each with its own board.
+  each with its own board; launch-readiness audit (see prototype-to-production above);
+  setup shown as a live board of plain-language cards, where mvpfy marks a task done only
+  when it can verify the files it produced, and the final card — the app running with a
+  working demo login — is the human's to close; one-click install of the required tools on
+  macOS (git, Homebrew, GitHub CLI, Docker Desktop, Claude Code, Codex CLI) and in-app
+  sign-in for GitHub, Claude and Codex.
 - Maker: feature1 (https://feature1.ai). Source: https://github.com/feature1-ai/mvpfy.ai
 - Download: https://github.com/feature1-ai/mvpfy.ai/releases/latest
+
+## Guides
+
+- [Prototype to production](https://mvpfy.ai/prototype-to-production.html): what breaks when
+  an AI-built prototype (Lovable, Replit, Bolt, v0, Emergent) meets real users, why, and the
+  steps to fix it.
 
 ## Docs
 

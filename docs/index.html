@@ -51,6 +51,8 @@
     {"@type": "Question", "name": "Can mvpfy plan features and write PRDs?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Describe a feature in a sentence or two and mvpfy studies your codebase and writes a minimal PRD in the Feature1 style — problem, solution, target users, success metrics, scope, flows, requirements. You review and refine the PRD in plain language; once you agree, its user stories open on the feature's own board (To do, Coding, Testing, Done). The agent implements each story and opens a pull request; only you, after testing the story in the running app, can mark it done. You can plan several features in parallel — each gets its own board."}},
     {"@type": "Question", "name": "Is mvpfy free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. mvpfy is MIT-licensed and free. It is a thin wrapper over AI coding agents you bring yourself — Claude Code (required) and optionally Codex CLI — so agent runs use your own Anthropic or OpenAI subscription."}},
     {"@type": "Question", "name": "How is mvpfy different from Cursor or Windsurf?", "acceptedAnswer": {"@type": "Answer", "text": "Cursor and Windsurf are code-first editors that make engineers faster, one reviewed diff at a time. mvpfy is product-first: the unit of work is a change to the product, described in plain language or picked from a user story. The PM never reads a diff — the output is a running app to look at and a pull request for engineers to review."}},
+    {"@type": "Question", "name": "Is a Lovable or Replit prototype production ready?", "acceptedAnswer": {"@type": "Answer", "text": "Usually not as it stands, and not because the code is bad. Prototype tools optimise for showing you something working quickly, so they leave the shortcuts that made that possible: a demo account seeded so you could click around, sample data in the same database as real records, payments in test mode, placeholder API keys, and features switched off to keep the preview light. None of it matters until a stranger arrives; then each one is a way to lose money, lose data, or let someone in who should not be. mvpfy audits the app and reports each of these in plain language, graded, with the file that proves it. Fixing them is a list of specific changes rather than a rewrite."}},
+    {"@type": "Question", "name": "Can mvpfy check whether my app is ready to launch?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. mvpfy runs a launch-readiness audit as soon as it has set your project up. Because it built the local environment itself, it knows which parts of the product are stand-ins it created - a mock payment service, a local mail inbox, a demo login - rather than guessing from the code. Findings are graded: a blocker means real people lose money, lose data, or get access they should not have. The verdict is computed by mvpfy from the findings rather than asserted by the AI agent, every finding cites the file behind it, and you can choose to launch with a blocker anyway - it stays on the list marked as your decision, because accepting a risk does not make it safe."}},
     {"@type": "Question", "name": "How is mvpfy different from Lovable or Replit?", "acceptedAnswer": {"@type": "Answer", "text": "Lovable and Replit excel at building new apps in their cloud. mvpfy runs the same describe-see-ship loop on the product your company already has: your real repositories, cloned locally, running in Docker on your machine, with changes exiting through a pull request your engineers review rather than a deploy button."}},
     {"@type": "Question", "name": "Does my code leave my machine?", "acceptedAnswer": {"@type": "Answer", "text": "The product runs entirely locally: repositories are cloned to your machine and the app runs in local Docker containers. When you ask the AI agent to make a change, the agent sends relevant code to its model API (Anthropic or OpenAI) under your own account — the same as using Claude Code or Codex directly. mvpfy itself has no server and collects nothing."}},
     {"@type": "Question", "name": "What do I need to run mvpfy?", "acceptedAnswer": {"@type": "Answer", "text": "git, the GitHub CLI (gh), Docker Desktop, and Claude Code, signed in. Codex CLI is optional and only needed if you select it as your agent. mvpfy checks all of this on first launch and guides sign-in from Settings. macOS is the primary platform; Linux is supported and Windows is an experimental beta."}},
@@ -239,6 +241,7 @@
     <span class="tag">the IDE for PMs · by <a href="https://feature1.ai">feature1</a></span>
     <div class="links">
       <a href="#how">How it works</a>
+      <a href="/prototype-to-production.html">Prototype → production</a>
       <a href="#compare">Compare</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/feature1-ai/mvpfy.ai">GitHub</a>
@@ -372,6 +375,20 @@
         <p>Repos clone to your machine, the product runs in local Docker, and mvpfy has no server.
         Agents run under your own Claude&nbsp;Code or Codex account.</p></div>
     </div>
+  </section>
+
+  <section class="wrap" id="prototype">
+    <span class="kicker">Came from Lovable, Replit or Bolt?</span>
+    <h2>Your prototype works. Production is a different question.</h2>
+    <p class="lede">The shortcuts that let you see something working in an afternoon — a seeded demo
+    login, sample data in the real database, payments in test mode, features switched off to keep
+    the preview light — are exactly the things that hurt once a stranger arrives.</p>
+    <p style="margin-top:14px;color:var(--body)">mvpfy runs your prototype on your own machine, then
+    tells you in plain language what would go wrong on launch day: <em>"anyone who finds your site
+    can sign in as the demo account"</em>, <em>"your database is wiped every time you deploy"</em>,
+    <em>"checkout does not take real money"</em>. It can be specific because it set the environment
+    up itself, so it knows what is a stand-in and what is real. None of it is a rewrite.</p>
+    <p style="margin-top:18px"><a href="/prototype-to-production.html"><strong>Read the guide: prototype → production →</strong></a></p>
   </section>
 
   <section id="compare" class="wrap">

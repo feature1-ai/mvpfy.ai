@@ -79,6 +79,8 @@
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html{scroll-behavior:smooth}
+  /* Anchor targets clear the sticky nav instead of hiding behind it. */
+  [id]{scroll-margin-top:72px}
   body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
   a{color:var(--go);text-decoration:none}
   a:hover{color:var(--go-h);text-decoration:underline}
@@ -231,6 +233,42 @@
     .oss .inner{grid-template-columns:1fr;gap:28px}
     .nav .tag{display:none}
   }
+
+  /* ── Phones ─────────────────────────────────────────────────────────────
+     The nav becomes two rows — brand and Download stay together on top, the
+     section links move to their own row and scroll sideways if there are more
+     than fit. Nothing is hidden, so every link stays reachable and crawlable. */
+  @media(max-width:700px){
+    [id]{scroll-margin-top:104px}
+    .nav .wrap{height:auto;flex-wrap:wrap;padding-top:9px;padding-bottom:9px;row-gap:9px}
+    .nav .tag{display:none}
+    .nav > .wrap > .btn{margin-left:auto;height:32px;padding:0 13px;font-size:12.5px}
+    .nav .links{order:3;width:100%;margin-left:0;gap:18px;font-size:12.5px;align-items:center;
+                overflow-x:auto;white-space:nowrap;scrollbar-width:none;-ms-overflow-style:none}
+    .nav .links::-webkit-scrollbar{display:none}
+    .nav .links a{flex:none;padding:8px 0}
+
+    .hero{padding:40px 0 28px;text-align:left}
+    .hero h1{font-size:28px}
+    .hero .sub{font-size:15.5px}
+    .cta{flex-direction:column;align-items:stretch}
+    .cta .btn{width:100%}
+    section{padding:48px 0}
+    h2{font-size:23px}
+    .fin{padding:56px 0}
+    .fin h2{font-size:25px}
+
+    /* The mock is decorative (aria-hidden): clip it rather than let a fake
+       screenshot widen the whole page. */
+    .mock{overflow:hidden}
+    .mock-body{padding:14px;gap:12px}
+    .m-ports{gap:16px;flex-wrap:wrap}
+    .m-login .row .v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .m-open{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    footer .wrap{gap:10px}
+    footer .right{margin-left:0;width:100%;gap:18px}
+  }
 </style>
 </head>
 <body>
@@ -245,8 +283,8 @@
       <a href="#compare">Compare</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/feature1-ai/mvpfy.ai">GitHub</a>
-      <a class="btn btn-ink" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download</a>
     </div>
+    <a class="btn btn-ink" href="https://github.com/feature1-ai/mvpfy.ai/releases/latest">Download</a>
   </div>
 </nav>
 

@@ -84,6 +84,9 @@
   body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
   a{color:var(--go);text-decoration:none}
   a:hover{color:var(--go-h);text-decoration:underline}
+  /* Vertical padding on these is set with longhands on purpose: they are also
+     .wrap elements, and a `padding: Npx 0` shorthand would silently reset the
+     24px side padding that keeps content off the edge of a phone screen. */
   .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
   .mono{font-family:var(--mono)}
   p{text-wrap:pretty}
@@ -110,7 +113,7 @@
   .btn-lg{height:42px;padding:0 20px;font-size:14.5px}
 
   /* ── Hero ── */
-  .hero{padding:88px 0 40px;text-align:center}
+  .hero{padding-top:88px;padding-bottom:40px;text-align:center}
   .hero h1{font-size:46px;font-weight:600;letter-spacing:-.02em;line-height:1.12}
   .hero .sub{max-width:640px;margin:20px auto 0;font-size:16.5px;color:var(--body)}
   .hero .sub strong{color:var(--ink);font-weight:600}
@@ -119,7 +122,7 @@
   .hero .fine .mono{font-size:11.5px}
 
   /* ── App mock ── */
-  .mockwrap{padding:44px 0 8px}
+  .mockwrap{padding-top:44px;padding-bottom:8px}
   .mock{max-width:900px;margin:0 auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;
         box-shadow:0 24px 60px rgba(27,26,23,.08);overflow:hidden;text-align:left;font-size:13px}
   .mock-top{display:flex;align-items:center;gap:14px;height:44px;padding:0 16px;border-bottom:1px solid var(--line)}
@@ -166,7 +169,7 @@
   .m-pr .mono{font-size:10.5px;color:var(--go);display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
   /* ── Sections ── */
-  section{padding:72px 0}
+  section{padding-top:72px;padding-bottom:72px}
   .kicker{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
   h2{font-size:28px;font-weight:600;letter-spacing:-.02em;margin-top:8px}
   .lede{max-width:620px;color:var(--body);margin-top:12px}
@@ -217,7 +220,7 @@
   .clone .c{color:var(--faint)}
 
   /* Final CTA + footer */
-  .fin{text-align:center;padding:84px 0}
+  .fin{text-align:center;padding-top:84px;padding-bottom:84px}
   .fin h2{font-size:32px}
   .fin p{color:var(--body);margin-top:12px}
   footer{border-top:1px solid var(--line);padding:26px 0;font-size:12.5px;color:var(--muted)}
@@ -240,6 +243,7 @@
      than fit. Nothing is hidden, so every link stays reachable and crawlable. */
   @media(max-width:700px){
     [id]{scroll-margin-top:104px}
+    .wrap{padding-left:20px;padding-right:20px}
     .nav .wrap{height:auto;flex-wrap:wrap;padding-top:9px;padding-bottom:9px;row-gap:9px}
     .nav .tag{display:none}
     .nav > .wrap > .btn{margin-left:auto;height:32px;padding:0 13px;font-size:12.5px}
@@ -248,14 +252,14 @@
     .nav .links::-webkit-scrollbar{display:none}
     .nav .links a{flex:none;padding:8px 0}
 
-    .hero{padding:40px 0 28px;text-align:left}
+    .hero{padding-top:40px;padding-bottom:28px;text-align:left}
     .hero h1{font-size:28px}
     .hero .sub{font-size:15.5px}
     .cta{flex-direction:column;align-items:stretch}
     .cta .btn{width:100%}
-    section{padding:48px 0}
+    section{padding-top:48px;padding-bottom:48px}
     h2{font-size:23px}
-    .fin{padding:56px 0}
+    .fin{padding-top:56px;padding-bottom:56px}
     .fin h2{font-size:25px}
 
     /* The mock is decorative (aria-hidden): clip it rather than let a fake

@@ -69,10 +69,12 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     plans.find((p) => p.slug === selectedPlanSlug) ?? (plans.length > 0 ? plans[0] : null);
   const anyStoryRunning = storyRuns.some((r) => r.running);
   // Runs that mutate repos or the environment: a story implementation must
-  // not race them. Spec generation only writes its own plan/spec pair, so it
-  // may overlap with anything — including stories of other features.
+  // not race them. Spec generation only writes its own plan/spec pair, and the
+  // readiness check writes only its own report, so both may overlap with
+  // anything — including stories of other features.
   const planBlocked = projectRuns.some(
-    (r) => r.running && !['app-logs', 'plan-spec', 'plan-story'].includes(r.handle.kind)
+    (r) =>
+      r.running && !['app-logs', 'plan-spec', 'plan-story', 'readiness'].includes(r.handle.kind)
   );
   const processedPlanRuns = useRef(new Set<string>());
 

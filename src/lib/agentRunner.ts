@@ -1,5 +1,6 @@
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import bootstrapPlanTemplate from '../prompts/bootstrap-plan.txt?raw';
+import readinessTemplate from '../prompts/launch-readiness.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import triageTemplate from '../prompts/triage.txt?raw';
 import instructTemplate from '../prompts/instruct.txt?raw';
@@ -10,6 +11,7 @@ import {
   AgentKind,
   BOOTSTRAP_FILE,
   Project,
+  READINESS_FILE,
   Settings,
   configDirFor,
   planFileFor,
@@ -41,6 +43,7 @@ function workspaceNoteFor(project: Project): string {
 export type RunKind =
   | 'bootstrap-plan'
   | 'bootstrap'
+  | 'readiness'
   | 'ship'
   | 'docker-up'
   | 'docker-down'
@@ -96,6 +99,27 @@ export function buildBootstrapPlanPrompt(project: Project): string {
     workspaceNote: workspaceNoteFor(project),
     bootstrapFile: configDirFor(project.mode) + BOOTSTRAP_FILE,
   });
+}
+
+/**
+ * Read-only audit of what stands between this prototype and real users. The
+ * report is the input to everything else in the launch flow.
+ */
+export async function startReadinessRun(project: Project, settings: Settings): Promise<RunHandle> {
+  const runId = makeRunId('readiness');
+  const cfg = configDirFor(project.mode);
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(readinessTemplate, {
+      repoPath: project.localPath,
+      workspaceNote: workspaceNoteFor(project),
+      bootstrapFile: cfg + BOOTSTRAP_FILE,
+      readinessFile: cfg + READINESS_FILE,
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'readiness', projectId: project.id };
 }
 
 /**

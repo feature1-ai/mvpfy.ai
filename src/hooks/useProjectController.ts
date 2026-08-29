@@ -9,6 +9,7 @@ import {
   MvpfyState,
   Project,
   QUESTIONS_FILE,
+  READINESS_FILE,
   RepoFile,
   configDirFor,
   planFileFor,
@@ -24,6 +25,7 @@ import { RunsApi, RunState } from '../lib/useRuns';
 import { ControllerContext, contentOf, UpdateState } from './controllerContext';
 import { BootstrapFlowState, useBootstrapFlow } from './useBootstrapFlow';
 import { useAgentActions } from './useAgentActions';
+import { ReadinessActions, useReadinessActions } from './useReadinessActions';
 import { FeaturePlan, usePlanActions } from './usePlanActions';
 import { useProjectActions } from './useProjectActions';
 
@@ -37,6 +39,7 @@ const HIDDEN_FROM_VIEWER: string[] = [
   SUMMARY_FILE,
   CHANGE_FILE,
   BOOTSTRAP_FILE,
+  READINESS_FILE,
   ...ENV_FILE_CANDIDATES,
 ];
 
@@ -54,7 +57,7 @@ function hiddenFromViewer(name: string): boolean {
  * Controller for a project's detail view: owns all project actions, file and
  * health polling, and derived view state. Components stay presentational.
  */
-export interface ProjectController extends BootstrapFlowState {
+export interface ProjectController extends BootstrapFlowState, ReadinessActions {
   project: Project;
   // Derived view state
   appUrl: string;
@@ -189,6 +192,7 @@ export function useProjectController(
           SUMMARY_FILE,
           CHANGE_FILE,
           BOOTSTRAP_FILE,
+          READINESS_FILE,
           ...planSlugs.flatMap((slug) => [planFileFor(slug), specFileFor(slug)]),
           ...ENV_FILE_CANDIDATES,
         ].map(pf),
@@ -301,6 +305,7 @@ export function useProjectController(
   const planActions = usePlanActions(ctx);
   const agentActions = useAgentActions(ctx);
   const bootstrapFlow = useBootstrapFlow(ctx, appHealthy);
+  const readinessActions = useReadinessActions(ctx);
 
   // Adding a project IS the consent to set it up: a project created as
   // 'queued' bootstraps itself as soon as its view opens, so the PM lands on
@@ -327,6 +332,7 @@ export function useProjectController(
     ...planActions,
     ...agentActions,
     ...bootstrapFlow,
+    ...readinessActions,
     project,
     appUrl: `http://localhost:${appPort}`,
     appHealthy,

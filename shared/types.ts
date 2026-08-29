@@ -35,6 +35,12 @@ export interface Project {
    */
   bootstrapAccepted?: boolean;
   /**
+   * Ids of launch-readiness findings the builder has decided to go live with
+   * anyway. Kept here rather than in the agent's report so a re-run cannot
+   * lose the decision — and so nothing but a person can make it.
+   */
+  readinessAccepted?: string[];
+  /**
    * 'managed' (default): a clone under ~/.mvpfy/projects, fully owned by
    * mvpfy. 'linked': the user's own folder used in place — mvpfy keeps all
    * its files inside a .mvpfy/ subfolder and never deletes the folder.
@@ -161,6 +167,8 @@ export const SUMMARY_FILE = 'mvpfy-summary.md';
 export const CHANGE_FILE = 'mvpfy-change.md';
 /** The bootstrap run's own task board: what setup is doing, card by card. */
 export const BOOTSTRAP_FILE = 'mvpfy-bootstrap.json';
+/** Launch readiness: what stands between the prototype and real users. */
+export const READINESS_FILE = 'mvpfy-readiness.json';
 /** Machine-readable product plan: spec items + stories + board lanes. */
 export const PLAN_FILE = 'mvpfy-plan.json';
 /** Human-readable product spec generated alongside the plan. */

@@ -138,6 +138,18 @@ npm run package    # package the macOS app into release/
    agent re-runs with your notes. The agent never moves a story to Done — shipping is a
    human decision.
 
+6. **Check launch readiness** — the Launch tab. A prototype that runs on your machine is not
+   a product strangers can use, and mvpfy is unusually well placed to say why: it built the
+   local environment, so it knows which parts of your app are its own **stand-ins**, which
+   settings are throwaway defaults, and where your data actually lives. It reads all of that
+   plus your code and reports, in plain language, what would go wrong on launch day —
+   graded, worst first: **blockers** (real people lose money, lose data, or get into
+   something they shouldn't), **risks**, and notes. Every finding points at the file that
+   proves it. The verdict is computed by mvpfy from the findings, never claimed by the
+   agent, and the only way past a blocker is to fix it or explicitly *launch with this
+   anyway* — which keeps it on the list, marked as your decision, because accepting a risk
+   doesn't make it safe. Nothing in this step changes your code.
+
 ## Architecture
 
 MVC-style separation across Electron's two processes:
@@ -186,6 +198,7 @@ coding agents (mostly Claude Code). This repo is itself the demo of that workflo
 The curated prompts live in `src/prompts/`:
 
 - `bootstrap-plan.txt` — read-only first pass: write the setup task list the PM watches.
+- `launch-readiness.txt` — read-only audit: what stands between this and real users.
 - `bootstrap-runtime.txt` — generate the Docker runtime files for a repo.
 - `plan-spec.txt` — write the minimal PRD (Feature1-style) and the user-story plan.
 - `plan-implement.txt` — implement one planned story end-to-end and open its PR.

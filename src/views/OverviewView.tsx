@@ -30,6 +30,7 @@ function envState(c: ProjectController): EnvState {
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
     if (k === 'instruct') return { kind: 'working', label: 'Making your change…' };
     if (k === 'sync') return { kind: 'working', label: 'Syncing repositories…' };
+    if (k === 'readiness') return { kind: 'working', label: 'Checking launch readiness…' };
     if (k === 'plan-spec') return { kind: 'working', label: 'Writing the product spec…' };
     if (k === 'plan-story') return { kind: 'working', label: 'Implementing a story…' };
     if (k === 'ship') return { kind: 'working', label: 'Shipping as a pull request…' };

@@ -69,6 +69,11 @@ it can answer a sudo prompt from a pipe. The command is always shown before it r
 Every command is the tool's own official install line. On Linux and Windows the commands are
 shown but not run for you.
 
+**Connecting Feature1** (optional) lives in the same place: paste your workspace address —
+`acme.feature1.ai`, the full URL, or the MCP endpoint — and mvpfy works the tenant out of it,
+opens the browser sign-in, and stores the token in your OS keychain. Once connected it pulls
+your user stories into the board and pushes pull requests back.
+
 **Signing in** is handled the same way. `gh` and `codex` sign in inside mvpfy; Claude Code's
 login is interactive, so its button opens Terminal.app running `claude auth login`. Git has no
 login of its own — pushes and private clones use the credentials `gh auth login` writes into

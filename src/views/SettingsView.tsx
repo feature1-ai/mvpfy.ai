@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AgentKind, CliStatus, InstallPlan, MvpfyState } from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
 import { CLI_HELP, cliRequired } from '../lib/cliCheck';
-import { Feature1McpClient, mcpHost, tokenKeychainEntry } from '../lib/feature1Mcp';
+import { Feature1McpClient, mcpHost, tenantSlugFrom, tokenKeychainEntry } from '../lib/feature1Mcp';
 
 interface Props {
   state: MvpfyState;
@@ -22,8 +22,15 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
   const [loginError, setLoginError] = useState<string | null>(null);
 
   async function connectFeature1() {
-    const slug = slugInput.trim().toLowerCase();
-    if (!slug) return;
+    // People know the address in their browser, not their "slug".
+    const slug = tenantSlugFrom(slugInput);
+    if (!slug) {
+      setLoginStatus('error');
+      setLoginError(
+        `"${slugInput.trim()}" doesn't look like a Feature1 workspace. Paste its address, e.g. acme.feature1.ai`
+      );
+      return;
+    }
     setLoginStatus('waiting');
     setLoginError(null);
     try {
@@ -98,100 +105,6 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
   return (
     <div className="mx-auto w-full max-w-[660px] px-6 pb-16 pt-9">
       <h1 className="mb-7 text-[22px] font-semibold tracking-[-0.02em]">Settings</h1>
-
-      <div className="section-label mb-3">Connections</div>
-      <section className="card mb-7 flex flex-col gap-4 px-[18px] py-4">
-        <div className="flex items-center gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] font-medium">Feature1</p>
-            <p className="text-[12.5px] text-muted">Pull stories, push pull requests.</p>
-          </div>
-          {state.tenant ? (
-            <span className="flex items-center gap-1.5 text-xs text-go">
-              <span className="h-1.5 w-1.5 rounded-full bg-go" />
-              {state.tenant.host}
-            </span>
-          ) : (
-            <div className="flex items-center gap-2">
-              <input
-                value={slugInput}
-                onChange={(e) => setSlugInput(e.target.value)}
-                placeholder="tenant slug"
-                className="h-[30px] w-32 rounded-md border border-line px-2.5 text-[12.5px] outline-none focus:border-muted"
-              />
-              <button
-                onClick={() => void connectFeature1()}
-                disabled={loginStatus === 'waiting' || !slugInput.trim()}
-                className="btn-primary h-[30px] px-3 text-[12.5px] disabled:opacity-50"
-              >
-                {loginStatus === 'waiting' ? 'Waiting…' : 'Connect'}
-              </button>
-            </div>
-          )}
-        </div>
-        {loginStatus === 'error' && loginError && (
-          <p className="text-[12.5px] text-danger">{loginError}</p>
-        )}
-        <div className="border-t border-line-subtle" />
-        <div className="flex items-center gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] font-medium">GitHub</p>
-            <p className="text-[12.5px] text-muted">
-              Clone private repositories, open pull requests.
-            </p>
-          </div>
-          {gh?.authenticated ? (
-            <span className="flex items-center gap-1.5 text-xs text-go">
-              <span className="h-1.5 w-1.5 rounded-full bg-go" />
-              connected
-            </span>
-          ) : (
-            <span className="text-xs text-muted">
-              not signed in — use <span className="text-body">Sign in</span> under Required tools
-            </span>
-          )}
-        </div>
-      </section>
-
-      <div className="section-label mb-3">Agent</div>
-      <section className="card mb-7 flex flex-col gap-4 px-[18px] py-4">
-        <div className="flex items-center gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] font-medium">Default agent</p>
-            <p className="text-[12.5px] text-muted">Which CLI implements stories and bootstraps.</p>
-          </div>
-          <select
-            value={state.settings.defaultAgent}
-            onChange={(e) =>
-              updateState((prev) => ({
-                ...prev,
-                settings: { ...prev.settings, defaultAgent: e.target.value as AgentKind },
-              }))
-            }
-            className="h-[34px] rounded-md border border-line bg-surface px-2.5 text-[13px]"
-          >
-            <option value="claude">Claude Code</option>
-            <option value="codex">Codex CLI</option>
-          </select>
-        </div>
-        <div className="border-t border-line-subtle" />
-        <div className="flex items-center gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] font-medium">Codex model</p>
-            <p className="text-[12.5px] text-muted">Used only when the default agent is Codex.</p>
-          </div>
-          <input
-            value={state.settings.codexModel}
-            onChange={(e) =>
-              updateState((prev) => ({
-                ...prev,
-                settings: { ...prev.settings, codexModel: e.target.value },
-              }))
-            }
-            className="h-[34px] w-44 rounded-md border border-line px-[11px] font-mono text-[12.5px] outline-none focus:border-muted"
-          />
-        </div>
-      </section>
 
       <div className="mb-3 flex items-center justify-between">
         <span className="section-label">Required tools</span>
@@ -317,6 +230,123 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
           </p>
         )}
         {cliStatuses.length === 0 && <p className="text-[13px] text-muted">Checking…</p>}
+      </section>
+
+      <div className="section-label mb-3">Connect your tools</div>
+      <section className="card mb-7 flex flex-col gap-4 px-[18px] py-4">
+        <div className="flex items-center gap-4">
+          <span
+            className={`mt-[7px] h-1.5 w-1.5 shrink-0 self-start rounded-full ${
+              state.tenant ? 'bg-go' : 'bg-dot-idle'
+            }`}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-medium">
+              Feature1 <span className="ml-1 text-[10px] text-faint">optional</span>
+            </p>
+            <p className="text-[12.5px] text-muted">
+              {state.tenant
+                ? 'Pull your user stories into the board and push pull requests back.'
+                : 'Paste your Feature1 address to pull your user stories into mvpfy.'}
+            </p>
+          </div>
+          {state.tenant ? (
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="font-mono text-[11.5px] text-go">{state.tenant.host}</span>
+              <button
+                onClick={() => updateState((prev) => ({ ...prev, tenant: null }))}
+                className="text-[11.5px] text-muted hover:text-ink"
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <div className="flex shrink-0 items-center gap-2">
+              <input
+                value={slugInput}
+                onChange={(e) => setSlugInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && void connectFeature1()}
+                placeholder="acme.feature1.ai"
+                spellCheck={false}
+                className="h-[30px] w-48 rounded-md border border-line px-2.5 font-mono text-[12px] outline-none focus:border-muted"
+              />
+              <button
+                onClick={() => void connectFeature1()}
+                disabled={loginStatus === 'waiting' || !slugInput.trim()}
+                className="btn-primary h-[30px] px-3 text-[12.5px] disabled:opacity-50"
+              >
+                {loginStatus === 'waiting' ? 'Waiting…' : 'Connect'}
+              </button>
+            </div>
+          )}
+        </div>
+        {loginStatus === 'error' && loginError && (
+          <p className="text-[12.5px] text-danger">{loginError}</p>
+        )}
+        <div className="border-t border-line-subtle" />
+        <div className="flex items-center gap-4">
+          <span
+            className={`mt-[7px] h-1.5 w-1.5 shrink-0 self-start rounded-full ${
+              gh?.authenticated ? 'bg-go' : 'bg-dot-idle'
+            }`}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-medium">GitHub</p>
+            <p className="text-[12.5px] text-muted">
+              Clone private repositories, open pull requests.
+            </p>
+          </div>
+          {gh?.authenticated ? (
+            <span className="flex items-center gap-1.5 text-xs text-go">
+              <span className="h-1.5 w-1.5 rounded-full bg-go" />
+              connected
+            </span>
+          ) : (
+            <span className="text-xs text-muted">
+              not signed in — use <span className="text-body">Sign in</span> under Required tools
+            </span>
+          )}
+        </div>
+      </section>
+
+      <div className="section-label mb-3">Agent</div>
+      <section className="card mb-7 flex flex-col gap-4 px-[18px] py-4">
+        <div className="flex items-center gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-medium">Default agent</p>
+            <p className="text-[12.5px] text-muted">Which CLI implements stories and bootstraps.</p>
+          </div>
+          <select
+            value={state.settings.defaultAgent}
+            onChange={(e) =>
+              updateState((prev) => ({
+                ...prev,
+                settings: { ...prev.settings, defaultAgent: e.target.value as AgentKind },
+              }))
+            }
+            className="h-[34px] rounded-md border border-line bg-surface px-2.5 text-[13px]"
+          >
+            <option value="claude">Claude Code</option>
+            <option value="codex">Codex CLI</option>
+          </select>
+        </div>
+        <div className="border-t border-line-subtle" />
+        <div className="flex items-center gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-medium">Codex model</p>
+            <p className="text-[12.5px] text-muted">Used only when the default agent is Codex.</p>
+          </div>
+          <input
+            value={state.settings.codexModel}
+            onChange={(e) =>
+              updateState((prev) => ({
+                ...prev,
+                settings: { ...prev.settings, codexModel: e.target.value },
+              }))
+            }
+            className="h-[34px] w-44 rounded-md border border-line px-[11px] font-mono text-[12.5px] outline-none focus:border-muted"
+          />
+        </div>
       </section>
 
       <div className="section-label mb-3">Workspace</div>

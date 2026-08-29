@@ -24,6 +24,32 @@ export function tokenKeychainEntry(tenantSlug: string): string {
   return `feature1-mcp-${tenantSlug}`;
 }
 
+/**
+ * Work the tenant slug out of whatever the user has to hand. Nobody knows
+ * their "slug" — they know the address in their browser — so accept the
+ * workspace URL, the MCP endpoint, a bare hostname, or the slug itself:
+ *
+ *   https://acme.feature1.ai/stories  ·  acme.feature1.ai
+ *   https://acme-mcp.feature1.ai/mcp/ ·  acme
+ *
+ * Returns null when there is no usable slug in the input.
+ */
+export function tenantSlugFrom(input: string): string | null {
+  let text = input.trim().toLowerCase();
+  if (!text) return null;
+  text = text.replace(/^[a-z][a-z0-9+.-]*:\/\//, ''); // scheme
+  text = text.split(/[/?#]/)[0]; // path, query, fragment
+  text = text.split('@').pop() ?? text; // any user info
+  text = text.split(':')[0]; // port
+  const host = text.replace(/\.$/, '');
+  if (!host) return null;
+  // A hostname resolves to its first label; a bare slug is already the label.
+  let slug = host.includes('.') ? host.split('.')[0] : host;
+  // The MCP endpoint lives on a "<tenant>-mcp" host — that suffix is ours.
+  slug = slug.replace(/-mcp$/, '');
+  return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug) ? slug : null;
+}
+
 let rpcId = 0;
 
 export class Feature1McpError extends Error {}

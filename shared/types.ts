@@ -231,7 +231,7 @@ export interface MvpfyApi {
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
   /** Live IDE-container state from docker (stored idePort can go stale). */
   ideStatus(workspacePath: string): Promise<{ running: boolean; port: number | null }>;
-  cliLogin(runId: string, tool: 'gh' | 'codex'): Promise<void>;
+  cliLogin(runId: string, tool: string): Promise<void>;
   /** How each required tool would be installed on this machine (macOS only). */
   installPlans(): Promise<InstallPlan[]>;
   /** Install one required tool, streaming its output like any other run. */

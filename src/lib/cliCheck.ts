@@ -6,8 +6,12 @@ export interface CliHelp {
   installUrl: string;
   /** Terminal command that signs the CLI in, when it has a login. */
   authFix?: string;
-  /** In-app sign-in is available (login flow survives without a TTY). */
+  /** mvpfy can start the sign-in itself. */
   inAppLogin?: boolean;
+  /** That sign-in opens Terminal.app rather than streaming in-app. */
+  loginInTerminal?: boolean;
+  /** This tool has no sign-in of its own — it borrows another's. */
+  authVia?: CliName;
   /** Needed only when the matching agent is selected, not always. */
   optionalFor?: 'codex';
 }
@@ -17,6 +21,9 @@ export const CLI_HELP: Record<CliName, CliHelp> = {
     label: 'Git',
     installHint: 'xcode-select --install',
     installUrl: 'https://git-scm.com/downloads',
+    // Git has no login of its own: pushes and private clones use the
+    // credentials `gh auth login` writes into git's credential helper.
+    authVia: 'gh',
   },
   gh: {
     label: 'GitHub CLI',
@@ -34,7 +41,9 @@ export const CLI_HELP: Record<CliName, CliHelp> = {
     label: 'Claude Code',
     installHint: 'curl -fsSL https://claude.ai/install.sh | bash',
     installUrl: 'https://docs.anthropic.com/en/docs/claude-code',
-    authFix: 'claude',
+    authFix: 'claude auth login',
+    inAppLogin: true,
+    loginInTerminal: true,
   },
   codex: {
     label: 'Codex CLI',

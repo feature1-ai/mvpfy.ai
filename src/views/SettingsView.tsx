@@ -81,7 +81,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
     };
   }, [toolRun, onRefreshClis]);
 
-  function signIn(tool: 'gh' | 'codex') {
+  function signIn(tool: string) {
     const runId = nextRunId('login', tool);
     setToolLog('');
     setToolRun({ kind: 'login', tool, runId });
@@ -147,7 +147,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
             </span>
           ) : (
             <span className="text-xs text-muted">
-              run <code className="rounded bg-paper px-1 font-mono">gh auth login</code> in Terminal
+              not signed in — use <span className="text-body">Sign in</span> under Required tools
             </span>
           )}
         </div>
@@ -231,13 +231,20 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
               <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">
                 {cli.found ? cli.path : help.installHint}
               </span>
+              {cli.found &&
+                help.authVia &&
+                !cliStatuses.find((s) => s.name === help.authVia)?.authenticated && (
+                  <span className="shrink-0 text-[11.5px] text-warn-text">
+                    needs the {CLI_HELP[help.authVia].label} sign-in to push
+                  </span>
+                )}
               {needsLogin && help.inAppLogin && (
                 <button
-                  onClick={() => signIn(cli.name as 'gh' | 'codex')}
+                  onClick={() => signIn(cli.name)}
                   disabled={toolRun !== null}
                   className="btn-primary h-6 px-2.5 text-[11.5px] disabled:opacity-50"
                 >
-                  {busy ? 'Waiting…' : 'Sign in'}
+                  {busy ? 'Waiting…' : help.loginInTerminal ? 'Sign in…' : 'Sign in'}
                 </button>
               )}
               {needsLogin && !help.inAppLogin && help.authFix && (

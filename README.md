@@ -69,6 +69,12 @@ it can answer a sudo prompt from a pipe. The command is always shown before it r
 Every command is the tool's own official install line. On Linux and Windows the commands are
 shown but not run for you.
 
+**Signing in** is handled the same way. `gh` and `codex` sign in inside mvpfy; Claude Code's
+login is interactive, so its button opens Terminal.app running `claude auth login`. Git has no
+login of its own — pushes and private clones use the credentials `gh auth login` writes into
+git's credential helper, so mvpfy runs `gh auth setup-git` as part of the GitHub sign-in and
+the Git row says so while GitHub is not connected.
+
 ## Setup
 
 ```bash

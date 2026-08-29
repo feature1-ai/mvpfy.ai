@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AgentKind, CliStatus, MvpfyState } from '../../shared/types';
+import { AgentKind, CliStatus, InstallPlan, MvpfyState } from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
 import { CLI_HELP, cliRequired } from '../lib/cliCheck';
 import { Feature1McpClient, mcpHost, tokenKeychainEntry } from '../lib/feature1Mcp';
@@ -11,9 +11,9 @@ interface Props {
   updateState: UpdateState;
 }
 
-let loginSeq = 0;
-function nextLoginRunId(tool: string): string {
-  return `cli-login-${tool}-${++loginSeq}`;
+let runSeq = 0;
+function nextRunId(kind: string, tool: string): string {
+  return `cli-${kind}-${tool}-${++runSeq}`;
 }
 
 export default function SettingsView({ state, cliStatuses, onRefreshClis, updateState }: Props) {
@@ -45,19 +45,33 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
   }
 
   const gh = cliStatuses.find((s) => s.name === 'gh');
-  const [loginRun, setLoginRun] = useState<{ tool: string; runId: string } | null>(null);
-  const [loginLog, setLoginLog] = useState('');
+  const [toolRun, setToolRun] = useState<{
+    kind: 'login' | 'install';
+    tool: string;
+    runId: string;
+  } | null>(null);
+  const [toolLog, setToolLog] = useState('');
+  const [plans, setPlans] = useState<InstallPlan[]>([]);
+  const planFor = (tool: string) => plans.find((p) => p.tool === tool) ?? null;
+  const brewPlan = planFor('brew');
 
-  // Stream the in-app sign-in output so device codes / URLs are visible.
+  // Installing one tool changes what the others need (Homebrew unlocks gh,
+  // Docker and Node), so the plans are recomputed whenever the checklist is.
   useEffect(() => {
-    if (!loginRun) return;
+    void window.mvpfy.installPlans().then(setPlans);
+  }, [cliStatuses]);
+
+  // Stream sign-in and install output: device codes, URLs and progress bars
+  // all matter to the person watching.
+  useEffect(() => {
+    if (!toolRun) return;
     const offOut = window.mvpfy.onRunOutput((ev) => {
-      if (ev.runId === loginRun.runId) setLoginLog((prev) => (prev + ev.chunk).slice(-2000));
+      if (ev.runId === toolRun.runId) setToolLog((prev) => (prev + ev.chunk).slice(-4000));
     });
     const offExit = window.mvpfy.onRunExit((ev) => {
-      if (ev.runId === loginRun.runId) {
-        setLoginRun(null);
-        setLoginLog('');
+      if (ev.runId === toolRun.runId) {
+        setToolRun(null);
+        setToolLog('');
         onRefreshClis();
       }
     });
@@ -65,13 +79,20 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
       offOut();
       offExit();
     };
-  }, [loginRun, onRefreshClis]);
+  }, [toolRun, onRefreshClis]);
 
   function signIn(tool: 'gh' | 'codex') {
-    const runId = nextLoginRunId(tool);
-    setLoginLog('');
-    setLoginRun({ tool, runId });
-    void window.mvpfy.cliLogin(runId, tool).catch(() => setLoginRun(null));
+    const runId = nextRunId('login', tool);
+    setToolLog('');
+    setToolRun({ kind: 'login', tool, runId });
+    void window.mvpfy.cliLogin(runId, tool).catch(() => setToolRun(null));
+  }
+
+  function install(tool: string) {
+    const runId = nextRunId('install', tool);
+    setToolLog('');
+    setToolRun({ kind: 'install', tool, runId });
+    void window.mvpfy.installTool(runId, tool).catch(() => setToolRun(null));
   }
 
   return (
@@ -186,7 +207,8 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
           const help = CLI_HELP[cli.name];
           const required = cliRequired(cli.name, state.settings.defaultAgent);
           const needsLogin = cli.found && cli.authenticated === false;
-          const signingIn = loginRun?.tool === cli.name;
+          const busy = toolRun?.tool === cli.name;
+          const plan = planFor(cli.name);
           return (
             <div key={cli.name} className="flex items-center gap-3">
               <span
@@ -212,10 +234,10 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
               {needsLogin && help.inAppLogin && (
                 <button
                   onClick={() => signIn(cli.name as 'gh' | 'codex')}
-                  disabled={loginRun !== null}
+                  disabled={toolRun !== null}
                   className="btn-primary h-6 px-2.5 text-[11.5px] disabled:opacity-50"
                 >
-                  {signingIn ? 'Waiting…' : 'Sign in'}
+                  {busy ? 'Waiting…' : 'Sign in'}
                 </button>
               )}
               {needsLogin && !help.inAppLogin && help.authFix && (
@@ -223,21 +245,69 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
                   run <code className="font-mono">{help.authFix}</code> in Terminal
                 </span>
               )}
-              {!cli.found && (
+              {!cli.found && plan?.available && (
                 <button
-                  onClick={() => void window.mvpfy.openExternal(help.installUrl)}
-                  className="text-[11.5px] text-go hover:underline"
+                  onClick={() => install(cli.name)}
+                  disabled={toolRun !== null}
+                  title={`${plan.command}\n\n${plan.note}`}
+                  className="btn-primary h-6 shrink-0 px-2.5 text-[11.5px] disabled:opacity-50"
                 >
-                  Install ↗
+                  {busy ? 'Installing…' : plan.mode === 'terminal' ? 'Install…' : 'Install'}
                 </button>
+              )}
+              {!cli.found && !plan?.available && (
+                <>
+                  {plan && (
+                    <span className="shrink-0 text-[11.5px] text-warn-text">{plan.note}</span>
+                  )}
+                  <button
+                    onClick={() => void window.mvpfy.openExternal(help.installUrl)}
+                    className="shrink-0 text-[11.5px] text-go hover:underline"
+                  >
+                    Install ↗
+                  </button>
+                </>
               )}
             </div>
           );
         })}
-        {loginRun && (
-          <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-line-subtle bg-sunken p-3 font-mono text-[11.5px] leading-relaxed text-body">
-            {loginLog || 'Opening your browser to sign in…'}
-          </pre>
+        {/* Homebrew is not a tool mvpfy uses — it is how three of the others
+            get installed, so it only appears while it is the thing in the way. */}
+        {brewPlan?.available && (
+          <div className="flex items-center gap-3 border-t border-line-subtle pt-3">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn-text" />
+            <span className="w-24 text-[13px] font-medium">Homebrew</span>
+            <span className="min-w-0 flex-1 text-[11.5px] text-muted">
+              Needed to install the GitHub CLI, Docker and Node.
+            </span>
+            <button
+              onClick={() => install('brew')}
+              disabled={toolRun !== null}
+              title={brewPlan.command}
+              className="btn-primary h-6 shrink-0 px-2.5 text-[11.5px] disabled:opacity-50"
+            >
+              {toolRun?.tool === 'brew' ? 'In Terminal…' : 'Install…'}
+            </button>
+          </div>
+        )}
+        {toolRun && (
+          <>
+            {toolRun.kind === 'install' && planFor(toolRun.tool) && (
+              <p className="text-[11.5px] text-muted">
+                <code className="font-mono text-body">{planFor(toolRun.tool)!.command}</code> —{' '}
+                {planFor(toolRun.tool)!.note}
+              </p>
+            )}
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-line-subtle bg-sunken p-3 font-mono text-[11.5px] leading-relaxed text-body">
+              {toolLog ||
+                (toolRun.kind === 'install' ? 'Starting…' : 'Opening your browser to sign in…')}
+            </pre>
+          </>
+        )}
+        {plans.length === 0 && cliStatuses.some((c) => !c.found) && (
+          <p className="text-[11.5px] text-muted">
+            One-click install is macOS-only for now — the command is shown beside each tool.
+          </p>
         )}
         {cliStatuses.length === 0 && <p className="text-[13px] text-muted">Checking…</p>}
       </section>

@@ -90,6 +90,22 @@ export interface CliStatus {
   authenticated: boolean | null;
 }
 
+/** How mvpfy would install one required tool on this machine. */
+export interface InstallPlan {
+  /** CLI name, or 'brew' for the prerequisite itself. */
+  tool: string;
+  label: string;
+  /** The exact command, shown to the user before it runs. */
+  command: string;
+  /** 'terminal' means it needs a password or its own window: mvpfy hands it
+   *  to Terminal.app rather than pretending it can answer a sudo prompt. */
+  mode: 'in-app' | 'terminal';
+  /** One line telling the user what to expect. */
+  note: string;
+  /** False when a prerequisite is missing, or there is no installer here. */
+  available: boolean;
+}
+
 export interface RepoCloneOutcome {
   url: string;
   dir: string;
@@ -216,6 +232,10 @@ export interface MvpfyApi {
   /** Live IDE-container state from docker (stored idePort can go stale). */
   ideStatus(workspacePath: string): Promise<{ running: boolean; port: number | null }>;
   cliLogin(runId: string, tool: 'gh' | 'codex'): Promise<void>;
+  /** How each required tool would be installed on this machine (macOS only). */
+  installPlans(): Promise<InstallPlan[]>;
+  /** Install one required tool, streaming its output like any other run. */
+  installTool(runId: string, tool: string): Promise<void>;
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
   repoBranches(dirs: string[]): Promise<Record<string, string>>;

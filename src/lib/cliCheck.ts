@@ -27,12 +27,12 @@ export const CLI_HELP: Record<CliName, CliHelp> = {
   },
   docker: {
     label: 'Docker',
-    installHint: 'brew install --cask docker',
+    installHint: 'brew install --cask docker-desktop',
     installUrl: 'https://docs.docker.com/desktop/install/mac-install/',
   },
   claude: {
     label: 'Claude Code',
-    installHint: 'npm install -g @anthropic-ai/claude-code',
+    installHint: 'curl -fsSL https://claude.ai/install.sh | bash',
     installUrl: 'https://docs.anthropic.com/en/docs/claude-code',
     authFix: 'claude',
   },

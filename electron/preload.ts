@@ -34,6 +34,8 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('ide', runId, workspacePath, action, port),
   ideStatus: (workspacePath: string) => ipcRenderer.invoke('ide-status', workspacePath),
   cliLogin: (runId: string, tool: 'gh' | 'codex') => ipcRenderer.invoke('cli-login', runId, tool),
+  installPlans: () => ipcRenderer.invoke('install-plans'),
+  installTool: (runId: string, tool: string) => ipcRenderer.invoke('install-tool', runId, tool),
   readRepoFiles: (repoPath: string, relativePaths: string[]) =>
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),
   writeRepoFile: (repoPath: string, relativePath: string, content: string) =>

@@ -51,15 +51,23 @@ the product that already exists.
 
 ## Requirements
 
-The app checks for these CLIs on first launch (Settings → Required CLIs):
+The app checks for these CLIs on first launch (Settings → Required tools). **On macOS mvpfy
+can install them for you** — each missing tool gets an *Install* button that runs the command
+below and streams the output. Anything needing your password (Homebrew) or opening Apple's own
+installer (`xcode-select`) is handed to Terminal.app instead, because an app shouldn't pretend
+it can answer a sudo prompt from a pipe. The command is always shown before it runs.
 
-| Tool | Install |
-| --- | --- |
-| `git` | `xcode-select --install` |
-| `gh` | `brew install gh` (then `gh auth login`) |
-| `docker` | `brew install --cask docker` |
-| `claude` | `npm install -g @anthropic-ai/claude-code` |
-| `codex` | `npm install -g @openai/codex` |
+| Tool | Install | Runs |
+| --- | --- | --- |
+| `git` | `xcode-select --install` | in Terminal (Apple's installer window) |
+| Homebrew | [`install.sh`](https://brew.sh) | in Terminal (asks for your Mac password) |
+| `gh` | `brew install gh` (then Sign in) | in mvpfy |
+| `docker` | `brew install --cask docker-desktop` | in mvpfy |
+| `claude` | `curl -fsSL https://claude.ai/install.sh \| bash` | in mvpfy (no Homebrew or Node) |
+| `codex` | `npm install -g @openai/codex` | in mvpfy |
+
+Every command is the tool's own official install line. On Linux and Windows the commands are
+shown but not run for you.
 
 ## Setup
 

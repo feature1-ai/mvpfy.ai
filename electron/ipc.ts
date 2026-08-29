@@ -5,6 +5,7 @@ import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './path
 import { runAgent } from './services/agents';
 import { cliCheck, loginCommand } from './services/cli';
 import { composeCommand, ideCommand, ideStatus } from './services/docker';
+import { installCommand, installPlans } from './services/install';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
   createProject,
@@ -93,6 +94,10 @@ export function registerIpc(): void {
   });
   ipcMain.handle('cli-login', (_ev, runId: string, tool: string) =>
     startRun(runId, loginCommand(tool), TMP_DIR)
+  );
+  ipcMain.handle('install-plans', () => installPlans());
+  ipcMain.handle('install-tool', (_ev, runId: string, tool: string) =>
+    startRun(runId, installCommand(tool), TMP_DIR)
   );
   ipcMain.handle('find-free-port', (_ev, start: number) => findFreePort(start));
   ipcMain.handle('probe-url', (_ev, url: string) => probeUrl(url));

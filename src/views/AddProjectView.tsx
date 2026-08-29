@@ -10,9 +10,9 @@ interface Props {
 }
 
 const STEPS = [
-  ['01', 'Clone & inspect', 'Detects services, ports and dependencies.'],
-  ['02', 'Bootstrap', 'Writes mvpfy.yml, a compose file and demo credentials.'],
-  ['03', 'Run', 'Open the live app and the editor in the same window.'],
+  ['01', 'Add & inspect', 'Detects services, ports and dependencies.'],
+  ['02', 'Bootstrap', 'Starts on its own: writes mvpfy.yml, a compose file and demo logins.'],
+  ['03', 'Run', 'You review what it wrote, then start the app and the editor.'],
 ] as const;
 
 export default function AddProjectView({ state, updateState, onCreated }: Props) {
@@ -47,7 +47,8 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
         repos: result.repos.map(({ url, dir }) => ({ url, dir })),
         localPath: result.workspacePath,
         basePort: await allocateBasePort(state),
-        status: 'cloned',
+        // Bootstrap starts by itself once the project view opens.
+        status: 'queued',
         lastStoryId: null,
         generatedFiles: [],
         mode: link ? 'linked' : 'managed',
@@ -66,8 +67,9 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
         {firstRun ? 'Add your first project' : 'Add a project'}
       </h1>
       <p className="mb-7 text-sm leading-relaxed text-body [text-wrap:pretty]">
-        Paste one or more repositories. mvpfy clones them, generates the run config, and starts the
-        environment so you can open the app and read the code.
+        Paste one or more repositories. mvpfy adds them and immediately bootstraps the environment —
+        it works out how to run the code and writes the run config, which takes a couple of minutes
+        on your agent subscription. Nothing starts running until you&apos;ve looked it over.
       </p>
 
       <label className="section-label mb-1.5 block">Repositories</label>
@@ -86,7 +88,7 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
           disabled={cloning || !text.trim()}
           className="btn-primary h-[38px] px-4 text-sm disabled:opacity-50"
         >
-          {cloning ? 'Cloning…' : 'Add project'}
+          {cloning ? 'Adding…' : 'Add & bootstrap'}
         </button>
         <button
           onClick={() =>

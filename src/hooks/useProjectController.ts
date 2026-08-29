@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ANSWERS_FILE,
+  BOOTSTRAP_FILE,
   CHANGE_FILE,
   SUMMARY_FILE,
   TRIAGE_FILE,
@@ -21,6 +22,7 @@ import { StoryLane } from '../lib/plan';
 import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
 import { ControllerContext, contentOf, UpdateState } from './controllerContext';
+import { BootstrapFlowState, useBootstrapFlow } from './useBootstrapFlow';
 import { useAgentActions } from './useAgentActions';
 import { FeaturePlan, usePlanActions } from './usePlanActions';
 import { useProjectActions } from './useProjectActions';
@@ -34,6 +36,7 @@ const HIDDEN_FROM_VIEWER: string[] = [
   TRIAGE_FILE,
   SUMMARY_FILE,
   CHANGE_FILE,
+  BOOTSTRAP_FILE,
   ...ENV_FILE_CANDIDATES,
 ];
 
@@ -51,7 +54,7 @@ function hiddenFromViewer(name: string): boolean {
  * Controller for a project's detail view: owns all project actions, file and
  * health polling, and derived view state. Components stay presentational.
  */
-export interface ProjectController {
+export interface ProjectController extends BootstrapFlowState {
   project: Project;
   // Derived view state
   appUrl: string;
@@ -185,6 +188,7 @@ export function useProjectController(
           TRIAGE_FILE,
           SUMMARY_FILE,
           CHANGE_FILE,
+          BOOTSTRAP_FILE,
           ...planSlugs.flatMap((slug) => [planFileFor(slug), specFileFor(slug)]),
           ...ENV_FILE_CANDIDATES,
         ].map(pf),
@@ -296,11 +300,33 @@ export function useProjectController(
   const projectActions = useProjectActions(ctx, lastFailure, latestRun, appLogsRun);
   const planActions = usePlanActions(ctx);
   const agentActions = useAgentActions(ctx);
+  const bootstrapFlow = useBootstrapFlow(ctx, appHealthy);
+
+  // Adding a project IS the consent to set it up: a project created as
+  // 'queued' bootstraps itself as soon as its view opens, so the PM lands on
+  // progress instead of another button. The ref makes it fire once per project
+  // (bootstrap flips the status a moment later, and StrictMode double-invokes
+  // effects); a refused agent or missing sign-in drops it back to the manual
+  // state with the error shown.
+  const autoBootstrapped = useRef<string | null>(null);
+  useEffect(() => {
+    if (project.status !== 'queued' || autoBootstrapped.current === project.id) return;
+    autoBootstrapped.current = project.id;
+    void projectActions.bootstrap().then((ok) => {
+      if (ok) return;
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, status: 'cloned' } : p)),
+      }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, project.status]);
 
   return {
     ...projectActions,
     ...planActions,
     ...agentActions,
+    ...bootstrapFlow,
     project,
     appUrl: `http://localhost:${appPort}`,
     appHealthy,

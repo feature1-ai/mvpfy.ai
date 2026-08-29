@@ -91,7 +91,18 @@ npm run package    # package the macOS app into release/
    (no copy): check *Use this folder in place* and mvpfy works directly in your working
    copy, keeping everything it generates inside a `.mvpfy/` subfolder — removing the
    project later removes only that subfolder and the containers, never your code.
-2. **Bootstrap environment** — the goal of this step is that you can *see the app running
+2. **Bootstrap environment** — this starts **automatically** the moment you add the project
+   (adding it is the consent); if it can't start — your agent CLI isn't signed in, say — the
+   project falls back to a manual *Bootstrap environment* button.
+   It runs in two phases. First, in ~30 seconds, the agent reads your repos and writes a
+   **task list in plain language** — "your app expects a payments service that isn't in this
+   code, so I'll serve realistic fake responses" — which shows on the Overview as cards you
+   can follow while the work happens. **Who may close a card matters**: the agent can only
+   ever say *working*; mvpfy marks a task **done** when it can see the files that task
+   promised, and a claim it can't confirm shows as *unconfirmed* rather than green. The last
+   card — your app actually up, with a working demo login — is **yours**: mvpfy moves it to
+   *ready to test* and only you mark it done, exactly like a user story.
+   The goal of this step is that you can *see the app running
    locally*. mvpfy finds a free port and asks your default agent to make the repo fully
    runnable: it generates `mvpfy.yml`, a `Dockerfile` (if missing),
    `docker-compose.mvpfy.yml`, and `.env.mvpfy.example`, and fills any gaps with open-source
@@ -172,6 +183,7 @@ coding agents (mostly Claude Code). This repo is itself the demo of that workflo
 
 The curated prompts live in `src/prompts/`:
 
+- `bootstrap-plan.txt` — read-only first pass: write the setup task list the PM watches.
 - `bootstrap-runtime.txt` — generate the Docker runtime files for a repo.
 - `plan-spec.txt` — write the minimal PRD (Feature1-style) and the user-story plan.
 - `plan-implement.txt` — implement one planned story end-to-end and open its PR.

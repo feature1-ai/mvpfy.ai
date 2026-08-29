@@ -49,7 +49,12 @@ export default function App() {
             patch.idePort = run.exitCode === 0 ? (run.handle.port ?? null) : null;
           }
           if (kind === 'ide-down' && run.exitCode === 0) patch.idePort = null;
-          if (run.exitCode !== 0 && (kind === 'docker-up' || kind === 'bootstrap')) {
+          // A failed task-list run never chains into the work, so it has to
+          // surface here — otherwise the project sits in 'bootstrapping'.
+          if (
+            run.exitCode !== 0 &&
+            (kind === 'docker-up' || kind === 'bootstrap' || kind === 'bootstrap-plan')
+          ) {
             patch.status = 'error';
           }
           return { ...p, ...patch };

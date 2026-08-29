@@ -80,6 +80,11 @@ describe('state store', () => {
     expect(readState(file).projects[0].status).toBe('error');
   });
 
+  it('drops a queued project back to the manual state on restart', () => {
+    fs.writeFileSync(file, JSON.stringify({ projects: [project({ status: 'queued' })] }), 'utf8');
+    expect(readState(file).projects[0].status).toBe('cloned');
+  });
+
   it('registers linked project roots for the path guards on read and write', () => {
     const linked = project({ id: 'p2', localPath: '/Users/pm/code/shop', mode: 'linked' });
     writeState({ ...structuredClone(DEFAULT_STATE), projects: [linked] }, file);

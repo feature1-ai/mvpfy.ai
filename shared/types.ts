@@ -2,8 +2,12 @@
 
 export type AgentKind = 'claude' | 'codex';
 
+/**
+ * 'queued' is the state a freshly added project starts in: adding it is the
+ * consent to set it up, so its view bootstraps it automatically on open.
+ */
 export type ProjectStatus =
-  'cloned' | 'bootstrapping' | 'needs-review' | 'running' | 'stopped' | 'error';
+  'queued' | 'cloned' | 'bootstrapping' | 'needs-review' | 'running' | 'stopped' | 'error';
 
 export interface RepoRef {
   url: string;
@@ -24,6 +28,12 @@ export interface Project {
   idePort?: number | null;
   /** Slugs of planned features (one plan/spec file pair per slug). */
   planSlugs?: string[];
+  /**
+   * The PM has seen the app running with its demo login and accepted the
+   * setup — the human gate on the last bootstrap card. Kept in mvpfy's own
+   * state, never in the agent-written flow file, so no run can fake it.
+   */
+  bootstrapAccepted?: boolean;
   /**
    * 'managed' (default): a clone under ~/.mvpfy/projects, fully owned by
    * mvpfy. 'linked': the user's own folder used in place — mvpfy keeps all
@@ -149,6 +159,8 @@ export const TRIAGE_FILE = 'mvpfy-triage.md';
 export const SUMMARY_FILE = 'mvpfy-summary.md';
 /** The instruct agent's report: what it changed and whether to restart. */
 export const CHANGE_FILE = 'mvpfy-change.md';
+/** The bootstrap run's own task board: what setup is doing, card by card. */
+export const BOOTSTRAP_FILE = 'mvpfy-bootstrap.json';
 /** Machine-readable product plan: spec items + stories + board lanes. */
 export const PLAN_FILE = 'mvpfy-plan.json';
 /** Human-readable product spec generated alongside the plan. */

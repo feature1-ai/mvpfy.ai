@@ -1,4 +1,5 @@
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
+import bootstrapPlanTemplate from '../prompts/bootstrap-plan.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import triageTemplate from '../prompts/triage.txt?raw';
 import instructTemplate from '../prompts/instruct.txt?raw';
@@ -7,6 +8,7 @@ import planSpecTemplate from '../prompts/plan-spec.txt?raw';
 import planImplementTemplate from '../prompts/plan-implement.txt?raw';
 import {
   AgentKind,
+  BOOTSTRAP_FILE,
   Project,
   Settings,
   configDirFor,
@@ -37,6 +39,7 @@ function workspaceNoteFor(project: Project): string {
 }
 
 export type RunKind =
+  | 'bootstrap-plan'
   | 'bootstrap'
   | 'ship'
   | 'docker-up'
@@ -82,7 +85,35 @@ export function buildBootstrapPrompt(project: Project): string {
     repoPath: project.localPath,
     basePort: String(project.basePort),
     workspaceNote: workspaceNoteFor(project),
+    bootstrapFile: configDirFor(project.mode) + BOOTSTRAP_FILE,
   });
+}
+
+/** Phase A of bootstrap: the task list the PM watches, written before any work. */
+export function buildBootstrapPlanPrompt(project: Project): string {
+  return fillTemplate(bootstrapPlanTemplate, {
+    repoPath: project.localPath,
+    workspaceNote: workspaceNoteFor(project),
+    bootstrapFile: configDirFor(project.mode) + BOOTSTRAP_FILE,
+  });
+}
+
+/**
+ * Work out what setting this product up will involve and write it down as
+ * cards, without changing anything. Chained straight into the bootstrap run.
+ */
+export async function startBootstrapPlanRun(
+  project: Project,
+  settings: Settings
+): Promise<RunHandle> {
+  const runId = makeRunId('bootstrap-plan');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: buildBootstrapPlanPrompt(project),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'bootstrap-plan', projectId: project.id };
 }
 
 export function buildShipFeaturePrompt(repoPath: string, storyId: string): string {

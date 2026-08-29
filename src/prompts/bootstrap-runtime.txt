@@ -11,6 +11,21 @@ The workspace root is either a single application repo, or a folder that contain
 repos (e.g. frontend, backend, services), each cloned into its own subdirectory. Treat every
 repo in the workspace as part of one product: they must build, connect, and run together.
 
+KEEP THE PRODUCT MANAGER INFORMED. {bootstrapFile} holds the task list a previous run wrote —
+the cards the PM is watching while you work. Read it first and treat it as your checklist:
+
+• Before you start a task, set its "lane" to "doing". When you finish it, set "lane" to
+  "done" and make sure its "files" lists exactly what you produced.
+• If you get blocked on a task, set its "lane" to "blocked" and write your questions to
+  mvpfy-questions.md as described in step 5.
+• Keep every task's "id" and "title" as they are — the PM is already reading them. Add a task
+  (lane "doing") if you discover work the list missed; never delete one.
+• Never write the lane "testing" or add a final "app is running" task: whether the product
+  manager can actually see their app working is theirs to decide, not yours. mvpfy verifies
+  every "done" against the files on disk, so an unfinished task marked done shows up as
+  unconfirmed rather than complete.
+• If the file does not exist, do the work anyway and skip this bookkeeping.
+
 Follow these steps:
 
 1. Analyze every repo in the workspace. Work out what each one is (frontend, backend,

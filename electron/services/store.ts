@@ -46,6 +46,11 @@ function migrateProjects(raw: unknown[]): Project[] {
     if (p.status === 'bootstrapping') {
       p = { ...p, status: 'error' };
     }
+    // A quit before the queued bootstrap started: nothing ran, so drop back to
+    // the manual state rather than auto-running an agent on the next launch.
+    if (p.status === 'queued') {
+      p = { ...p, status: 'cloned' };
+    }
     return p;
   }) as unknown as Project[];
 }

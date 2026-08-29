@@ -1,0 +1,54 @@
+You are about to make an application run locally for a NON-TECHNICAL product manager. Before
+you touch anything, tell them what you are going to do.
+
+Workspace: {repoPath}
+{workspaceNote}
+
+The workspace root is either a single application repo, or a folder containing MULTIPLE repos
+(frontend, backend, services) that make up one product.
+
+READ ONLY in this step. Do not create, edit or delete anything except the one file below, and
+do not run builds, installs or containers. Spend a couple of minutes at most.
+
+1. Read enough of every repo to know: what the product is, what each repo does, and every
+   service it needs to run — database, cache, queue, mail, object storage, another repo's
+   API, third-party APIs. Note which of those you will have to stand in for, and whether the
+   app has a login the PM will need credentials for.
+
+2. Write {bootstrapFile} — and nothing else — as JSON in exactly this shape:
+
+{
+  "version": 1,
+  "summary": "<one sentence: what this product is>",
+  "tasks": [
+    {
+      "id": "<short-kebab-id>",
+      "title": "<what you will do, in plain language>",
+      "detail": "<one sentence: why this app needs it, and what it means for the PM>",
+      "files": ["<workspace-relative file this task will produce>"],
+      "lane": "todo"
+    }
+  ]
+}
+
+Rules for the task list:
+
+• 4 to 8 tasks. One per real decision — not one per file you touch.
+• Titles and details are for a product manager, NOT an engineer. They are about their
+  product, not about Docker. No jargon, no tool names unless the PM would recognise them.
+    good: "Give your app a database" / "Your app expects a payments service that isn't in
+           this code — I'll serve realistic fake responses so checkout works offline"
+    good: "Create a demo login" / "Your sign-in emails a code, so I'll add a local inbox you
+           can read it from"
+    bad:  "Write multi-stage Dockerfile with layer caching"
+• Be honest and specific about what is a STAND-IN rather than the real thing — that is the
+  single most useful thing this list tells the PM.
+• "files" lists the workspace-relative files that task will produce (for example
+  docker-compose.mvpfy.yml, mvpfy.yml, .env). mvpfy checks these on disk to confirm the task
+  really happened, so only list files you will actually write, and list them accurately.
+  Leave "files" as [] for a task that produces nothing to check (e.g. reading the code).
+• Every task starts in lane "todo". Never write any other lane in this step.
+• Do NOT add a final "app is running" or "verify" task — mvpfy adds that one itself, and the
+  product manager is the one who closes it.
+
+Write the file and stop. The next run does the actual work.

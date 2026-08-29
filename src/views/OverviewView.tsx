@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ProjectController } from '../hooks/useProjectController';
 import { parsePorts } from '../lib/ports';
+import BootstrapFlowCard from './BootstrapFlowCard';
 import EnvVarsCard from './EnvVarsCard';
 
 interface Props {
@@ -21,7 +22,9 @@ type EnvState =
 function envState(c: ProjectController): EnvState {
   if (c.busy) {
     const k = c.latestRun?.handle.kind;
-    if (k === 'bootstrap') return { kind: 'working', label: 'Bootstrapping…' };
+    if (k === 'bootstrap-plan')
+      return { kind: 'working', label: 'Working out what your app needs…' };
+    if (k === 'bootstrap') return { kind: 'working', label: 'Setting your app up…' };
     if (k === 'docker-up') return { kind: 'working', label: 'Starting…' };
     if (k === 'docker-down') return { kind: 'working', label: 'Stopping…' };
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
@@ -32,6 +35,9 @@ function envState(c: ProjectController): EnvState {
     if (k === 'ship') return { kind: 'working', label: 'Shipping as a pull request…' };
   }
   switch (c.project.status) {
+    // Between "Add project" and the bootstrap run actually starting.
+    case 'queued':
+      return { kind: 'working', label: 'Setting up the environment…' };
     case 'running':
       return c.appHealthy ? { kind: 'running' } : { kind: 'starting' };
     case 'needs-review':
@@ -238,6 +244,9 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </button>
             </div>
           </section>
+
+          {/* Setup board — the bootstrap run as cards the PM can follow */}
+          <BootstrapFlowCard c={c} />
 
           {/* Change report — result of an Ask-mvpfy instruction */}
           {c.changeContent && !c.busy && (

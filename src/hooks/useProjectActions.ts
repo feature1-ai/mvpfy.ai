@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ANSWERS_FILE, TRIAGE_FILE } from '../../shared/types';
+import { ANSWERS_FILE, QUESTIONS_FILE, TRIAGE_FILE } from '../../shared/types';
 import {
   startAppLogsRun,
   startBootstrapPlanRun,
@@ -88,19 +88,6 @@ export function useProjectActions(
       }));
     });
 
-  // A finished task list flows straight into doing the work — once per run,
-  // even if several renders observe the same completion.
-  const chained = useRef(new Set<string>());
-  useEffect(() => {
-    for (const run of projectRuns) {
-      if (run.handle.kind !== 'bootstrap-plan' || run.running || run.exitCode !== 0) continue;
-      if (chained.current.has(run.handle.runId)) continue;
-      chained.current.add(run.handle.runId);
-      void bootstrapWork();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectRuns]);
-
   // Answers and retries resume the work directly: the task list already exists
   // and the PM is watching those cards — re-planning would throw them away.
   const saveAnswersAndRerun = () =>
@@ -115,6 +102,30 @@ export function useProjectActions(
       const handle = await startDockerRun(project, action);
       runsApi.track(handle);
     });
+
+  // Setup runs itself end to end: the task list flows into the work, and the
+  // work flows into starting the app — each step once per run, even if
+  // several renders observe the same completion. The PM's own gate is the
+  // last card, where they say whether they can actually use the thing.
+  const chained = useRef(new Set<string>());
+  useEffect(() => {
+    for (const run of projectRuns) {
+      if (run.running || run.exitCode !== 0) continue;
+      if (chained.current.has(run.handle.runId)) continue;
+      if (run.handle.kind === 'bootstrap-plan') {
+        chained.current.add(run.handle.runId);
+        void bootstrapWork();
+      } else if (run.handle.kind === 'bootstrap') {
+        // A blocked agent writes its questions and stops, but still exits 0 —
+        // starting a half-configured stack would bury the questions the PM
+        // needs to answer.
+        if (contentOf(files, pf(QUESTIONS_FILE))) continue;
+        chained.current.add(run.handle.runId);
+        void docker('up');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectRuns]);
 
   const diagnose = () =>
     guarded(async () => {

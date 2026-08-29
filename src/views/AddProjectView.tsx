@@ -12,7 +12,7 @@ interface Props {
 const STEPS = [
   ['01', 'Add & inspect', 'Detects services, ports and dependencies.'],
   ['02', 'Bootstrap', 'Starts on its own: writes mvpfy.yml, a compose file and demo logins.'],
-  ['03', 'Run', 'You review what it wrote, then start the app and the editor.'],
+  ['03', 'Run', 'Brings the app up and hands you a link and a demo login to try it.'],
 ] as const;
 
 export default function AddProjectView({ state, updateState, onCreated }: Props) {
@@ -67,9 +67,9 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
         {firstRun ? 'Add your first project' : 'Add a project'}
       </h1>
       <p className="mb-7 text-sm leading-relaxed text-body [text-wrap:pretty]">
-        Paste one or more repositories. mvpfy adds them and immediately bootstraps the environment —
-        it works out how to run the code and writes the run config, which takes a couple of minutes
-        on your agent subscription. Nothing starts running until you&apos;ve looked it over.
+        Paste one or more repositories. mvpfy adds them and sets the environment up on its own — it
+        works out how to run the code, writes the run config and starts the app, which takes a few
+        minutes on your agent subscription. Follow along on the cards; the last one is yours.
       </p>
 
       <label className="section-label mb-1.5 block">Repositories</label>

@@ -329,8 +329,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
             </section>
           )}
 
-          {/* Plain-language bootstrap summary — what the PM reviews */}
-          {env.kind === 'review' && c.summaryContent && (
+          {/* Plain-language bootstrap summary. Not tied to the review state:
+              setup starts the app itself now, so 'needs-review' is a moment
+              the PM may never see. */}
+          {c.summaryContent && !c.busy && (
             <section className="card">
               <div className="border-b border-line px-5 py-3.5">
                 <span className="section-label">What mvpfy set up</span>

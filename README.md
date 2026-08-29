@@ -111,10 +111,12 @@ npm run package    # package the macOS app into release/
    API isn't available. If the agent is genuinely blocked (e.g. it needs the real backend
    repo URL), it writes its questions to `mvpfy-questions.md`; the app shows them, you type
    answers, and bootstrap re-runs with your answers.
-   **Nothing runs automatically**: you review the generated files in the app, then explicitly
-   click *Start environment*, which runs `docker compose -f docker-compose.mvpfy.yml up -d`.
-   The app then polls the port and shows a green "App is up" link once the app actually
-   responds.
+   When the work finishes mvpfy **starts the app itself** (`docker compose -f
+   docker-compose.mvpfy.yml up -d`) — unless the agent left you questions, in which case it
+   stops and shows them instead of running a half-configured stack. The app then polls the
+   port and the last card turns *ready to test* once the app actually responds. Everything
+   the agent generated stays on the Overview for you to read, and you can stop or restart
+   the environment at any time.
 3. **Ask mvpfy to change something** — describe any change in plain language:
    "Add an environment variable STRIPE_API_KEY=… to the backend", "move the app to port
    5000". The agent applies the smallest safe change (secrets go into the local env file,

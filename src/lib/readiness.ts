@@ -36,6 +36,14 @@ export const AREA_LABELS: Record<Area, string> = {
 
 const AREAS = Object.keys(AREA_LABELS) as Area[];
 
+/**
+ * Who can actually close this. Some findings are a change to the code in
+ * front of us; others need something only a person can obtain or decide — a
+ * real payment account, a managed database, a domain. Defaults to 'you',
+ * because offering to fix something mvpfy cannot fix is worse than silence.
+ */
+export type FixableBy = 'mvpfy' | 'you';
+
 export interface ReadinessFinding {
   id: string;
   /** Plain language: what is true today. */
@@ -46,6 +54,7 @@ export interface ReadinessFinding {
   fix: string;
   severity: Severity;
   area: Area;
+  fixableBy: FixableBy;
   /** Files (and lines) the agent read to conclude this. */
   evidence: string[];
   /** The builder decided to launch with this anyway — set by mvpfy, never
@@ -146,6 +155,8 @@ export function parseReadiness(content: string | null | undefined): ReadinessRep
         ? (o.severity as Severity)
         : 'risk';
       const area = AREAS.includes(o.area as Area) ? (o.area as Area) : 'operations';
+      // Only an explicit claim makes something mvpfy-fixable.
+      const fixableBy: FixableBy = o.fixableBy === 'mvpfy' ? 'mvpfy' : 'you';
       return {
         id: String(o.id ?? '').trim() || `finding-${i + 1}`,
         title,
@@ -153,6 +164,7 @@ export function parseReadiness(content: string | null | undefined): ReadinessRep
         fix: String(o.fix ?? '').trim(),
         severity,
         area,
+        fixableBy,
         evidence: normalizeStrings(o.evidence),
         accepted: false,
       };

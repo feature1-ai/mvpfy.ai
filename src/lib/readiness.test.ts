@@ -17,6 +17,7 @@ const finding = (over: Partial<ReadinessFinding> = {}): ReadinessFinding => ({
   fix: 'Delete the demo account.',
   severity: 'blocker',
   area: 'access',
+  fixableBy: 'you',
   evidence: ['mvpfy.yml:demo_login'],
   accepted: false,
   ...over,
@@ -38,6 +39,18 @@ describe('parseReadiness', () => {
   it('defaults an unknown severity to risk and an unknown area to operations', () => {
     const parsed = parseReadiness(report([{ title: 'Odd', severity: 'critical', area: 'vibes' }]));
     expect(parsed?.findings[0]).toMatchObject({ severity: 'risk', area: 'operations' });
+  });
+
+  it('only trusts an explicit mvpfy claim for who can fix it', () => {
+    const parsed = parseReadiness(
+      report([
+        { id: 'a', title: 'Debug mode is on', fixableBy: 'mvpfy' },
+        { id: 'b', title: 'Payments are fake', fixableBy: 'you' },
+        { id: 'c', title: 'No backups' },
+        { id: 'd', title: 'Odd', fixableBy: 'someone-else' },
+      ])
+    );
+    expect(parsed?.findings.map((f) => f.fixableBy)).toEqual(['mvpfy', 'you', 'you', 'you']);
   });
 
   it('never lets the agent pre-accept its own finding', () => {

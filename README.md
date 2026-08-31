@@ -169,7 +169,16 @@ npm run package    # package the macOS app into release/
    proves it. The verdict is computed by mvpfy from the findings, never claimed by the
    agent, and the only way past a blocker is to fix it or explicitly *launch with this
    anyway* — which keeps it on the list, marked as your decision, because accepting a risk
-   doesn't make it safe. Nothing in this step changes your code.
+   doesn't make it safe.
+
+   Each finding also says **who can close it**. Where the whole fix lives in your code —
+   deleting a seeded demo account, generating a real session secret, turning debug mode off,
+   adding an error tracker — you get a **Fix this** button: the agent makes the smallest
+   change that closes it, and then **mvpfy re-runs the readiness check** to see whether the
+   finding is actually gone. That re-check is the verdict, not the agent's own report; the fix
+   prompt is forbidden from touching the report at all. Findings needing something only you
+   can get — a real payment account, a managed database, a domain — are marked *needs you*
+   rather than offered a button that couldn't finish the job.
 
 ## Architecture
 

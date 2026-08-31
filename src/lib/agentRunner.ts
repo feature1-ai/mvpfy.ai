@@ -1,6 +1,7 @@
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import bootstrapPlanTemplate from '../prompts/bootstrap-plan.txt?raw';
 import readinessTemplate from '../prompts/launch-readiness.txt?raw';
+import readinessFixTemplate from '../prompts/readiness-fix.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import triageTemplate from '../prompts/triage.txt?raw';
 import instructTemplate from '../prompts/instruct.txt?raw';
@@ -46,6 +47,7 @@ export type RunKind =
   | 'bootstrap-plan'
   | 'bootstrap'
   | 'readiness'
+  | 'readiness-fix'
   | 'ship'
   | 'docker-up'
   | 'docker-down'
@@ -122,6 +124,33 @@ export async function startReadinessRun(project: Project, settings: Settings): P
     ...agentFor(settings),
   });
   return { runId, kind: 'readiness', projectId: project.id };
+}
+
+/**
+ * Fix one readiness finding. Deliberately scoped to a single finding and
+ * forbidden from touching the report: mvpfy re-runs the check afterwards, and
+ * that re-check — not the agent's own say-so — is what closes the finding.
+ */
+export async function startReadinessFixRun(
+  project: Project,
+  settings: Settings,
+  finding: { id: string; title: string; detail: string; fix: string; evidence: string[] }
+): Promise<RunHandle> {
+  const runId = makeRunId('readiness-fix');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(readinessFixTemplate, {
+      repoPath: project.localPath,
+      workspaceNote: workspaceNoteFor(project),
+      title: finding.title,
+      detail: finding.detail,
+      fix: finding.fix,
+      evidence: finding.evidence.join(', ') || '(no file recorded)',
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'readiness-fix', projectId: project.id, storyId: finding.id };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { QUESTIONS_FILE, READINESS_FILE } from '../../shared/types';
-import { startReadinessRun } from '../lib/agentRunner';
+import { startReadinessFixRun, startReadinessRun } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
 import {
   applyAccepted,
@@ -22,6 +22,10 @@ export interface ReadinessActions {
   readinessVerdict: ReadinessVerdict | null;
   /** True while the check is running. */
   readinessRunning: boolean;
+  /** Id of the finding being fixed right now, if any. */
+  fixingFindingId: string | null;
+  /** Let the agent close one finding; mvpfy re-checks to see if it worked. */
+  fixFinding(id: string): Promise<boolean>;
   /** Read the codebase and report what stands between it and real users. */
   checkReadiness(): Promise<boolean>;
   /** "I know, and I'm launching anyway" — a decision, not a fix. */
@@ -40,6 +44,19 @@ export function useReadinessActions(ctx: ControllerContext): ReadinessActions {
   const report = parseReadiness(contentOf(files, pf(READINESS_FILE)));
   const findings = applyAccepted(report, project.readinessAccepted ?? []);
 
+  const fixFinding = (id: string) =>
+    guarded(async () => {
+      const finding = findings.find((f) => f.id === id);
+      if (!finding) throw new Error('That finding is no longer in the report');
+      if (finding.fixableBy !== 'mvpfy') {
+        throw new Error('This one needs you — mvpfy cannot finish it from the code alone');
+      }
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const handle = await startReadinessFixRun(project, state.settings, finding);
+      runsApi.track(handle);
+    });
+
   const checkReadiness = () =>
     guarded(async () => {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
@@ -47,6 +64,20 @@ export function useReadinessActions(ctx: ControllerContext): ReadinessActions {
       const handle = await startReadinessRun(project, state.settings);
       runsApi.track(handle);
     });
+
+  // A finished fix run is not a fixed finding: re-run the check and let the
+  // report decide whether it is actually gone. The agent is forbidden from
+  // touching the report itself, so this is the only thing that can close one.
+  const rechecked = useRef(new Set<string>());
+  useEffect(() => {
+    for (const run of projectRuns) {
+      if (run.handle.kind !== 'readiness-fix' || run.running || run.exitCode !== 0) continue;
+      if (rechecked.current.has(run.handle.runId)) continue;
+      rechecked.current.add(run.handle.runId);
+      void checkReadiness();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectRuns]);
 
   // Readiness starts with the project, like everything else in setup: once
   // bootstrap has worked the product out, the check runs off the back of it.
@@ -87,6 +118,10 @@ export function useReadinessActions(ctx: ControllerContext): ReadinessActions {
     readinessGeneratedAt: report?.generatedAt || null,
     readinessVerdict: report ? verdictFor(findings) : null,
     readinessRunning: projectRuns.some((r) => r.running && r.handle.kind === 'readiness'),
+    fixingFindingId:
+      projectRuns.find((r) => r.running && r.handle.kind === 'readiness-fix')?.handle.storyId ??
+      null,
+    fixFinding,
     checkReadiness,
     acceptFinding: (id: string) => setAccepted(id, true),
     unacceptFinding: (id: string) => setAccepted(id, false),

@@ -66,6 +66,7 @@ Write {readinessFile} — and nothing else — as JSON in exactly this shape:
       "fix": "<one line: what has to change>",
       "severity": "blocker" | "risk" | "note",
       "area": "fake" | "data" | "secrets" | "access" | "money" | "missing" | "operations",
+      "fixableBy": "mvpfy" | "you",
       "evidence": ["<file path, and line or key, that shows this>"]
     }
   ]
@@ -73,6 +74,15 @@ Write {readinessFile} — and nothing else — as JSON in exactly this shape:
 
 Rules for the report:
 
+• "fixableBy" says who can actually close it, and be strict:
+    "mvpfy" — the whole fix is a change to the code or config in this repository, and needs
+      nothing from outside. Deleting a seeded demo account, generating a real session secret,
+      turning debug mode off, tightening CORS, hiding a switched-off feature in the UI, adding
+      an error tracker, adding a health check, adding rate limiting.
+    "you" — it needs something only a person can obtain or decide: a real payment account or
+      live API key, a managed database or host, a domain, a backup policy, a legal call.
+  When a finding is partly both, it is "you" — mvpfy offering to fix something it cannot
+  finish is worse than saying nothing. If in doubt, "you".
 • Write for the person who built the product, not for an engineer. Say what it MEANS.
     good: "Anyone can sign in as the demo account" / "The demo email and password from local
            testing still work, so anyone who finds your site can log in as a full user and see

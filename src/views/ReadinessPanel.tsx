@@ -149,6 +149,8 @@ export default function ReadinessPanel({ c, onOpenTab }: Props) {
 
 function Finding({ c, finding }: { c: ProjectController; finding: ReadinessFinding }) {
   const [showEvidence, setShowEvidence] = useState(false);
+  const fixing = c.fixingFindingId === finding.id;
+  const someoneElseFixing = c.fixingFindingId !== null && !fixing;
   return (
     <div className={`px-5 py-4 ${finding.accepted ? 'opacity-60' : ''}`}>
       <div className="flex items-start gap-3">
@@ -166,6 +168,24 @@ function Finding({ c, finding }: { c: ProjectController; finding: ReadinessFindi
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-3">
+            {finding.fixableBy === 'mvpfy' && !finding.accepted && (
+              <button
+                onClick={() => void c.fixFinding(finding.id)}
+                disabled={c.busy || someoneElseFixing}
+                title="mvpfy makes the change, then re-runs the check to confirm it worked"
+                className="btn-primary h-6 px-2.5 text-[11.5px] disabled:opacity-50"
+              >
+                {fixing ? 'Fixing…' : 'Fix this'}
+              </button>
+            )}
+            {finding.fixableBy === 'you' && !finding.accepted && (
+              <span
+                className="text-[11.5px] text-muted"
+                title="This needs something only you can get or decide — a real account, key, host or policy"
+              >
+                needs you
+              </span>
+            )}
             {finding.evidence.length > 0 && (
               <button
                 onClick={() => setShowEvidence((p) => !p)}

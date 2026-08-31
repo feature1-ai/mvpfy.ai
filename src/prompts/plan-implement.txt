@@ -4,6 +4,7 @@ Workspace: {repoPath}
 Read {planFile} and {specFile} in the workspace root. Implement story {storyCode}:
 every acceptance criterion, plus tests, in the appropriate repository within the workspace.
 {feedbackBlock}
+{feature1Block}
 
 Follow this sequence:
 1. Read the story's acceptance criteria and the spec context. Look at how the product

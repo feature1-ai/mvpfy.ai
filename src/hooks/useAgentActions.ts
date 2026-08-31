@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CHANGE_FILE } from '../../shared/types';
 import { startInstructRun, startShipChangeRun, startShipFeatureRun } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
-import { Feature1McpClient, UserStory } from '../lib/feature1Mcp';
+import { Feature1McpClient, UserStory, mcpBaseUrl } from '../lib/feature1Mcp';
 import { ControllerContext } from './controllerContext';
 
 /** Agent-driven changes: instructions, shipping, and Feature1 stories. */
@@ -78,7 +78,20 @@ export function useAgentActions(ctx: ControllerContext): AgentActions {
       // Ship needs the agent AND gh (push + PR creation) to be signed in.
       const authProblem = await preflightAuth(state.settings.defaultAgent, true);
       if (authProblem) throw new Error(authProblem);
-      const handle = await startShipFeatureRun(project, story.id, state.settings, targetRepoDir);
+      // The agent drives Feature1 over MCP, so register the tenant's MCP
+      // server with this run (URL + keychain token). Without it the
+      // mcp__feature1__* calls in the ship-feature prompt would not resolve.
+      if (!state.tenant) throw new Error('Connect Feature1 in Settings first.');
+      const token = await window.mvpfy.keychainGet(state.tenant.tokenKeychainEntry);
+      if (!token) throw new Error('Feature1 session expired — reconnect in Settings.');
+      const mcp = { url: mcpBaseUrl(state.tenant.slug), token };
+      const handle = await startShipFeatureRun(
+        project,
+        story.id,
+        state.settings,
+        targetRepoDir,
+        mcp
+      );
       runsApi.track(handle);
     });
 

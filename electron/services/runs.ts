@@ -20,10 +20,24 @@ export function setRunEventSink(next: RunEventSink): void {
   sink = next;
 }
 
-export function startRun(runId: string, command: string, cwd: string): void {
+/**
+ * `onExit` runs once when the process is gone, however it ended. Callers use
+ * it to delete per-run scratch files — some of which hold credentials.
+ */
+export function startRun(runId: string, command: string, cwd: string, onExit?: () => void): void {
   if (activeRuns.has(runId)) {
     throw new Error(`Run ${runId} is already active`);
   }
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    try {
+      onExit?.();
+    } catch {
+      // Cleanup is best effort; the startup sweep is the backstop.
+    }
+  };
   sink.output({ runId, stream: 'info', chunk: `$ ${command}\n` });
   const child = spawnShell(command, { cwd, env: spawnEnv() });
   activeRuns.set(runId, child);
@@ -36,9 +50,11 @@ export function startRun(runId: string, command: string, cwd: string): void {
   });
   child.on('error', (err) => {
     sink.output({ runId, stream: 'stderr', chunk: `spawn error: ${err.message}\n` });
+    cleanup();
   });
   child.on('close', (code) => {
     activeRuns.delete(runId);
+    cleanup();
     sink.exit({ runId, code });
   });
 }

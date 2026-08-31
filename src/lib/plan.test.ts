@@ -56,6 +56,20 @@ describe('parsePlan', () => {
     expect(parsePlan('{}')).toBeNull();
     expect(parsePlan(null)).toBeNull();
   });
+
+  it('preserves feature1StoryId for stories pulled from Feature1', () => {
+    const pulled = parsePlan(
+      JSON.stringify({
+        spec: { feature: 'Pulled' },
+        stories: [
+          { code: 'FEA-1', title: 'From Feature1', feature1StoryId: 'sess-abc' },
+          { code: 'US-2', title: 'Local' },
+        ],
+      })
+    )!;
+    expect(pulled.stories[0].feature1StoryId).toBe('sess-abc');
+    expect(pulled.stories[1].feature1StoryId).toBeUndefined();
+  });
 });
 
 describe('snapEstimate', () => {

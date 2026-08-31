@@ -121,6 +121,19 @@ export interface CreateProjectResult {
   error?: string;
 }
 
+/**
+ * Feature1 MCP server to register with the spawned coding agent for this
+ * run, so a ship-feature prompt's mcp__feature1__* tool calls resolve. The
+ * agent is started with a per-run MCP config carrying these — nothing is
+ * written into the repo or the user's global agent config.
+ */
+export interface RunAgentMcp {
+  /** e.g. https://<slug>-mcp.feature1.ai/mcp/ */
+  url: string;
+  /** Bearer token for the tenant (from the OS keychain). */
+  token: string;
+}
+
 export interface RunAgentRequest {
   /** Unique id used to correlate streamed output events. */
   runId: string;
@@ -129,6 +142,8 @@ export interface RunAgentRequest {
   promptText: string;
   /** Codex only. */
   model?: string;
+  /** When set, the Feature1 MCP server is registered with the agent. */
+  mcp?: RunAgentMcp;
 }
 
 export interface RunOutputEvent {

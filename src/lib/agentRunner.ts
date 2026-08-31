@@ -7,11 +7,13 @@ import instructTemplate from '../prompts/instruct.txt?raw';
 import shipChangeTemplate from '../prompts/ship-change.txt?raw';
 import planSpecTemplate from '../prompts/plan-spec.txt?raw';
 import planImplementTemplate from '../prompts/plan-implement.txt?raw';
+import pullFeatureTemplate from '../prompts/pull-feature.txt?raw';
 import {
   AgentKind,
   BOOTSTRAP_FILE,
   Project,
   READINESS_FILE,
+  RunAgentMcp,
   Settings,
   configDirFor,
   planFileFor,
@@ -163,7 +165,9 @@ export async function startShipFeatureRun(
   storyId: string,
   settings: Settings,
   /** Which repo of the workspace to implement the story in. */
-  repoPath: string = project.repos[0]?.dir ?? project.localPath
+  repoPath: string = project.repos[0]?.dir ?? project.localPath,
+  /** Feature1 MCP server to register with the agent, so mcp__feature1__* resolve. */
+  mcp?: RunAgentMcp
 ): Promise<RunHandle> {
   const runId = makeRunId('ship');
   await window.mvpfy.runAgent({
@@ -171,6 +175,7 @@ export async function startShipFeatureRun(
     repoPath,
     promptText: buildShipFeaturePrompt(repoPath, storyId),
     ...agentFor(settings),
+    ...(mcp ? { mcp } : {}),
   });
   return { runId, kind: 'ship', projectId: project.id, storyId };
 }
@@ -230,13 +235,77 @@ export async function startPlanSpecRun(
   return { runId, kind: 'plan-spec', projectId: project.id, planSlug };
 }
 
+/**
+ * Pull a Feature1 feature into this project as a native plan: the agent
+ * reads the feature (PRD + stories + ACs) over the registered Feature1 MCP
+ * server and writes mvpfy's own plan/spec pair, so it lands on the board
+ * like a locally-planned feature. Read-only against Feature1.
+ */
+export async function startPullFeatureRun(
+  project: Project,
+  settings: Settings,
+  planSlug: string,
+  featureRef: string,
+  mcp: RunAgentMcp
+): Promise<RunHandle> {
+  const runId = makeRunId('pullfeature');
+  const cfg = configDirFor(project.mode);
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(pullFeatureTemplate, {
+      repoPath: project.localPath,
+      featureRef,
+      planFile: cfg + planFileFor(planSlug),
+      specFile: cfg + specFileFor(planSlug),
+    }),
+    ...agentFor(settings),
+    mcp,
+  });
+  // Reuse the plan-spec kind so the board treats this like a spec being
+  // generated for the slug (the FeaturePlan.generating state keys off it).
+  return { runId, kind: 'plan-spec', projectId: project.id, planSlug };
+}
+
+/**
+ * When a planned story was pulled from Feature1, implementing it should also
+ * drive the Feature1 workflow over MCP so its ACs and status stay in sync —
+ * the same ship-feature sequence, folded into the plan-story run. Empty for
+ * locally-planned stories.
+ */
+function feature1BlockFor(feature1StoryId?: string): string {
+  if (!feature1StoryId) return '';
+  return (
+    'This story was planned in Feature1 (session id ' +
+    feature1StoryId +
+    '). The Feature1 MCP server is registered for this run, so ALSO keep Feature1 in sync ' +
+    'as you implement — use its own acceptance-criteria prompts as the source of truth:\n' +
+    '• Before coding: call mcp__feature1__load_workflow(session_id="' +
+    feature1StoryId +
+    '"), then mcp__feature1__mark_all_acs_in_progress(), then ' +
+    'mcp__feature1__generate_prompts_for_all_acs() and implement to those prompts (they are ' +
+    'codebase-grounded and authoritative — reconcile them with the acceptance criteria in ' +
+    'the plan file).\n' +
+    '• After tests pass and the PR is open: call ' +
+    'mcp__feature1__mark_all_acs_implementation_done(), then ' +
+    'mcp__feature1__attach_pr(pr_url="<the PR URL you just printed>"), then ' +
+    'mcp__feature1__mark_ready_for_testing().\n' +
+    '• If any Feature1 MCP call fails, retry once, then continue the local implementation ' +
+    'and note the failure — do not abandon the code changes over a sync error.'
+  );
+}
+
 /** Implement one planned story; opens/updates its PR (PR lands at Testing). */
 export async function startPlanStoryRun(
   project: Project,
   settings: Settings,
   planSlug: string,
   storyCode: string,
-  storyFeedback?: string | null
+  storyFeedback?: string | null,
+  /** Feature1 story session id, when this story was pulled from Feature1. */
+  feature1StoryId?: string,
+  /** Feature1 MCP server to register (required when feature1StoryId is set). */
+  mcp?: RunAgentMcp
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
   const storyCodeSlug = storyCode.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -254,8 +323,10 @@ export async function startPlanStoryRun(
       feedbackBlock: storyFeedback
         ? `The product manager tested the previous round and sent it back with this feedback — address it fully:\n---\n${storyFeedback}\n---`
         : '',
+      feature1Block: feature1BlockFor(feature1StoryId),
     }),
     ...agentFor(settings),
+    ...(mcp ? { mcp } : {}),
   });
   return { runId, kind: 'plan-story', projectId: project.id, storyId: storyCode, planSlug };
 }

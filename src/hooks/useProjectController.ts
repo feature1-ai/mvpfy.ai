@@ -128,6 +128,7 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions 
   planBlocked: boolean;
   /** Resolves true when the run actually started (false on a guard error). */
   generateSpec(description: string): Promise<boolean>;
+  pullFeature(featureRef: string): Promise<boolean>;
   refineSpec(instruction: string): Promise<boolean>;
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;

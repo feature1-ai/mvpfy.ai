@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { registerIpc } from './ipc';
 import { ensureDirs } from './paths';
 import { setRunEventSink, stopAllRuns } from './services/runs';
+import { sweepRunArtifacts } from './services/agents';
 import { readState } from './services/store';
 import { resolveUserPath } from './services/shell';
 import { initAutoUpdates } from './services/updates';
@@ -54,6 +55,7 @@ app.whenReady().then(() => {
   resolveUserPath();
   ensureDirs();
   readState(); // seeds the linked-workspace allowlist before any IPC arrives
+  sweepRunArtifacts(); // clears per-run scratch (incl. tokens) a crash left behind
   setRunEventSink({
     output: (ev) => sendToRenderer('run-output', ev),
     exit: (ev) => sendToRenderer('run-exit', ev),

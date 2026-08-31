@@ -53,6 +53,12 @@ export interface PlanStory {
   prUrl: string | null;
   /** Tester feedback carried into the next Coding run after a bounce. */
   feedback: string | null;
+  /**
+   * Feature1 story session id when this story was pulled from Feature1
+   * (absent for locally-planned stories). Set, implementing the story also
+   * drives the Feature1 workflow over MCP so its status stays in sync.
+   */
+  feature1StoryId?: string;
 }
 
 export interface ProjectPlan {
@@ -206,6 +212,10 @@ export function parsePlan(content: string | null | undefined): ProjectPlan | nul
         order: Number.isFinite(Number(o.order)) ? Number(o.order) : i,
         prUrl: typeof o.prUrl === 'string' && o.prUrl ? o.prUrl : null,
         feedback: typeof o.feedback === 'string' && o.feedback.trim() ? o.feedback.trim() : null,
+        feature1StoryId:
+          typeof o.feature1StoryId === 'string' && o.feature1StoryId.trim()
+            ? o.feature1StoryId.trim()
+            : undefined,
       };
     })
     .filter((x): x is PlanStory => x !== null)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { planFileFor, specFileFor } from '../../shared/types';
-import { startPlanSpecRun, startPlanStoryRun } from '../lib/agentRunner';
+import { startPlanSpecRun, startPlanStoryRun, startPullFeatureRun } from '../lib/agentRunner';
+import { mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
 import {
   canMove,
@@ -36,6 +37,8 @@ export interface PlanActions {
   planBlocked: boolean;
   /** Resolves true when the run actually started (false on a guard error). */
   generateSpec(description: string): Promise<boolean>;
+  /** Pull a Feature1 feature in as a native plan (agent reads it over MCP). */
+  pullFeature(featureRef: string): Promise<boolean>;
   refineSpec(instruction: string): Promise<boolean>;
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
@@ -90,6 +93,16 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     [project.localPath, refreshFiles, pf]
   );
 
+  // Feature1 MCP config for this tenant: URL + keychain token. Throws with a
+  // clear message when Feature1 isn't connected or the session has expired,
+  // so pull/implement-from-Feature1 fail loudly rather than silently.
+  const feature1Mcp = useCallback(async () => {
+    if (!state.tenant) throw new Error('Connect Feature1 in Settings first.');
+    const token = await window.mvpfy.keychainGet(state.tenant.tokenKeychainEntry);
+    if (!token) throw new Error('Feature1 session expired — reconnect in Settings.');
+    return { url: mcpBaseUrl(state.tenant.slug), token };
+  }, [state.tenant]);
+
   // When a story run finishes cleanly, the agent's allowed move fires on its
   // feature's board: Coding → Testing, PR recorded, feedback consumed. Only
   // ever once per run, even with several features' runs finishing together.
@@ -123,6 +136,26 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       if (authProblem) throw new Error(authProblem);
       const slug = slugForFeature(text, ['', ...(project.planSlugs ?? [])]);
       const handle = await startPlanSpecRun(project, state.settings, slug, text);
+      runsApi.track(handle);
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.id === project.id ? { ...p, planSlugs: [...(p.planSlugs ?? []), slug] } : p
+        ),
+      }));
+      setSelectedPlanSlug(slug);
+    });
+
+  const pullFeature = (featureRef: string) =>
+    guarded(async () => {
+      const ref = featureRef.trim();
+      if (!ref) return;
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const mcp = await feature1Mcp();
+      // Slug the plan off the feature ref; the agent fills the real name.
+      const slug = slugForFeature(`feature1 ${ref}`, ['', ...(project.planSlugs ?? [])]);
+      const handle = await startPullFeatureRun(project, state.settings, slug, ref, mcp);
       runsApi.track(handle);
       updateState((prev) => ({
         ...prev,
@@ -184,7 +217,18 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
           ),
         });
       }
-      const handle = await startPlanStoryRun(project, state.settings, slug, code, story.feedback);
+      // A Feature1-sourced story also drives the Feature1 workflow over MCP,
+      // so register the tenant's MCP server for the run and pass the link.
+      const mcp = story.feature1StoryId ? await feature1Mcp() : undefined;
+      const handle = await startPlanStoryRun(
+        project,
+        state.settings,
+        slug,
+        code,
+        story.feedback,
+        story.feature1StoryId,
+        mcp
+      );
       runsApi.track(handle);
     });
 
@@ -220,6 +264,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     anyStoryRunning,
     planBlocked,
     generateSpec,
+    pullFeature,
     refineSpec,
     approvePlan,
     implementStory,

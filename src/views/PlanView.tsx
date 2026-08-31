@@ -30,6 +30,8 @@ export default function PlanView({ c, onOpenTab }: Props) {
   const [bounce, setBounce] = useState<{ code: string; feedback: string } | null>(null);
   const [specOpen, setSpecOpen] = useState(false);
   const [creatingNew, setCreatingNew] = useState(false);
+  const [planMode, setPlanMode] = useState<'describe' | 'feature1'>('describe');
+  const [featureRef, setFeatureRef] = useState('');
 
   const plans = c.plans;
   const active = c.activePlan;
@@ -99,33 +101,86 @@ export default function PlanView({ c, onOpenTab }: Props) {
             {plans.length > 0 &&
               ' Each feature gets its own board — planning this one never touches the others.'}
           </p>
-          <label className="section-label mb-1.5 block">The feature</label>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={
-              'e.g. Customers should be able to export any invoice as a PDF and email it to their accountant.'
-            }
-            rows={5}
-            className="w-full resize-y rounded-lg border border-line bg-surface px-3.5 py-3 text-[13.5px] leading-relaxed outline-none placeholder:text-faint focus:border-muted"
-          />
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              onClick={() => {
-                void c.generateSpec(draft).then((ok) => {
-                  if (ok) {
-                    setDraft('');
-                    setCreatingNew(false);
-                  }
-                });
-              }}
-              disabled={!draft.trim()}
-              className="btn-primary h-[38px] px-4 text-sm disabled:opacity-50"
-            >
-              Generate spec &amp; stories
-            </button>
-            <span className="text-xs text-muted">~2–3 minutes, on your agent subscription</span>
-          </div>
+          {c.tenantConnected && (
+            <div className="mb-4 inline-flex rounded-lg border border-line p-0.5 text-[13px]">
+              <button
+                onClick={() => setPlanMode('describe')}
+                className={`rounded-md px-3 py-1.5 ${planMode === 'describe' ? 'bg-surface font-medium' : 'text-muted'}`}
+              >
+                Describe it
+              </button>
+              <button
+                onClick={() => setPlanMode('feature1')}
+                className={`rounded-md px-3 py-1.5 ${planMode === 'feature1' ? 'bg-surface font-medium' : 'text-muted'}`}
+              >
+                Pull from Feature1
+              </button>
+            </div>
+          )}
+
+          {planMode === 'describe' ? (
+            <>
+              <label className="section-label mb-1.5 block">The feature</label>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={
+                  'e.g. Customers should be able to export any invoice as a PDF and email it to their accountant.'
+                }
+                rows={5}
+                className="w-full resize-y rounded-lg border border-line bg-surface px-3.5 py-3 text-[13.5px] leading-relaxed outline-none placeholder:text-faint focus:border-muted"
+              />
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    void c.generateSpec(draft).then((ok) => {
+                      if (ok) {
+                        setDraft('');
+                        setCreatingNew(false);
+                      }
+                    });
+                  }}
+                  disabled={!draft.trim()}
+                  className="btn-primary h-[38px] px-4 text-sm disabled:opacity-50"
+                >
+                  Generate spec &amp; stories
+                </button>
+                <span className="text-xs text-muted">~2–3 minutes, on your agent subscription</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="section-label mb-1.5 block">Feature1 feature</label>
+              <p className="mb-2 text-[13px] leading-relaxed text-body">
+                Paste the feature code or id from Feature1. mvpfy pulls its PRD, user stories and
+                acceptance criteria in as a board — implementing a story here also updates it in
+                Feature1.
+              </p>
+              <input
+                value={featureRef}
+                onChange={(e) => setFeatureRef(e.target.value)}
+                placeholder="e.g. FEA-142 or the feature id"
+                className="w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[13.5px] outline-none placeholder:text-faint focus:border-muted"
+              />
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    void c.pullFeature(featureRef).then((ok) => {
+                      if (ok) {
+                        setFeatureRef('');
+                        setCreatingNew(false);
+                      }
+                    });
+                  }}
+                  disabled={!featureRef.trim()}
+                  className="btn-primary h-[38px] px-4 text-sm disabled:opacity-50"
+                >
+                  Pull feature
+                </button>
+                <span className="text-xs text-muted">~2–3 minutes, on your agent subscription</span>
+              </div>
+            </>
+          )}
           {c.actionError && <p className="mt-3 text-[13px] text-danger">{c.actionError}</p>}
         </div>
       </div>

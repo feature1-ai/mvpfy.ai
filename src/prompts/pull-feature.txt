@@ -1,0 +1,75 @@
+You are pulling a feature that was planned in Feature1 into this workspace, so it lands
+here exactly like a feature planned in mvpfy — a product manager will read the plan and
+work the board.
+
+Workspace: {repoPath}
+Feature1 feature to pull: {featureRef}
+
+Do this in order:
+
+1. Read the feature from Feature1 over MCP:
+   • mcp__feature1__get_feature(feature_id="{featureRef}") — gives the PRD, decomposition,
+     user flow, and the list of user stories under this feature.
+   • mcp__feature1__list_user_stories(feature_id="{featureRef}") — the stories with their
+     session ids and codes.
+   • For EACH story, mcp__feature1__get_user_story(session_id="<story session id>") — its
+     description and full acceptance criteria.
+   Do NOT modify anything in Feature1 (no mark_*, no generate_*, no attach_*). This step is
+   read-only: you are only pulling the plan across.
+
+2. Study the existing product in the workspace (code, routes, UI, README) so the spec
+   references real screens and flows, not invented ones.
+
+3. Write exactly two files in the workspace root:
+
+   {specFile} — the human-readable spec, in this order and nothing more:
+   # <Feature name>
+   ## Problem  (2-3 sentences)
+   ## Solution summary  (3-5 sentences)
+   ## Target users
+   ## Success metrics  (2-4 measurable bullets)
+   ## In scope / Out of scope  (bulleted, decisive)
+   ## User flows  (numbered, each one sentence: actor → action → result)
+   ## Requirements  (Functional / Non-functional bullets)
+   ## Stories  (one line per story: code — title — size)
+   Base every section on the Feature1 PRD/decomposition/flows you pulled — do not invent a
+   different strategy. Fill gaps from the codebase, not from imagination.
+
+   {planFile} — the machine-readable plan, EXACTLY this shape:
+{
+  "generatedAt": "<ISO date>",
+  "source": "feature1",
+  "feature1FeatureRef": "{featureRef}",
+  "spec": {
+    "feature": "<feature name>",
+    "overview": { "problem": "...", "summary": "...", "targetUsers": "...",
+                  "successMetrics": ["..."] },
+    "scope": { "inScope": [{"id": "in-<slug>", "text": "..."}],
+               "outOfScope": [{"id": "out-<slug>", "text": "..."}] },
+    "flows": [{"id": "flow-<slug>", "text": "..."}],
+    "requirements": { "functional": [{"id": "fn-<slug>", "text": "..."}],
+                      "nonFunctional": [{"id": "nf-<slug>", "text": "..."}] }
+  },
+  "stories": [
+    { "code": "<the Feature1 story code>", "title": "...",
+      "outcome": "<one sentence: the user outcome>",
+      "acceptanceCriteria": ["<one string per Feature1 acceptance criterion, verbatim>"],
+      "estimate": { "points": 1|2|5|8|13 },
+      "addresses": ["<ids of the spec items this story delivers>"],
+      "lane": "todo", "order": 1, "prUrl": null, "feedback": null,
+      "feature1StoryId": "<the story's Feature1 session id>" }
+  ]
+}
+
+Rules:
+• One plan story per Feature1 user story — keep Feature1's own decomposition; do not merge
+  or split stories, and do not invent stories that Feature1 did not plan.
+• Use the Feature1 story CODE as "code" and its SESSION ID as "feature1StoryId" (required
+  on every story — that link is what lets mvpfy implement it back through Feature1).
+• Copy each acceptance criterion across as-is; do not rewrite or drop any.
+• Estimate points from 1, 2, 5, 8, 13 only. Every story starts in lane "todo".
+• Every inScope item, flow, and functional requirement should appear in some story's
+  "addresses".
+• Do not modify any other file — other mvpfy-plan.* / mvpfy-spec.* files belong to other
+  features. Do not implement anything, do not run docker or git, and make NO writes back
+  to Feature1 in this run.

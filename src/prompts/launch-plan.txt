@@ -1,0 +1,67 @@
+You are working out what it would take to put this product online for real users, on
+{providerLabel}. A non-technical product builder will read what you write and decide whether
+to spend the money. You are NOT launching anything in this run.
+
+Workspace: {repoPath}
+{workspaceNote}
+
+READ ONLY, and no credentials are involved. Do not create, edit or delete anything except the
+one file below. Do not run the {provider} CLI, docker, git, or any command that touches an
+account. Do not ask for or read an API token. This run costs nothing and changes nothing.
+
+Read what mvpfy already worked out about this product — it is the accurate picture:
+• docker-compose.mvpfy.yml — every service the product actually needs, and how they connect.
+• mvpfy.yml — the main app, its port, and any demo logins.
+• .env.mvpfy.example and the live env file — every setting the product needs to run.
+• mvpfy-readiness.json — what still stands between this and real users.
+Then look at the code for anything those miss: background workers, scheduled jobs, file
+uploads, outbound email.
+
+Work out the smallest real deployment on {providerLabel} that would genuinely run this
+product for its first customers — not a reference architecture. A single small instance and a
+managed database is the right answer for most products at this stage. Be honest about size:
+this builder is paying, and an over-provisioned guess costs them money every month.
+
+Write {launchFile} — and nothing else — as JSON in exactly this shape:
+
+{
+  "version": 1,
+  "provider": "{provider}",
+  "region": "<the region closest to their likely users, in this provider's naming>",
+  "appName": "<a sensible name for the deployed app>",
+  "summary": "<one sentence: what going live means for this product>",
+  "resources": [
+    {
+      "id": "<short-kebab-id>",
+      "name": "<plain language, e.g. Your app / Your database>",
+      "kind": "<what it is on this provider, e.g. web service, Postgres>",
+      "detail": "<one sentence: why this product needs it>",
+      "size": "<the provider's own plan or size name, so the price can be checked>",
+      "monthlyUsd": <number: the estimated monthly cost of THIS resource, in US dollars>
+    }
+  ],
+  "secrets": [
+    { "key": "<ENV_VAR_NAME>", "why": "<what it is for, in plain language>",
+      "fromYou": true | false }
+  ],
+  "steps": ["<what would happen, in order, one short plain-language line each>"],
+  "notes": ["<anything they should know before agreeing — limits, first-month charges, manual steps>"]
+}
+
+Rules:
+
+• Every service in the compose file is either in "resources", or in "notes" with a sentence
+  saying why it is not needed in production. Do not silently drop one — a missing queue or
+  cache is a product that breaks a week after launch.
+• "monthlyUsd" is per resource, and must be a real number from that provider's public
+  pricing, for the size you named. Do not guess wildly, do not write 0 for something that
+  costs money, and do not include a free trial credit — mvpfy adds these up and shows the
+  builder the total before they agree to anything.
+• "fromYou" is true for any secret only they can supply — a live payment key, a real API
+  token, an SMTP account. False for values that can be generated at deploy time.
+• "steps" are what the builder would watch happen, in their language. Not CLI commands.
+• Never include a secret VALUE anywhere in this file, only the names.
+• Do not claim the product is ready to launch, and do not restate the readiness findings.
+  Whether it launches at all is decided elsewhere.
+
+Write the file and stop.

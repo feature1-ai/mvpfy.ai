@@ -180,6 +180,17 @@ npm run package    # package the macOS app into release/
    can get — a real payment account, a managed database, a domain — are marked *needs you*
    rather than offered a button that couldn't finish the job.
 
+7. **Going live** — once nothing dangerous is left, the same feature works out what hosting
+   the product actually involves on **Fly, Render or Railway**: every piece that gets created,
+   the provider's own size name for each one so you can check it, an estimated monthly cost,
+   the keys you have to go and get yourself, and what would happen in order. **mvpfy totals
+   the bill itself** from the plan's own line items — an agent doesn't get to add up its own
+   estimate — and **readiness gates the whole thing**: while a blocker is open there is no
+   costed plan to agree to, because launching with one is the exact thing this is here to
+   prevent. Accepting a blocker deliberately unblocks it; ignoring one doesn't.
+   Creating the resources for real is the next step; today the plan is a shopping list
+   accurate enough to work through by hand.
+
 ## Architecture
 
 MVC-style separation across Electron's two processes:

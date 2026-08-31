@@ -2,6 +2,7 @@ import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import bootstrapPlanTemplate from '../prompts/bootstrap-plan.txt?raw';
 import readinessTemplate from '../prompts/launch-readiness.txt?raw';
 import readinessFixTemplate from '../prompts/readiness-fix.txt?raw';
+import launchPlanTemplate from '../prompts/launch-plan.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import triageTemplate from '../prompts/triage.txt?raw';
 import instructTemplate from '../prompts/instruct.txt?raw';
@@ -12,6 +13,7 @@ import pullFeatureTemplate from '../prompts/pull-feature.txt?raw';
 import {
   AgentKind,
   BOOTSTRAP_FILE,
+  LAUNCH_FILE,
   Project,
   READINESS_FILE,
   RunAgentMcp,
@@ -48,6 +50,7 @@ export type RunKind =
   | 'bootstrap'
   | 'readiness'
   | 'readiness-fix'
+  | 'launch-plan'
   | 'ship'
   | 'docker-up'
   | 'docker-down'
@@ -124,6 +127,32 @@ export async function startReadinessRun(project: Project, settings: Settings): P
     ...agentFor(settings),
   });
   return { runId, kind: 'readiness', projectId: project.id };
+}
+
+/**
+ * Work out what going live would create and cost, without touching an
+ * account. The output is the cost gate the builder agrees to — or doesn't.
+ */
+export async function startLaunchPlanRun(
+  project: Project,
+  settings: Settings,
+  provider: string,
+  providerLabel: string
+): Promise<RunHandle> {
+  const runId = makeRunId('launch-plan');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(launchPlanTemplate, {
+      repoPath: project.localPath,
+      workspaceNote: workspaceNoteFor(project),
+      provider,
+      providerLabel,
+      launchFile: configDirFor(project.mode) + LAUNCH_FILE,
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'launch-plan', projectId: project.id };
 }
 
 /**

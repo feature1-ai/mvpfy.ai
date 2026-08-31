@@ -437,7 +437,7 @@ function ReadinessChip({
       <span
         className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected && !c.readinessRunning ? 'bg-white' : dot}`}
       />
-      <span className="truncate">Launch readiness</span>
+      <span className="truncate">Launch</span>
       {count && (
         <span className={`shrink-0 text-[10px] ${selected ? 'text-white/70' : 'text-faint'}`}>
           {count}

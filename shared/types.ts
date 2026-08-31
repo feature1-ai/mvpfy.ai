@@ -200,6 +200,8 @@ export const CHANGE_FILE = 'mvpfy-change.md';
 export const BOOTSTRAP_FILE = 'mvpfy-bootstrap.json';
 /** Launch readiness: what stands between the prototype and real users. */
 export const READINESS_FILE = 'mvpfy-readiness.json';
+/** What putting this product online would create, and what it would cost. */
+export const LAUNCH_FILE = 'mvpfy-launch.json';
 /** Machine-readable product plan: spec items + stories + board lanes. */
 export const PLAN_FILE = 'mvpfy-plan.json';
 /** Human-readable product spec generated alongside the plan. */

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ProjectController } from '../hooks/useProjectController';
+import { PROVIDERS, PROVIDER_LABELS, Provider } from '../lib/launchPlan';
 import {
   AREA_LABELS,
   groupByArea,
@@ -128,6 +129,8 @@ export default function ReadinessPanel({ c, onOpenTab }: Props) {
         </div>
       </section>
 
+      <LaunchSection c={c} />
+
       {groups.map(({ area, findings }) => (
         <section key={area} className="card">
           <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
@@ -144,6 +147,177 @@ export default function ReadinessPanel({ c, onOpenTab }: Props) {
         </section>
       ))}
     </div>
+  );
+}
+
+/**
+ * The launch half: what going live would create and cost. Gated on readiness,
+ * because launching a product with open blockers is the exact thing the rest
+ * of this panel exists to prevent.
+ */
+function LaunchSection({ c }: { c: ProjectController }) {
+  const [provider, setProvider] = useState<Provider>('fly');
+  const plan = c.launchPlan;
+
+  if (!c.launchGate.allowed) {
+    return (
+      <section className="card px-5 py-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-dot-idle" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[14px] font-semibold text-muted">Going live</h2>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+              {c.launchGate.reasons.join(' ')}
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (c.launchPlanning) {
+    return (
+      <section className="card px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="dot-pulse h-[9px] w-[9px] rounded-full bg-go" />
+          <div>
+            <h2 className="text-[14px] font-semibold">Working out what it would cost…</h2>
+            <p className="mt-0.5 text-[12.5px] text-body">
+              Reading what your product needs and pricing the smallest real deployment.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!plan) {
+    return (
+      <section className="card px-5 py-5">
+        <h2 className="text-[15px] font-semibold">Ready to put this online?</h2>
+        <p className="mt-1 max-w-[560px] text-[13px] leading-relaxed text-body [text-wrap:pretty]">
+          mvpfy can work out what hosting this product actually involves — which pieces get created,
+          what each one costs per month, and which keys you need to go and get. It reads your setup
+          and prices it. Nothing is created and no account is touched.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p}
+              onClick={() => setProvider(p)}
+              className={`h-7 rounded-full border px-3 text-xs transition-colors ${
+                provider === p
+                  ? 'border-ink bg-ink text-white'
+                  : 'border-line bg-surface text-body hover:border-muted'
+              }`}
+            >
+              {PROVIDER_LABELS[p]}
+            </button>
+          ))}
+          <button
+            onClick={() => void c.planLaunch(provider)}
+            disabled={c.busy}
+            className="btn-primary ml-1 h-[30px] px-3 text-xs disabled:opacity-50"
+          >
+            What would it cost?
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex items-start gap-4 border-b border-line bg-surface px-5 py-4">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[15px] font-semibold">
+            Going live on {PROVIDER_LABELS[plan.provider]}
+          </h2>
+          {plan.summary && <p className="mt-0.5 text-[13px] text-body">{plan.summary}</p>}
+          <p className="mt-1 text-[12px] text-muted">
+            {plan.appName}
+            {plan.region && ` · ${plan.region}`}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="section-label">Roughly</div>
+          <div className="font-mono text-[17px] font-medium">${c.launchMonthlyUsd.toFixed(2)}</div>
+          <div className="text-[11px] text-muted">per month</div>
+        </div>
+      </div>
+
+      <div className="divide-y divide-line-subtle px-5">
+        {plan.resources.map((r) => (
+          <div key={r.id} className="flex items-baseline gap-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium">
+                {r.name} <span className="font-normal text-muted">· {r.kind}</span>
+              </p>
+              {r.detail && <p className="mt-0.5 text-[12.5px] text-body">{r.detail}</p>}
+            </div>
+            {r.size && <span className="shrink-0 font-mono text-[11px] text-faint">{r.size}</span>}
+            <span className="w-16 shrink-0 text-right font-mono text-[12.5px]">
+              ${r.monthlyUsd.toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {c.launchSecretsFromYou.length > 0 && (
+        <div className="border-t border-line px-5 py-4">
+          <span className="section-label">You need to get these first</span>
+          <div className="mt-2 grid gap-1.5">
+            {c.launchSecretsFromYou.map((s) => (
+              <p key={s.key} className="text-[12.5px] text-body">
+                <span className="font-mono text-ink">{s.key}</span> — {s.why}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {plan.steps.length > 0 && (
+        <div className="border-t border-line px-5 py-4">
+          <span className="section-label">What would happen</span>
+          <ol className="mt-2 grid gap-1">
+            {plan.steps.map((step, i) => (
+              <li key={i} className="flex gap-2.5 text-[12.5px] text-body">
+                <span className="font-mono text-[11px] text-faint">{i + 1}</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {plan.notes.length > 0 && (
+        <div className="border-t border-line px-5 py-4">
+          <span className="section-label">Worth knowing</span>
+          <div className="mt-2 grid gap-1">
+            {plan.notes.map((n, i) => (
+              <p key={i} className="text-[12.5px] text-body">
+                {n}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 border-t border-line bg-sunken px-5 py-3.5">
+        <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted">
+          An estimate from {PROVIDER_LABELS[plan.provider]}&apos;s public pricing, totalled by mvpfy
+          — check it against their site before you commit. mvpfy cannot create these for you yet, so
+          this is the shopping list: it is accurate enough to work through by hand.
+        </p>
+        <button
+          onClick={() => void c.planLaunch(plan.provider)}
+          disabled={c.busy}
+          className="btn-secondary h-[30px] shrink-0 px-3 text-xs disabled:opacity-50"
+        >
+          Work it out again
+        </button>
+      </div>
+    </section>
   );
 }
 

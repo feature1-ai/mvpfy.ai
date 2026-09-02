@@ -6,6 +6,7 @@ import {
   LaunchPlan,
   Provider,
   PROVIDER_LABELS,
+  PROVIDER_NOTES,
   launchGate,
   monthlyTotal,
   parseLaunchPlan,
@@ -53,7 +54,8 @@ export function useLaunchActions(
         project,
         state.settings,
         provider,
-        PROVIDER_LABELS[provider]
+        PROVIDER_LABELS[provider],
+        PROVIDER_NOTES[provider]
       );
       runsApi.track(handle);
     });

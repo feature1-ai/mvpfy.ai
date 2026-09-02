@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { launchGate, monthlyTotal, parseLaunchPlan, secretsFromYou } from './launchPlan';
+import {
+  launchGate,
+  monthlyTotal,
+  parseLaunchPlan,
+  secretsFromYou,
+  PROVIDERS,
+  PROVIDER_LABELS,
+  PROVIDER_NOTES,
+} from './launchPlan';
 import { ReadinessVerdict } from './readiness';
 
 const plan = (over: Record<string, unknown> = {}) =>
@@ -80,6 +88,30 @@ describe('secretsFromYou', () => {
     expect(secretsFromYou(parseLaunchPlan(plan())).map((s) => s.key)).toEqual([
       'STRIPE_SECRET_KEY',
     ]);
+  });
+});
+
+describe('providers', () => {
+  it('offers Lightsail first — a fixed monthly bill is the safest default', () => {
+    expect(PROVIDERS[0]).toBe('lightsail');
+    expect(PROVIDER_LABELS.lightsail).toBe('AWS Lightsail');
+  });
+
+  it('gives every provider sizing guidance without baking in prices', () => {
+    for (const p of PROVIDERS) {
+      expect(PROVIDER_NOTES[p].trim().length).toBeGreaterThan(40);
+      // Prices go stale; the agent looks the current ones up.
+      expect(PROVIDER_NOTES[p]).not.toMatch(/\$\s?\d/);
+    }
+  });
+
+  it('steers Lightsail away from the unpredictable AWS services', () => {
+    expect(PROVIDER_NOTES.lightsail).toMatch(/Do NOT propose ECS, Fargate, RDS/);
+    expect(PROVIDER_NOTES.lightsail).toMatch(/IAM user limited to Lightsail/);
+  });
+
+  it('parses a Lightsail plan', () => {
+    expect(parseLaunchPlan(plan({ provider: 'lightsail' }))?.provider).toBe('lightsail');
   });
 });
 

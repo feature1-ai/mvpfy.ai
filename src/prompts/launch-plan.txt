@@ -17,6 +17,9 @@ Read what mvpfy already worked out about this product — it is the accurate pic
 Then look at the code for anything those miss: background workers, scheduled jobs, file
 uploads, outbound email.
 
+ABOUT {providerLabel}
+{providerNotes}
+
 Work out the smallest real deployment on {providerLabel} that would genuinely run this
 product for its first customers — not a reference architecture. A single small instance and a
 managed database is the right answer for most products at this stage. Be honest about size:

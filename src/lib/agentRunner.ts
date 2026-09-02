@@ -137,7 +137,8 @@ export async function startLaunchPlanRun(
   project: Project,
   settings: Settings,
   provider: string,
-  providerLabel: string
+  providerLabel: string,
+  providerNotes: string
 ): Promise<RunHandle> {
   const runId = makeRunId('launch-plan');
   await window.mvpfy.runAgent({
@@ -148,6 +149,7 @@ export async function startLaunchPlanRun(
       workspaceNote: workspaceNoteFor(project),
       provider,
       providerLabel,
+      providerNotes,
       launchFile: configDirFor(project.mode) + LAUNCH_FILE,
     }),
     ...agentFor(settings),

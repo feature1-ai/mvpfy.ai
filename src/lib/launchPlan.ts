@@ -10,14 +10,51 @@
 
 import { ReadinessVerdict } from './readiness';
 
-export type Provider = 'fly' | 'render' | 'railway';
+export type Provider = 'lightsail' | 'fly' | 'render' | 'railway';
 
-export const PROVIDERS: Provider[] = ['fly', 'render', 'railway'];
+export const PROVIDERS: Provider[] = ['lightsail', 'fly', 'render', 'railway'];
 
 export const PROVIDER_LABELS: Record<Provider, string> = {
+  lightsail: 'AWS Lightsail',
   fly: 'Fly.io',
   render: 'Render',
   railway: 'Railway',
+};
+
+/**
+ * What the agent needs to know about each host to size it sensibly. This is
+ * deliberately about the SHAPE of a provider's pricing and its right default
+ * product — never the prices themselves, which go stale the moment they are
+ * written down. The agent looks the current numbers up.
+ */
+export const PROVIDER_NOTES: Record<Provider, string> = {
+  lightsail: [
+    'Lightsail is priced in fixed monthly bundles rather than metered usage, which is its',
+    'main advantage for someone launching their first product: the bill is knowable in',
+    'advance. Name the bundle you are choosing (for example "Micro container service",',
+    '"1 GB managed database") so the builder can find that exact line on the pricing page.',
+    '',
+    '• Use a Lightsail CONTAINER SERVICE for the app, not a bare instance: it takes the',
+    '  Docker image this repo already builds, and includes HTTPS and a hostname, so the',
+    '  builder does not have to administer a server or set up certificates.',
+    '• Use a Lightsail MANAGED DATABASE rather than running the database in a container.',
+    '  It takes automatic daily backups, which actually closes a readiness finding instead',
+    '  of moving it somewhere else.',
+    '• High-availability database plans cost double. Do not choose one at this stage unless',
+    '  the product genuinely cannot be down for a few minutes — say so in notes if you skip it.',
+    '• Each bundle includes a data-transfer allowance and bills overage beyond it. Mention',
+    '  the allowance in notes so a launch cannot quietly become expensive.',
+    '• Do NOT propose ECS, Fargate, RDS, an Application Load Balancer, or a hand-built VPC.',
+    '  They are a different product with a bill that cannot be predicted in advance, which is',
+    '  the opposite of what this builder needs.',
+    '• In notes, tell them to create an IAM user limited to Lightsail rather than using their',
+    '  root account or an admin key, and to check they are in the AWS account they expect.',
+  ].join('\n'),
+  fly: 'Fly bills per machine and per volume, with a scale-to-zero option for low-traffic apps. Name the machine size and volume size you are choosing.',
+  render:
+    'Render bills a flat monthly rate per service and per managed database. Name the instance type for each.',
+  railway:
+    'Railway bills for usage rather than fixed plans, so a resting estimate can understate a busy month. Say so in notes, and name the plan the estimate assumes.',
 };
 
 export interface LaunchResource {

@@ -53,6 +53,35 @@ describe('parseReadiness', () => {
     expect(parsed?.findings.map((f) => f.fixableBy)).toEqual(['mvpfy', 'you', 'you', 'you']);
   });
 
+  it('refuses to let badly organised code be called a launch blocker', () => {
+    const parsed = parseReadiness(
+      report([
+        {
+          id: 'a',
+          title: 'Logic lives in the checkout screen',
+          area: 'structure',
+          severity: 'blocker',
+        },
+        { id: 'b', title: 'Orders are untyped blobs', area: 'model', severity: 'blocker' },
+        {
+          id: 'c',
+          title: 'A live Stripe key is in the source',
+          area: 'secrets',
+          severity: 'blocker',
+        },
+      ])
+    );
+    const bySeverity = Object.fromEntries(parsed!.findings.map((f) => [f.id, f.severity]));
+    expect(bySeverity).toEqual({ a: 'risk', b: 'risk', c: 'blocker' });
+  });
+
+  it('leaves a code-health finding alone when it is not overclaimed', () => {
+    const parsed = parseReadiness(
+      report([{ id: 'a', title: 'One enormous file', area: 'structure', severity: 'note' }])
+    );
+    expect(parsed?.findings[0].severity).toBe('note');
+  });
+
   it('never lets the agent pre-accept its own finding', () => {
     const parsed = parseReadiness(report([{ id: 'a', title: 'Fake payments', accepted: true }]));
     expect(parsed?.findings[0].accepted).toBe(false);

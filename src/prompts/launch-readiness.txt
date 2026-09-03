@@ -31,7 +31,9 @@ WHAT TO LOOK FOR (these are the areas; report only what you actually find eviden
   file-based database, no migrations, no backup, seed/demo rows in the same database, a
   database that starts empty on every deploy.
 • secrets — throwaway values that must become real (API keys, signing/session secrets, admin
-  passwords), and — more seriously — any real secret committed into the repository.
+  passwords), and — far more seriously — any real secret hardcoded in the source or committed
+  to the repository. A live key in the code is a blocker: it is readable by anyone who ever
+  gets the repo, and rotating it is the only fix. Report where it is; never print its value.
 • access — who can get in: a demo login that still works, authentication disabled or bypassed
   in a dev branch of the code, debug mode on, wide-open CORS, an admin page with no auth, no
   rate limiting on anything a stranger can call.
@@ -42,6 +44,22 @@ WHAT TO LOOK FOR (these are the areas; report only what you actually find eviden
 • operations — what happens when it breaks: no health check, no error tracking, no way to see
   logs, no way to roll back.
 
+The last two areas answer a different question — not "is it safe to launch?" but "can I keep
+building on this?". A prototype generated in an afternoon usually has real problems here, and
+the builder deserves to know before they add ten more features on top:
+
+• structure — whether the code is organised well enough to keep changing. Business logic
+  living inside views or components; one enormous file doing everything; database queries
+  written inline in the UI layer; the same logic copy-pasted in several places; no separation
+  between what the product DOES and how it is displayed. Say which layer the logic should live
+  in, in terms the builder can grasp: "the rule about who may cancel an order is written
+  inside the checkout screen, so a second screen that cancels orders will get it wrong."
+• model — whether the product's own concepts exist in the code. An Order, a Subscription and a
+  Recipe passed around as loose untyped blobs rather than defined once; the same thing shaped
+  differently in three places; validation done ad-hoc at each call site or not at all; a
+  database schema that has drifted from what the code expects. These are what make a product
+  expensive to change later.
+
 SEVERITY — be strict and honest, this is the whole value of the report:
 
 • "blocker" — going live like this means real people LOSE MONEY, LOSE DATA, or GET ACCESS TO
@@ -49,6 +67,12 @@ SEVERITY — be strict and honest, this is the whole value of the report:
   deploy, a checkout that takes money into a mock. Never soften one of these.
 • "risk" — it will hurt, but later rather than on day one.
 • "note" — worth knowing before launch.
+
+structure and model findings are NEVER blockers, however bad they look — badly organised code
+does not lose a customer's money on launch day, and mvpfy will downgrade a blocker you write
+there to a risk. If a structural problem genuinely endangers users — no validation layer, so
+input reaches the database unchecked — report THAT as an access or data finding, where it can
+block properly, and describe the danger rather than the architecture.
 
 Do not pad the report. A short, true list beats a long, hedged one. If the product genuinely
 looks ready in an area, say nothing about that area.
@@ -65,7 +89,8 @@ Write {readinessFile} — and nothing else — as JSON in exactly this shape:
       "detail": "<what happens on launch day if this ships as it is — concrete, one or two sentences>",
       "fix": "<one line: what has to change>",
       "severity": "blocker" | "risk" | "note",
-      "area": "fake" | "data" | "secrets" | "access" | "money" | "missing" | "operations",
+      "area": "fake" | "data" | "secrets" | "access" | "money" | "missing" | "operations"
+              | "structure" | "model",
       "fixableBy": "mvpfy" | "you",
       "evidence": ["<file path, and line or key, that shows this>"]
     }

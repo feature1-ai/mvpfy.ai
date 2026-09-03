@@ -165,7 +165,15 @@ npm run package    # package the macOS app into release/
    settings are throwaway defaults, and where your data actually lives. It reads all of that
    plus your code and reports, in plain language, what would go wrong on launch day —
    graded, worst first: **blockers** (real people lose money, lose data, or get into
-   something they shouldn't), **risks**, and notes. Every finding points at the file that
+   something they shouldn't), **risks**, and notes. Alongside launch safety it answers a
+   second question — *can I keep building on this?* — covering **how the code is organised**
+   (business rules living inside a screen, one enormous file, the same logic copy-pasted) and
+   **your data model** (an Order passed around as an untyped blob shaped differently in three
+   places). Those two can never be blockers however bad they look, and mvpfy downgrades one
+   that claims to be: badly organised code doesn't lose a customer's money on launch day, and
+   keeping "blocker" for real danger is what makes the word mean anything. A structural
+   problem that *does* endanger users — no validation, so input reaches the database
+   unchecked — belongs in *who can get in* or *your data*, where it blocks properly. Every finding points at the file that
    proves it. The verdict is computed by mvpfy from the findings, never claimed by the
    agent, and the only way past a blocker is to fix it or explicitly *launch with this
    anyway* — which keeps it on the list, marked as your decision, because accepting a risk

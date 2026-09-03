@@ -22,7 +22,16 @@ export const SEVERITY_LABELS: Record<Severity, string> = {
 export const SEVERITIES: Severity[] = ['blocker', 'risk', 'note'];
 
 /** Buckets a product builder recognises, not engineering categories. */
-export type Area = 'fake' | 'data' | 'secrets' | 'access' | 'money' | 'missing' | 'operations';
+export type Area =
+  | 'fake'
+  | 'data'
+  | 'secrets'
+  | 'access'
+  | 'money'
+  | 'missing'
+  | 'operations'
+  | 'structure'
+  | 'model';
 
 export const AREA_LABELS: Record<Area, string> = {
   fake: 'Still pretend',
@@ -32,7 +41,22 @@ export const AREA_LABELS: Record<Area, string> = {
   money: 'Money',
   missing: 'Switched off',
   operations: 'Running it',
+  structure: 'How it is built',
+  model: 'Your data model',
 };
+
+/**
+ * Areas that answer "can I keep building on this?" rather than "is it safe to
+ * launch?". Both are worth knowing, but they are different questions, and a
+ * badly structured app does not lose anyone's money on launch day — so these
+ * can never be blockers. Keeping that word for real danger is what makes it
+ * mean anything.
+ */
+const CODE_HEALTH_AREAS: Area[] = ['structure', 'model'];
+
+export function isCodeHealth(area: Area): boolean {
+  return CODE_HEALTH_AREAS.includes(area);
+}
 
 const AREAS = Object.keys(AREA_LABELS) as Area[];
 
@@ -151,10 +175,14 @@ export function parseReadiness(content: string | null | undefined): ReadinessRep
       const o = f as Record<string, unknown>;
       const title = String(o.title ?? '').trim();
       if (!title) return null;
-      const severity = SEVERITIES.includes(o.severity as Severity)
+      const claimed = SEVERITIES.includes(o.severity as Severity)
         ? (o.severity as Severity)
         : 'risk';
       const area = AREAS.includes(o.area as Area) ? (o.area as Area) : 'operations';
+      // How the code is organised is never a launch blocker, whatever the
+      // agent calls it. If bad structure genuinely endangers users, that is a
+      // finding in 'access' or 'data', where it can block properly.
+      const severity: Severity = isCodeHealth(area) && claimed === 'blocker' ? 'risk' : claimed;
       // Only an explicit claim makes something mvpfy-fixable.
       const fixableBy: FixableBy = o.fixableBy === 'mvpfy' ? 'mvpfy' : 'you';
       return {

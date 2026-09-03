@@ -27,6 +27,13 @@ Do this and nothing else:
    real API key, a paid account, a host, a domain, a decision only the builder can make —
    then change NOTHING and explain in one sentence what they have to do themselves.
 
+If the finding is about how the code is ORGANISED — logic in the wrong layer, a missing
+domain model, the same rule copy-pasted around — then the change is a refactor, and a refactor
+has one rule above all others: the product must behave exactly as it did before. Move the
+logic, define the type, call it from where it used to live. Do not take the opportunity to
+change what the product does. If the repo has tests, they must pass unchanged; if it has
+none, be correspondingly more conservative about what you move.
+
 Hard rules:
 • Touch only what this finding requires. Other findings have their own runs.
 • Never write a real secret into the repository. Generate secrets into the local env file.

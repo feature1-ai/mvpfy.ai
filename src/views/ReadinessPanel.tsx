@@ -106,6 +106,11 @@ export default function ReadinessPanel({ c, onOpenTab }: Props) {
           <div className="min-w-0 flex-1">
             <h2 className="text-[15px] font-semibold">{v.title}</h2>
             <p className="mt-0.5 text-[13px] leading-normal text-body">{v.detail}</p>
+            {c.readinessConfidence && c.readinessConfidence.level !== 'solid' && (
+              <p className="mt-1.5 text-[12.5px] leading-relaxed text-body">
+                {c.readinessConfidence.detail}
+              </p>
+            )}
             {c.readinessSummary && (
               <p className="mt-2 text-[12.5px] text-muted">{c.readinessSummary}</p>
             )}
@@ -124,6 +129,22 @@ export default function ReadinessPanel({ c, onOpenTab }: Props) {
           <Count label="Risks" value={v.risks} />
           {v.accepted > 0 && (
             <Count label="Accepted by you" value={v.accepted} danger={v.acceptedBlockers > 0} />
+          )}
+          {c.readinessConfidence && (
+            <div title={c.readinessConfidence.detail} className="border-l border-line pl-6">
+              <div className="section-label">Holds up after launch</div>
+              <div
+                className={`text-[13px] font-medium ${
+                  c.readinessConfidence.level === 'fragile'
+                    ? 'text-warn-text'
+                    : c.readinessConfidence.level === 'solid'
+                      ? 'text-go'
+                      : ''
+                }`}
+              >
+                {c.readinessConfidence.title}
+              </div>
+            </div>
           )}
           <span className="ml-auto text-[11px] text-faint">Nothing here changes your code.</span>
         </div>

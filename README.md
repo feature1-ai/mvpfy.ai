@@ -173,7 +173,13 @@ npm run package    # package the macOS app into release/
    that claims to be: badly organised code doesn't lose a customer's money on launch day, and
    keeping "blocker" for real danger is what makes the word mean anything. A structural
    problem that *does* endanger users — no validation, so input reaches the database
-   unchecked — belongs in *who can get in* or *your data*, where it blocks properly. Every finding points at the file that
+   unchecked — belongs in *who can get in* or *your data*, where it blocks properly.
+
+   Those findings answer a second question, so the report reads them as one: **holds up after
+   launch** — *solid*, *workable* or *fragile*, from the open structure, data-model and
+   operations findings together. It is the honest answer to "should I feel good about this?",
+   and it is **advisory only**: it never gates a launch, because the moment it did it would be
+   a blocker under another name. Every finding points at the file that
    proves it. The verdict is computed by mvpfy from the findings, never claimed by the
    agent, and the only way past a blocker is to fix it or explicitly *launch with this
    anyway* — which keeps it on the list, marked as your decision, because accepting a risk

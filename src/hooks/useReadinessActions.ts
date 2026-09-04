@@ -4,6 +4,8 @@ import { startReadinessFixRun, startReadinessRun } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
 import {
   applyAccepted,
+  Confidence,
+  confidenceFor,
   parseReadiness,
   ReadinessFinding,
   ReadinessVerdict,
@@ -20,6 +22,8 @@ export interface ReadinessActions {
   readinessGeneratedAt: string | null;
   /** Computed here from the findings — never taken from the agent. */
   readinessVerdict: ReadinessVerdict | null;
+  /** How well the product will hold up after launch. Advisory, never a gate. */
+  readinessConfidence: Confidence | null;
   /** True while the check is running. */
   readinessRunning: boolean;
   /** Id of the finding being fixed right now, if any. */
@@ -117,6 +121,7 @@ export function useReadinessActions(ctx: ControllerContext): ReadinessActions {
     readinessSummary: report?.summary || null,
     readinessGeneratedAt: report?.generatedAt || null,
     readinessVerdict: report ? verdictFor(findings) : null,
+    readinessConfidence: report ? confidenceFor(findings) : null,
     readinessRunning: projectRuns.some((r) => r.running && r.handle.kind === 'readiness'),
     fixingFindingId:
       projectRuns.find((r) => r.running && r.handle.kind === 'readiness-fix')?.handle.storyId ??

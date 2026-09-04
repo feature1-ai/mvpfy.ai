@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyAccepted,
+  confidenceFor,
   groupByArea,
   parseReadiness,
   ReadinessFinding,
@@ -124,6 +125,41 @@ describe('verdictFor', () => {
     expect(verdictFor([finding({ severity: 'risk' })]).kind).toBe('your-call');
     expect(verdictFor([finding({ severity: 'note' })]).kind).toBe('ready');
     expect(verdictFor([]).kind).toBe('ready');
+  });
+});
+
+describe('confidenceFor', () => {
+  const health = (over: Partial<ReadinessFinding>) =>
+    finding({ severity: 'note', area: 'structure', ...over });
+
+  it('is solid when nothing about the code is outstanding', () => {
+    // Launch-safety findings say nothing about how well it will hold up.
+    expect(confidenceFor([finding({ area: 'money', severity: 'blocker' })])).toMatchObject({
+      level: 'solid',
+      count: 0,
+    });
+    expect(confidenceFor([]).level).toBe('solid');
+  });
+
+  it('is workable with a couple of small things', () => {
+    const c = confidenceFor([health({ id: 'a' }), health({ id: 'b', area: 'model' })]);
+    expect(c).toMatchObject({ level: 'workable', count: 2 });
+  });
+
+  it('is fragile once the real problems pile up', () => {
+    const risks = ['a', 'b', 'c'].map((id) => health({ id, severity: 'risk' }));
+    expect(confidenceFor(risks)).toMatchObject({ level: 'fragile', count: 3 });
+    const many = ['a', 'b', 'c', 'd', 'e'].map((id) => health({ id }));
+    expect(confidenceFor(many).level).toBe('fragile');
+  });
+
+  it('counts how it will run, not just how it is written', () => {
+    expect(confidenceFor([health({ area: 'operations' })]).count).toBe(1);
+  });
+
+  it('does not nag about something already weighed and accepted', () => {
+    const c = confidenceFor([health({ severity: 'risk', accepted: true })]);
+    expect(c).toMatchObject({ level: 'solid', count: 0 });
   });
 });
 

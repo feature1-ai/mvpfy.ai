@@ -150,6 +150,65 @@ export function verdictFor(findings: ReadinessFinding[]): ReadinessVerdict {
   };
 }
 
+/**
+ * Areas that decide how the product holds up AFTER launch rather than whether
+ * it survives the day: how the code is organised, whether its own concepts
+ * exist, and what happens when something breaks. None of them block a launch.
+ * Together they answer the question a builder actually asks once the
+ * dangerous list is clear — "should I feel good about this?"
+ */
+const CONFIDENCE_AREAS: Area[] = ['structure', 'model', 'operations'];
+
+export type ConfidenceLevel = 'solid' | 'workable' | 'fragile';
+
+export interface Confidence {
+  level: ConfidenceLevel;
+  title: string;
+  /** What it means for the next thing they build, not for the code. */
+  detail: string;
+  /** Open findings behind the judgement. */
+  count: number;
+}
+
+/**
+ * How much confidence the code itself justifies. Advisory only — this never
+ * gates a launch. The moment it did, it would be a blocker by another name,
+ * and the whole point is that these are not blockers.
+ *
+ * Counts open findings, like the verdict: an accepted one has been weighed
+ * and is reported separately rather than nagged about twice.
+ */
+export function confidenceFor(findings: ReadinessFinding[]): Confidence {
+  const open = findings.filter((f) => !f.accepted && CONFIDENCE_AREAS.includes(f.area));
+  const serious = open.filter((f) => f.severity === 'risk').length;
+  const count = open.length;
+  if (count === 0) {
+    return {
+      level: 'solid',
+      title: 'Solid',
+      detail:
+        'Nothing in how this is built will get in your way — the next feature should go in cleanly.',
+      count,
+    };
+  }
+  if (serious >= 3 || count >= 5) {
+    return {
+      level: 'fragile',
+      title: 'Fragile',
+      detail:
+        'You can launch this, but changing it afterwards will be harder than it should be. Worth fixing some of these before you build much more on top.',
+      count,
+    };
+  }
+  return {
+    level: 'workable',
+    title: 'Workable',
+    detail:
+      'Nothing here stops you launching. You will feel these the next time you change the product, not before.',
+    count,
+  };
+}
+
 function normalizeStrings(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.map((s) => String(s).trim()).filter(Boolean) : [];
 }

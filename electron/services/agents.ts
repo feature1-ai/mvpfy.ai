@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { DEFAULT_STATE, RunAgentMcp, RunAgentRequest } from '../../shared/types';
 import { ensureDirs, isAllowedWorkspace, TMP_DIR } from '../paths';
 import { startRun } from './runs';
-import { shellQuote } from './shell';
+import { cdTo, shellQuote } from './shell';
 
 /** Spawning of the external coding agents (Claude Code / Codex CLI). */
 
@@ -114,6 +114,7 @@ export function runAgent(req: RunAgentRequest): void {
 
   const q = shellQuote;
   let command: string;
+  let env: NodeJS.ProcessEnv | undefined;
   if (req.agent === 'claude') {
     // -p (print) reads the prompt from stdin; stream-json gives per-event
     // output for the live log panel. Permissions are bypassed because the
@@ -122,12 +123,17 @@ export function runAgent(req: RunAgentRequest): void {
     // --mcp-config registers the Feature1 server for this run only.
     if (req.mcp) scratch.push(writeClaudeMcpConfig(req.runId, req.mcp));
     const mcpFlag = req.mcp ? `--mcp-config ${q(scratch[scratch.length - 1])} ` : '';
-    command = `cd ${q(repoPath)} && claude ${mcpFlag}-p --verbose --output-format stream-json --dangerously-skip-permissions < ${q(promptFile)}`;
+    command = `${cdTo(repoPath)} && claude ${mcpFlag}-p --verbose --output-format stream-json --dangerously-skip-permissions < ${q(promptFile)}`;
   } else {
     const model = req.model || DEFAULT_STATE.settings.codexModel;
-    if (req.mcp) scratch.push(prepareCodexHome(req.runId, req.mcp));
-    const codexHomeEnv = req.mcp ? `CODEX_HOME=${q(scratch[scratch.length - 1])} ` : '';
-    command = `cd ${q(repoPath)} && ${codexHomeEnv}codex exec --model ${q(model)} --sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
+    if (req.mcp) {
+      // Handed to the process as a real environment variable rather than a
+      // `CODEX_HOME=... codex` prefix: that prefix is POSIX-only syntax, and
+      // cmd.exe reads it as the name of a command to run.
+      scratch.push(prepareCodexHome(req.runId, req.mcp));
+      env = { CODEX_HOME: scratch[scratch.length - 1] };
+    }
+    command = `${cdTo(repoPath)} && codex exec --model ${q(model)} --sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
   }
-  startRun(req.runId, command, repoPath, () => removeQuietly(scratch));
+  startRun(req.runId, command, repoPath, () => removeQuietly(scratch), env);
 }

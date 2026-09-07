@@ -23,8 +23,18 @@ export function setRunEventSink(next: RunEventSink): void {
 /**
  * `onExit` runs once when the process is gone, however it ended. Callers use
  * it to delete per-run scratch files — some of which hold credentials.
+ *
+ * `extraEnv` is merged over the run environment. Prefer it to a `VAR=value`
+ * prefix on the command: that syntax is POSIX-only, and it would also print
+ * the value into the run log along with the command.
  */
-export function startRun(runId: string, command: string, cwd: string, onExit?: () => void): void {
+export function startRun(
+  runId: string,
+  command: string,
+  cwd: string,
+  onExit?: () => void,
+  extraEnv?: NodeJS.ProcessEnv
+): void {
   if (activeRuns.has(runId)) {
     throw new Error(`Run ${runId} is already active`);
   }
@@ -39,7 +49,7 @@ export function startRun(runId: string, command: string, cwd: string, onExit?: (
     }
   };
   sink.output({ runId, stream: 'info', chunk: `$ ${command}\n` });
-  const child = spawnShell(command, { cwd, env: spawnEnv() });
+  const child = spawnShell(command, { cwd, env: { ...spawnEnv(), ...extraEnv } });
   activeRuns.set(runId, child);
 
   child.stdout?.on('data', (data: Buffer) => {

@@ -9,6 +9,19 @@ interface Props {
   onCreated: (projectId: string) => void;
 }
 
+/** Repo entries from the textarea: one per line (commas allowed too). */
+function splitEntries(text: string): string[] {
+  return text
+    .split(/[\n,]+/)
+    .map((u) => u.trim())
+    .filter(Boolean);
+}
+
+/** Absolute, home-relative, relative, or Windows drive-letter path. */
+function isLocalPath(entry: string): boolean {
+  return /^([~/.]|[A-Za-z]:[\\/])/.test(entry);
+}
+
 const STEPS = [
   ['01', 'Add & inspect', 'Detects services, ports and dependencies.'],
   ['02', 'Bootstrap', 'Starts on its own: writes mvpfy.yml, a compose file and demo logins.'],
@@ -21,17 +34,19 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
   const [inPlace, setInPlace] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const firstRun = state.projects.length === 0;
-  const looksLocal = /^([~/.]|[A-Za-z]:[\\/])/.test(text.trim());
+  const entries = splitEntries(text);
+  // In-place mode works from one folder root, so it is only offered for a
+  // single local entry — several repos come in as copies.
+  const looksLocal = entries.length === 1 && isLocalPath(entries[0]);
 
   async function add() {
-    const urls = text
-      .split(/[\n,]+/)
-      .map((u) => u.trim())
-      .filter(Boolean);
+    const urls = entries;
     if (urls.length === 0 || cloning) return;
     const link = inPlace && looksLocal;
     if (inPlace && urls.length > 1) {
-      setError('In-place mode takes a single local folder (it can contain multiple repos).');
+      setError(
+        'In-place mode takes a single local folder. To use several repos in place, pick the folder that contains them.'
+      );
       return;
     }
     setCloning(true);
@@ -92,14 +107,19 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
         </button>
         <button
           onClick={() =>
-            void window.mvpfy.pickDirectory().then((dir) => {
-              if (dir) setText((prev) => (prev.trim() ? `${prev.trimEnd()}\n${dir}` : dir));
+            void window.mvpfy.pickDirectory().then((dirs) => {
+              if (!dirs?.length) return;
+              setText((prev) => {
+                const existing = splitEntries(prev);
+                const added = dirs.filter((d) => !existing.includes(d));
+                return [...existing, ...added].join('\n');
+              });
             })
           }
           disabled={cloning}
           className="btn-secondary h-[38px] px-4 text-sm disabled:opacity-50"
         >
-          Browse local folder…
+          Browse local folders…
         </button>
         <span className="ml-auto text-xs text-muted">One per line</span>
       </div>

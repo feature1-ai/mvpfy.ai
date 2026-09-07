@@ -236,7 +236,8 @@ export interface MvpfyApi {
   keychainSet(entry: string, value: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   createProject(repoUrls: string[], link?: boolean): Promise<CreateProjectResult>;
-  pickDirectory(): Promise<string | null>;
+  /** Chosen folders, in pick order. Empty when the dialog was cancelled. */
+  pickDirectory(): Promise<string[]>;
   deleteProject(workspacePath: string): Promise<{ ok: boolean; error?: string }>;
   runAgent(req: RunAgentRequest): Promise<void>;
   stopRun(runId: string): Promise<void>;

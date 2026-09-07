@@ -39,11 +39,13 @@ export function registerIpc(): void {
     link ? linkProject(repoUrls[0] ?? '') : createProject(repoUrls)
   );
   ipcMain.handle('pick-directory', async () => {
+    // multiSelections: a project is often several repos side by side, so let
+    // the user pick them all in one pass rather than reopening the dialog.
     const res = await dialog.showOpenDialog({
-      properties: ['openDirectory'],
-      message: 'Choose a local git repository',
+      properties: ['openDirectory', 'multiSelections'],
+      message: 'Choose one or more local git repositories',
     });
-    return res.canceled ? null : (res.filePaths[0] ?? null);
+    return res.canceled ? [] : res.filePaths;
   });
   ipcMain.handle('delete-project', (_ev, workspacePath: string) => deleteProject(workspacePath));
   ipcMain.handle('run-agent', (_ev, req: RunAgentRequest) => runAgent(req));

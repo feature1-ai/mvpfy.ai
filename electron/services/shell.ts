@@ -56,6 +56,78 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/** `%VAR%` references, as stored in the registry's REG_EXPAND_SZ PATH. */
+function expandWinVars(value: string): string {
+  return value.replace(/%([^%]+)%/g, (whole, name: string) => process.env[name] ?? whole);
+}
+
+/**
+ * Directories out of `reg query ... /v Path` output, which looks like:
+ *
+ *     HKEY_CURRENT_USER\Environment
+ *         Path    REG_EXPAND_SZ    C:\Users\me\.local\bin;%APPDATA%\npm
+ *
+ * PATHEXT cannot be mistaken for Path: the name must be followed by space.
+ */
+export function parseRegistryPath(stdout: string): string[] {
+  const match = stdout.match(/^\s*Path\s+REG_(?:EXPAND_)?SZ\s+(.+)$/im);
+  if (!match) return [];
+  return expandWinVars(match[1].trim())
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+/** PATH as the registry records it — the value a new process would inherit. */
+function registryPath(): string[] {
+  const keys = [
+    'HKCU\\Environment',
+    'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment',
+  ];
+  const out: string[] = [];
+  for (const key of keys) {
+    try {
+      const res = spawnSync('reg', ['query', key, '/v', 'Path'], {
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      if (res.status === 0) out.push(...parseRegistryPath(res.stdout));
+    } catch {
+      // No reg.exe, or a locked-down machine: fall back to the inherited PATH.
+    }
+  }
+  return out;
+}
+
+/**
+ * Windows hands a running app the environment it started with, and editing
+ * PATH in System Properties does not reach one — nor, usually, anything else
+ * launched from the Explorer session that was already open, until the user
+ * signs out. So read PATH from the registry, where the edit actually landed,
+ * and add the places our CLIs install themselves even when PATH was never
+ * updated at all.
+ */
+export function resolveWindowsPath(): void {
+  const home = process.env.USERPROFILE || os.homedir();
+  const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const extras = [
+    path.join(home, '.local', 'bin'), // claude, the native installer
+    path.join(appData, 'npm'), // codex and anything else installed by npm -g
+    path.join(localAppData, 'Programs', 'Git', 'cmd'),
+    path.join(programFiles, 'Git', 'cmd'),
+    path.join(programFiles, 'GitHub CLI'),
+    path.join(programFiles, 'Docker', 'Docker', 'resources', 'bin'),
+  ];
+  const merged = new Set(
+    [...(process.env.PATH || '').split(';'), ...registryPath(), ...extras]
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  );
+  process.env.PATH = [...merged].join(';');
+}
+
 /**
  * Finder-launched apps get a minimal PATH, and `zsh -lc` only sources
  * ~/.zprofile — while nvm/npm tools usually configure PATH in ~/.zshrc
@@ -63,7 +135,10 @@ export function shellQuote(value: string): string {
  * login shell and adopt it, so claude/codex/gh installed any way are found.
  */
 export function resolveUserPath(): void {
-  if (IS_WIN) return;
+  if (IS_WIN) {
+    resolveWindowsPath();
+    return;
+  }
   try {
     const result = spawnSync(USER_SHELL, ['-ilc', 'printf "__MVPFY_PATH__%s" "$PATH"'], {
       encoding: 'utf8',

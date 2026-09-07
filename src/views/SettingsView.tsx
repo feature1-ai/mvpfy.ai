@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AgentKind, CliStatus, InstallPlan, MvpfyState } from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
-import { CLI_HELP, cliRequired } from '../lib/cliCheck';
+import { CLI_HELP, cliRequired, installHintFor } from '../lib/cliCheck';
 import { Feature1McpClient, mcpHost, tenantSlugFrom, tokenKeychainEntry } from '../lib/feature1Mcp';
 
 interface Props {
@@ -142,7 +142,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
                 {!required && <span className="ml-1 text-[10px] text-faint">optional</span>}
               </span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">
-                {cli.found ? cli.path : help.installHint}
+                {cli.found ? cli.path : installHintFor(cli.name)}
               </span>
               {cli.found &&
                 help.authVia &&

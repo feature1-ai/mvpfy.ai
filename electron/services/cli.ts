@@ -1,6 +1,6 @@
 import { CliName, CliStatus, REQUIRED_CLIS } from '../../shared/types';
 import { terminalCommand } from './install';
-import { IS_WIN, spawnShellSync } from './shell';
+import { IS_WIN, resolveWindowsPath, spawnShellSync } from './shell';
 
 /** Detection of required CLIs and their sign-in state. */
 
@@ -57,6 +57,12 @@ export function loginOpensTerminal(tool: string): boolean {
 }
 
 export function cliCheck(): CliStatus[] {
+  // Re-read PATH from the registry first, so installing a tool (or fixing
+  // PATH) and pressing Re-check works without restarting mvpfy. Two reg
+  // queries are nothing next to the probes below. The macOS equivalent shells
+  // out to an interactive login shell, which is far too slow to repeat here,
+  // and is not needed: a new PATH there arrives with the next app launch.
+  if (IS_WIN) resolveWindowsPath();
   return REQUIRED_CLIS.map((name) => {
     const locator = IS_WIN ? `where ${name}` : `command -v ${name}`;
     const result = spawnShellSync(locator, { encoding: 'utf8', timeout: 10_000 });

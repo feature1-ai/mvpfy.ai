@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cdTo, IS_WIN, shellQuote, winShellArgs } from './shell';
+import { cdTo, IS_WIN, parseRegistryPath, shellQuote, winShellArgs } from './shell';
 
 describe('shellQuote', () => {
   describe.runIf(!IS_WIN)('posix', () => {
@@ -53,6 +53,47 @@ describe('winShellArgs', () => {
 
   it('passes /d and /s so no autorun script or stray quote interferes', () => {
     expect(winShellArgs('echo hi').slice(0, 3)).toEqual(['/d', '/s', '/c']);
+  });
+});
+
+describe('parseRegistryPath', () => {
+  const output = (value: string, type = 'REG_EXPAND_SZ') =>
+    `\r\nHKEY_CURRENT_USER\\Environment\r\n    Path    ${type}    ${value}\r\n\r\n`;
+
+  it('reads the directories a user added to PATH', () => {
+    const dirs = parseRegistryPath(output('C:\\Users\\mudas\\.local\\bin;C:\\tools'));
+    expect(dirs).toEqual(['C:\\Users\\mudas\\.local\\bin', 'C:\\tools']);
+  });
+
+  it('expands %VAR% references, which is why the value is REG_EXPAND_SZ', () => {
+    process.env.MVPFY_TEST_APPDATA = 'C:\\Users\\mudas\\AppData\\Roaming';
+    try {
+      expect(parseRegistryPath(output('%MVPFY_TEST_APPDATA%\\npm'))).toEqual([
+        'C:\\Users\\mudas\\AppData\\Roaming\\npm',
+      ]);
+    } finally {
+      delete process.env.MVPFY_TEST_APPDATA;
+    }
+  });
+
+  it('leaves an unset variable alone rather than emitting a broken path', () => {
+    expect(parseRegistryPath(output('%NOPE_NOT_SET%\\bin'))).toEqual(['%NOPE_NOT_SET%\\bin']);
+  });
+
+  it('handles REG_SZ and drops empty segments from a trailing semicolon', () => {
+    expect(parseRegistryPath(output('C:\\a;;C:\\b;', 'REG_SZ'))).toEqual(['C:\\a', 'C:\\b']);
+  });
+
+  it('does not mistake PATHEXT for PATH', () => {
+    const stdout =
+      '\r\nHKEY_CURRENT_USER\\Environment\r\n    PATHEXT    REG_SZ    .COM;.EXE;.CMD\r\n\r\n';
+    expect(parseRegistryPath(stdout)).toEqual([]);
+  });
+
+  it('returns nothing when the value is absent', () => {
+    expect(parseRegistryPath('ERROR: The system was unable to find the specified value.')).toEqual(
+      []
+    );
   });
 });
 

@@ -56,6 +56,29 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * Stop a spawned command and everything it started.
+ *
+ * Every command runs through a shell, so the process we hold is cmd.exe or
+ * zsh — docker, claude and git are its children. On POSIX a signal to the
+ * process group reaches them. On Windows there are no process groups and
+ * child.kill() maps to TerminateProcess on the shell alone, so the real work
+ * carries on with nobody watching it: taskkill /T walks the tree instead.
+ */
+export function killProcessTree(child: ChildProcess | undefined): void {
+  const pid = child?.pid;
+  if (!child || !pid) return;
+  if (IS_WIN) {
+    try {
+      spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { timeout: 10_000 });
+    } catch {
+      // Fall through: better a stray process than a crash on quit.
+    }
+    return;
+  }
+  child.kill('SIGTERM');
+}
+
 /** `%VAR%` references, as stored in the registry's REG_EXPAND_SZ PATH. */
 function expandWinVars(value: string): string {
   return value.replace(/%([^%]+)%/g, (whole, name: string) => process.env[name] ?? whole);

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cdTo, IS_WIN, parseRegistryPath, shellQuote, winShellArgs } from './shell';
+import {
+  cdTo,
+  IS_WIN,
+  killProcessTree,
+  parseRegistryPath,
+  shellQuote,
+  spawnShell,
+  winShellArgs,
+} from './shell';
 
 describe('shellQuote', () => {
   describe.runIf(!IS_WIN)('posix', () => {
@@ -108,5 +116,27 @@ describe('cdTo', () => {
 
   it.runIf(!IS_WIN)('is a plain cd on posix, where /d is not a flag', () => {
     expect(cdTo('/Users/pm/repo')).toBe("cd '/Users/pm/repo'");
+  });
+});
+
+describe('killProcessTree', () => {
+  it('does nothing for a missing child or a child with no pid', () => {
+    expect(() => killProcessTree(undefined)).not.toThrow();
+    expect(() => killProcessTree({ pid: undefined } as never)).not.toThrow();
+  });
+
+  it.runIf(!IS_WIN)('signals the process on posix', () => {
+    const calls: string[] = [];
+    killProcessTree({ pid: 1234, kill: (sig: string) => calls.push(sig) } as never);
+    expect(calls).toEqual(['SIGTERM']);
+  });
+
+  it.runIf(!IS_WIN)('really does stop a spawned shell and its child', async () => {
+    // `sleep` is the grandchild; killing only the shell would leave it behind.
+    const child = spawnShell('sleep 30', {});
+    const exited = new Promise<void>((resolve) => child.on('close', () => resolve()));
+    killProcessTree(child);
+    await exited;
+    expect(child.killed || child.exitCode !== null || child.signalCode !== null).toBe(true);
   });
 });

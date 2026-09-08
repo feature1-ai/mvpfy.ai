@@ -94,8 +94,12 @@ export function ideCommand(workspacePath: string, action: 'up' | 'down', port?: 
   if (!Number.isInteger(port) || (port as number) < 1024 || (port as number) > 65000) {
     throw new Error('A valid port is required to start the IDE');
   }
+  // Clear any container left from a previous run, ignoring "no such container",
+  // then start regardless of that outcome — `&` is cmd's unconditional
+  // separator, the counterpart of the shell's `;`.
+  const quietlyThenContinue = IS_WIN ? '>NUL 2>&1 &' : '>/dev/null 2>&1;';
   return (
-    `${ENSURE_DAEMON} && docker rm -f ${name} >/dev/null 2>&1; ` +
+    `${ENSURE_DAEMON} && docker rm -f ${name} ${quietlyThenContinue} ` +
     `docker run -d --name ${name} -p ${port}:8080 ` +
     `-v ${shellQuote(workspacePath)}:/home/coder/project ` +
     `codercom/code-server:latest --auth none --bind-addr 0.0.0.0:8080 /home/coder/project`

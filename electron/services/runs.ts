@@ -1,7 +1,7 @@
 import { ChildProcess } from 'node:child_process';
 import { RunExitEvent, RunOutputEvent } from '../../shared/types';
 import { spawnEnv } from './docker';
-import { spawnShell } from './shell';
+import { killProcessTree, spawnShell } from './shell';
 
 /**
  * Streaming command runner. Decoupled from the window via an injected event
@@ -70,11 +70,11 @@ export function startRun(
 }
 
 export function stopRun(runId: string): void {
-  activeRuns.get(runId)?.kill('SIGTERM');
+  killProcessTree(activeRuns.get(runId));
 }
 
 export function stopAllRuns(): void {
   for (const child of activeRuns.values()) {
-    child.kill('SIGTERM');
+    killProcessTree(child);
   }
 }

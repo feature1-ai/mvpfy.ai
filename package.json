@@ -1,6 +1,6 @@
 {
   "name": "mvpfy",
-  "version": "1.0.0-beta.6",
+  "version": "1.0.0-beta.7",
   "description": "The IDE for PMs, by feature1 — describe any change to your existing product, see it running locally, ship it as a pull request. Powered by Claude Code and Codex CLI.",
   "private": true,
   "license": "MIT",

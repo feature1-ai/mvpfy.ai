@@ -532,6 +532,7 @@ function StoryCard({
   onDragStart: () => void;
   onOpenTab: (tab: 'app' | 'logs') => void;
 }) {
+  const [acsOpen, setAcsOpen] = useState(false);
   const bouncing = bounce?.code === story.code;
   const implementBlocked = c.anyStoryRunning || c.planBlocked;
   return (
@@ -550,9 +551,28 @@ function StoryCard({
       </div>
       <p className="mt-1 text-[13px] font-medium leading-snug">{story.title}</p>
       <p className="mt-0.5 text-[11.5px] leading-snug text-body">{story.outcome}</p>
-      <p className="mt-1.5 font-mono text-[10px] text-faint">
-        {story.acceptanceCriteria.length} acceptance criteria
-      </p>
+      {/* The acceptance criteria are the contract the agent implements against
+          — for a Feature1 story they are its ACs verbatim — so they are here to
+          read, not just to count. */}
+      {story.acceptanceCriteria.length > 0 && (
+        <div className="mt-1.5">
+          <button
+            onClick={() => setAcsOpen((v) => !v)}
+            className="font-mono text-[10px] text-faint hover:text-muted"
+          >
+            {acsOpen ? '▾' : '▸'} {story.acceptanceCriteria.length} acceptance criteria
+          </button>
+          {acsOpen && (
+            <ul className="mt-1 grid gap-1 border-l border-line pl-2">
+              {story.acceptanceCriteria.map((ac, i) => (
+                <li key={i} className="text-[11px] leading-snug text-body">
+                  {ac}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {story.feedback && story.lane !== 'done' && (
         <p className="mt-1.5 rounded-md bg-warn-bg px-2 py-1 text-[10.5px] text-warn-text">
           Feedback: {story.feedback}

@@ -9,8 +9,13 @@ every acceptance criterion, plus tests, in the appropriate repository within the
 Follow this sequence:
 1. Read the story's acceptance criteria and the spec context. Look at how the product
    already does similar things and match its patterns.
-2. Create (or reuse, if it exists from a previous round on this story) the branch
-   mvpfy/{branchSlug} in the affected repository.
+2. Get on the branch mvpfy/{branchSlug} in the affected repository:
+   • If it already exists from an earlier round on THIS story, check it out and continue on
+     it — the pull request open against it is the one to update.
+   • Otherwise fetch the repository's default branch and create the branch from THAT.
+     Never branch from whatever happens to be checked out: that is usually another story's
+     branch, and building on it puts its commits into this story's pull request, so neither
+     can be reviewed or merged on its own.
 3. Implement every acceptance criterion, with tests. Run the repo's test command and only
    proceed when tests pass.
 4. Commit with the message "{storyCode}: <story title>". Push the branch with -u.

@@ -102,6 +102,17 @@ Rules:
   must be the port actually published in docker-compose.mvpfy.yml. If {basePort} truly
   cannot be used, pick the nearest free port and write THAT consistently everywhere — the
   app reads mvpfy.yml to know where to find the running product.
+• Run the app in DEVELOPMENT mode: bind-mount the repository source into the container and
+  start it with the framework's own file watcher, so editing the code changes the running
+  app without rebuilding the image. Use what the stack already provides — nodemon, `next
+  dev`, `vite`, `nest start --watch` for Node; `uvicorn --reload`, `flask --debug`,
+  `manage.py runserver` for Python; `rails server` for Rails; `air` for Go. Keep installed
+  dependencies inside the image by mounting an anonymous volume over node_modules/ (or the
+  virtualenv) so the host checkout cannot shadow them. This matters beyond convenience: the
+  product manager tests whatever is checked out, and mvpfy implements each story on its own
+  branch, so without a watcher they would be reviewing the previous build.
+• Say plainly in mvpfy-run.md which changes appear on their own and which need a restart —
+  new dependencies, changed env vars and database migrations always need one.
 • Use a named Docker volume for each database so data persists between restarts.
 • Initialize fresh databases from the committed schema file when the framework keeps one
   (Rails db/schema.rb or structure.sql → `rails db:schema:load`, Django, Prisma, …), NOT by

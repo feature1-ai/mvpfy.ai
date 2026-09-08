@@ -704,17 +704,32 @@ function StoryCard({
         </button>
       )}
       {!running && story.lane === 'testing' && !bouncing && (
-        <div className="mt-2 flex gap-1.5">
-          <button onClick={() => onOpenTab('app')} className="btn-secondary h-6 flex-1 text-[11px]">
-            Test in App
-          </button>
+        <>
+          <div className="mt-2 flex gap-1.5">
+            <button
+              onClick={() => onOpenTab('app')}
+              className="btn-secondary h-6 flex-1 text-[11px]"
+            >
+              Test in App
+            </button>
+            <button
+              onClick={() => void c.moveStory(story.code, 'done')}
+              className="h-6 flex-1 rounded-md bg-go text-[11px] font-medium text-white hover:bg-go-hover"
+            >
+              ✓ Done
+            </button>
+          </div>
+          {/* The app watches the source, so most of a story shows up on its
+              own — but a new dependency, env var or migration needs the stack
+              rebuilt, and approving unseen work is the failure that matters. */}
           <button
-            onClick={() => void c.moveStory(story.code, 'done')}
-            className="h-6 flex-1 rounded-md bg-go text-[11px] font-medium text-white hover:bg-go-hover"
+            onClick={() => void c.docker('restart')}
+            title="Rebuild and restart the environment, for changes a running app cannot pick up on its own"
+            className="mt-1.5 w-full text-left text-[10.5px] text-muted hover:text-body"
           >
-            ✓ Done
+            Not seeing the change? Restart the app
           </button>
-        </div>
+        </>
       )}
       {bouncing && (
         <div className="mt-2">

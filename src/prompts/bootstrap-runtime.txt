@@ -6,6 +6,7 @@ browser at http://localhost:{basePort} (this port has been verified free on this
 
 Workspace: {repoPath}
 {workspaceNote}
+{regenerateNote}
 
 The workspace root is either a single application repo, or a folder that contains MULTIPLE
 repos (e.g. frontend, backend, services), each cloned into its own subdirectory. Treat every

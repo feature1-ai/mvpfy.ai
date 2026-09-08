@@ -46,6 +46,26 @@ function workspaceNoteFor(project: Project): string {
   return project.mode === 'linked' ? LINKED_NOTE : '';
 }
 
+/**
+ * Setup being run again on a project that already has generated files. Without
+ * this the agent follows its reuse rule, sees a working compose file and
+ * changes nothing — which is exactly the case where the PM asked for it to be
+ * brought up to date.
+ */
+const REGENERATE_NOTE =
+  'IMPORTANT — this project was set up before, and the product manager has asked for its ' +
+  'setup to be REGENERATED. The mvpfy-generated files here may come from an older version ' +
+  'of mvpfy: do not reuse them just because they exist and appear to work. Rewrite ' +
+  'docker-compose.mvpfy.yml, any Dockerfile you generated, and mvpfy.yml to what you would ' +
+  'write today, backing each up to .bak first. Keep what is still working: the same host ' +
+  'ports, the same service names where you can, the same demo credentials, and the existing ' +
+  'env file and its values. NEVER delete or recreate a database volume — the product manager ' +
+  'has data in it. Their app code is not yours to change.';
+
+function regenerateNoteFor(regenerate: boolean): string {
+  return regenerate ? REGENERATE_NOTE : '';
+}
+
 export type RunKind =
   | 'bootstrap-plan'
   | 'bootstrap'
@@ -91,20 +111,22 @@ function agentFor(settings: Settings): { agent: AgentKind; model?: string } {
     : { agent: 'claude', ...(settings.claudeModel ? { model: settings.claudeModel } : {}) };
 }
 
-export function buildBootstrapPrompt(project: Project): string {
+export function buildBootstrapPrompt(project: Project, regenerate = false): string {
   return fillTemplate(bootstrapTemplate, {
     repoPath: project.localPath,
     basePort: String(project.basePort),
     workspaceNote: workspaceNoteFor(project),
+    regenerateNote: regenerateNoteFor(regenerate),
     bootstrapFile: configDirFor(project.mode) + BOOTSTRAP_FILE,
   });
 }
 
 /** Phase A of bootstrap: the task list the PM watches, written before any work. */
-export function buildBootstrapPlanPrompt(project: Project): string {
+export function buildBootstrapPlanPrompt(project: Project, regenerate = false): string {
   return fillTemplate(bootstrapPlanTemplate, {
     repoPath: project.localPath,
     workspaceNote: workspaceNoteFor(project),
+    regenerateNote: regenerateNoteFor(regenerate),
     bootstrapFile: configDirFor(project.mode) + BOOTSTRAP_FILE,
   });
 }
@@ -191,13 +213,14 @@ export async function startReadinessFixRun(
  */
 export async function startBootstrapPlanRun(
   project: Project,
-  settings: Settings
+  settings: Settings,
+  regenerate = false
 ): Promise<RunHandle> {
   const runId = makeRunId('bootstrap-plan');
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
-    promptText: buildBootstrapPlanPrompt(project),
+    promptText: buildBootstrapPlanPrompt(project, regenerate),
     ...agentFor(settings),
   });
   return { runId, kind: 'bootstrap-plan', projectId: project.id };
@@ -210,12 +233,16 @@ export function buildShipFeaturePrompt(repoPath: string, storyId: string): strin
   });
 }
 
-export async function startBootstrapRun(project: Project, settings: Settings): Promise<RunHandle> {
+export async function startBootstrapRun(
+  project: Project,
+  settings: Settings,
+  regenerate = false
+): Promise<RunHandle> {
   const runId = makeRunId('bootstrap');
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
-    promptText: buildBootstrapPrompt(project),
+    promptText: buildBootstrapPrompt(project, regenerate),
     ...agentFor(settings),
   });
   return { runId, kind: 'bootstrap', projectId: project.id };

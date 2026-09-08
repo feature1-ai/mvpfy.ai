@@ -19,6 +19,8 @@ export interface ProjectActions {
   bootstrap(): Promise<boolean>;
   saveAnswersAndRerun(): Promise<boolean>;
   docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
+  /** Run setup again on a project that already has generated files. */
+  rebootstrap(): Promise<boolean>;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */
@@ -50,6 +52,10 @@ export function useProjectActions(
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
 
+  // Phase B is started by the effect below rather than by the caller, so the
+  // fact that this is a regeneration has to outlive the call that began it.
+  const regenerating = useRef(false);
+
   /** Phase B: the run that actually makes the repo runnable. */
   const bootstrapWork = () =>
     guarded(async () => {
@@ -59,7 +65,7 @@ export function useProjectActions(
       // compose file, so it must be genuinely free at bootstrap time.
       const freePort = await window.mvpfy.findFreePort(project.basePort);
       const target = { ...project, basePort: freePort };
-      const handle = await startBootstrapRun(target, state.settings);
+      const handle = await startBootstrapRun(target, state.settings, regenerating.current);
       runsApi.track(handle);
       updateState((prev) => ({
         ...prev,
@@ -74,11 +80,12 @@ export function useProjectActions(
    * as cards, before touching anything. The PM gets something to read in ~30s
    * instead of two minutes of silence; the effect below chains phase B.
    */
-  const bootstrap = () =>
+  const bootstrap = (regenerate = false) =>
     guarded(async () => {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
-      const handle = await startBootstrapPlanRun(project, state.settings);
+      regenerating.current = regenerate;
+      const handle = await startBootstrapPlanRun(project, state.settings, regenerate);
       runsApi.track(handle);
       updateState((prev) => ({
         ...prev,
@@ -96,6 +103,14 @@ export function useProjectActions(
       setAnswersDraft('');
       await bootstrapWork();
     });
+
+  /**
+   * Set the project up again from scratch. The generated files may predate
+   * the mvpfy that is running now — this is how a project written by an older
+   * version gets what a new one would have written. Data volumes and the app's
+   * own code are never touched; the agent backs up what it replaces.
+   */
+  const rebootstrap = () => bootstrap(true);
 
   const docker = (action: Exclude<ComposeAction, 'logs'>) =>
     guarded(async () => {
@@ -220,6 +235,7 @@ export function useProjectActions(
     bootstrap,
     saveAnswersAndRerun,
     docker,
+    rebootstrap,
     diagnose,
     retryFix,
     dismissTriage,

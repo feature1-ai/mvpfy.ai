@@ -58,6 +58,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [forceArmed, setForceArmed] = useState(false);
+  const [confirmRerun, setConfirmRerun] = useState(false);
 
   useEffect(() => {
     if (c.busy) return;
@@ -373,9 +374,30 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
             <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
               <span className="section-label">Generated files</span>
               <span className="text-xs text-muted">written by mvpfy, safe to edit</span>
+              {/* Lives with the files it rewrites, not among the run controls:
+                  it is about how this project was set up, not about starting
+                  and stopping it. */}
+              <button
+                onClick={() => {
+                  if (confirmRerun) {
+                    setConfirmRerun(false);
+                    void c.rebootstrap();
+                  } else {
+                    setConfirmRerun(true);
+                  }
+                }}
+                onBlur={() => setConfirmRerun(false)}
+                disabled={c.busy}
+                title="Write this project's run configuration again, as the current version of mvpfy would. Your database and your code are left alone."
+                className={`ml-auto text-xs disabled:opacity-50 ${
+                  confirmRerun ? 'font-medium text-danger' : 'text-muted hover:text-body'
+                }`}
+              >
+                {confirmRerun ? 'Re-run setup — confirm' : 'Re-run setup'}
+              </button>
               <button
                 onClick={c.refreshFiles}
-                className="ml-auto text-xs text-go hover:text-go-hover hover:underline"
+                className="text-xs text-go hover:text-go-hover hover:underline"
               >
                 Refresh
               </button>

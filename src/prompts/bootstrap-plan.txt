@@ -3,6 +3,7 @@ you touch anything, tell them what you are going to do.
 
 Workspace: {repoPath}
 {workspaceNote}
+{regenerateNote}
 
 The workspace root is either a single application repo, or a folder containing MULTIPLE repos
 (frontend, backend, services) that make up one product.

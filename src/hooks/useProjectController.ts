@@ -109,6 +109,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   bootstrap(): Promise<boolean>;
   saveAnswersAndRerun(): Promise<boolean>;
   docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
+  /** Run setup again on a project that already has generated files. */
+  rebootstrap(): Promise<boolean>;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */

@@ -17,6 +17,11 @@ export default function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [tabByProject, setTabByProject] = useState<Record<string, ProjectTab>>({});
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  // Read once: the running build cannot change under us without a restart.
+  const [appVersion, setAppVersion] = useState('');
+  useEffect(() => {
+    void window.mvpfy.appVersion().then(setAppVersion);
+  }, []);
 
   useEffect(() => {
     return window.mvpfy.onUpdateStatus((status) => {
@@ -92,6 +97,7 @@ export default function App() {
   return (
     <div className="flex h-full flex-col bg-paper">
       <TopBar
+        version={appVersion}
         projects={state.projects}
         activeProjectId={activeProject?.id ?? null}
         tenantConnected={state.tenant !== null}
@@ -107,6 +113,7 @@ export default function App() {
       {screen === 'settings' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SettingsView
+            version={appVersion}
             state={state}
             cliStatuses={cliStatuses}
             onRefreshClis={refreshClis}

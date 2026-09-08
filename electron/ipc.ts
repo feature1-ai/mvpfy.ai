@@ -1,4 +1,4 @@
-import { dialog, ipcMain, shell } from 'electron';
+import { app, dialog, ipcMain, shell } from 'electron';
 import * as path from 'node:path';
 import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
 import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
@@ -23,6 +23,7 @@ import { installUpdate } from './services/updates';
 
 /** Controller layer: routes renderer IPC calls to the service modules. */
 export function registerIpc(): void {
+  ipcMain.handle('app-version', () => app.getVersion());
   ipcMain.handle('cli-check', () => cliCheck());
   ipcMain.handle('read-state', () => readState());
   ipcMain.handle('write-state', (_ev, state: MvpfyState) => writeState(state));

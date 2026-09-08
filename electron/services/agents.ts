@@ -123,7 +123,11 @@ export function runAgent(req: RunAgentRequest): void {
     // --mcp-config registers the Feature1 server for this run only.
     if (req.mcp) scratch.push(writeClaudeMcpConfig(req.runId, req.mcp));
     const mcpFlag = req.mcp ? `--mcp-config ${q(scratch[scratch.length - 1])} ` : '';
-    command = `${cdTo(repoPath)} && claude ${mcpFlag}-p --verbose --output-format stream-json --dangerously-skip-permissions < ${q(promptFile)}`;
+    // No --model unless one was chosen: claude then uses the model the user
+    // has already configured, which is the right answer for most people and
+    // never goes stale as the available models change.
+    const modelFlag = req.model ? `--model ${q(req.model)} ` : '';
+    command = `${cdTo(repoPath)} && claude ${mcpFlag}${modelFlag}-p --verbose --output-format stream-json --dangerously-skip-permissions < ${q(promptFile)}`;
   } else {
     const model = req.model || DEFAULT_STATE.settings.codexModel;
     if (req.mcp) {

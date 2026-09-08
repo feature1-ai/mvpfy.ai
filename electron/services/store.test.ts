@@ -37,10 +37,21 @@ describe('state store', () => {
     const state: MvpfyState = {
       tenant: { slug: 'acme', host: 'acme.feature1.ai', tokenKeychainEntry: 'acme-token' },
       projects: [project({ planSlugs: ['dark-mode'], mode: 'managed' })],
-      settings: { defaultAgent: 'codex', codexModel: 'gpt-5.3-codex' },
+      settings: { defaultAgent: 'codex', codexModel: 'gpt-5.3-codex', claudeModel: 'opus' },
     };
     writeState(state, file);
     expect(readState(file)).toEqual(state);
+  });
+
+  it('fills in settings a previous version never wrote', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ tenant: null, projects: [], settings: { defaultAgent: 'codex' } })
+    );
+    const read = readState(file);
+    expect(read.settings.defaultAgent).toBe('codex');
+    expect(read.settings.claudeModel).toBe(DEFAULT_STATE.settings.claudeModel);
+    expect(read.settings.codexModel).toBe(DEFAULT_STATE.settings.codexModel);
   });
 
   it('creates intermediate directories when writing', () => {

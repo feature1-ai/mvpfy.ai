@@ -5,6 +5,8 @@ import logoUrl from '../../assets/logo.svg';
 interface Props {
   projects: Project[];
   activeProjectId: string | null;
+  /** Running build, shown so a bug report can name it. */
+  version: string;
   tenantConnected: boolean;
   tenantSlug: string | null;
   onSelectProject: (id: string) => void;
@@ -15,6 +17,7 @@ interface Props {
 export default function TopBar({
   projects,
   activeProjectId,
+  version,
   tenantConnected,
   tenantSlug,
   onSelectProject,
@@ -57,6 +60,7 @@ export default function TopBar({
           >
             feature1
           </button>
+          {version && <span className="ml-1.5 font-mono text-faint">v{version}</span>}
         </span>
       </div>
 

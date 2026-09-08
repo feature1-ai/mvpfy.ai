@@ -88,7 +88,7 @@ function makeRunId(prefix: string): string {
 function agentFor(settings: Settings): { agent: AgentKind; model?: string } {
   return settings.defaultAgent === 'codex'
     ? { agent: 'codex', model: settings.codexModel }
-    : { agent: 'claude' };
+    : { agent: 'claude', ...(settings.claudeModel ? { model: settings.claudeModel } : {}) };
 }
 
 export function buildBootstrapPrompt(project: Project): string {

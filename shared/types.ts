@@ -69,6 +69,12 @@ export interface TenantConfig {
 export interface Settings {
   defaultAgent: AgentKind;
   codexModel: string;
+  /**
+   * Model for Claude Code runs. Empty means "whatever `claude` is configured
+   * to use" — the safe default, since it respects the user's own setup and
+   * cannot break when the set of available models changes.
+   */
+  claudeModel: string;
 }
 
 export interface MvpfyState {
@@ -83,6 +89,7 @@ export const DEFAULT_STATE: MvpfyState = {
   settings: {
     defaultAgent: 'claude',
     codexModel: 'gpt-5.3-codex',
+    claudeModel: '',
   },
 };
 
@@ -147,7 +154,7 @@ export interface RunAgentRequest {
   agent: AgentKind;
   repoPath: string;
   promptText: string;
-  /** Codex only. */
+  /** Model to run. Omitted means the agent's own configured default. */
   model?: string;
   /** When set, the Feature1 MCP server is registered with the agent. */
   mcp?: RunAgentMcp;
@@ -236,6 +243,8 @@ export const RELEASES_URL = 'https://github.com/feature1-ai/mvpfy.ai/releases/la
 
 /** API surface exposed to the renderer through the preload contextBridge. */
 export interface MvpfyApi {
+  /** The running build's version, for support and update checks. */
+  appVersion(): Promise<string>;
   cliCheck(): Promise<CliStatus[]>;
   readState(): Promise<MvpfyState>;
   writeState(state: MvpfyState): Promise<void>;

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { AgentKind, CliStatus, InstallPlan, MvpfyState } from '../../shared/types';
+import { AgentKind, CliStatus, InstallPlan, MvpfyState, RELEASES_URL } from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
 import { CLI_HELP, cliRequired, installHintFor } from '../lib/cliCheck';
 import { useFeature1Login } from '../hooks/useFeature1Login';
 
 interface Props {
+  version: string;
   state: MvpfyState;
   cliStatuses: CliStatus[];
   onRefreshClis: () => void;
@@ -16,7 +17,13 @@ function nextRunId(kind: string, tool: string): string {
   return `cli-${kind}-${tool}-${++runSeq}`;
 }
 
-export default function SettingsView({ state, cliStatuses, onRefreshClis, updateState }: Props) {
+export default function SettingsView({
+  version,
+  state,
+  cliStatuses,
+  onRefreshClis,
+  updateState,
+}: Props) {
   const login = useFeature1Login(state, updateState);
 
   const gh = cliStatuses.find((s) => s.name === 'gh');
@@ -301,6 +308,36 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
         <div className="border-t border-line-subtle" />
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-medium">Claude model</p>
+            <p className="text-[12.5px] text-muted">
+              Used only when the default agent is Claude Code. Leave empty to use whatever{' '}
+              <code className="font-mono">claude</code> is already set to.
+            </p>
+          </div>
+          {/* A list, not a menu: the aliases cover most people, and anyone on
+              a model mvpfy has not heard of can still type its id. */}
+          <input
+            value={state.settings.claudeModel}
+            onChange={(e) =>
+              updateState((prev) => ({
+                ...prev,
+                settings: { ...prev.settings, claudeModel: e.target.value.trim() },
+              }))
+            }
+            list="claude-models"
+            placeholder="default"
+            spellCheck={false}
+            className="h-[34px] w-44 rounded-md border border-line px-[11px] font-mono text-[12.5px] outline-none placeholder:text-faint focus:border-muted"
+          />
+          <datalist id="claude-models">
+            <option value="opus" />
+            <option value="sonnet" />
+            <option value="haiku" />
+          </datalist>
+        </div>
+        <div className="border-t border-line-subtle" />
+        <div className="flex items-center gap-4">
+          <div className="min-w-0 flex-1">
             <p className="text-[13.5px] font-medium">Codex model</p>
             <p className="text-[12.5px] text-muted">Used only when the default agent is Codex.</p>
           </div>
@@ -326,6 +363,24 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
         <p className="text-xs text-muted">
           Each project takes the next free port when it is bootstrapped.
         </p>
+      </section>
+
+      <div className="section-label mb-3 mt-7">About</div>
+      <section className="card flex items-center gap-4 px-[18px] py-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13.5px] font-medium">
+            mvpfy <span className="font-mono text-[12.5px] text-body">{version || '—'}</span>
+          </p>
+          <p className="text-[12.5px] text-muted">
+            mvpfy updates itself; this is the build you are running now.
+          </p>
+        </div>
+        <button
+          onClick={() => void window.mvpfy.openExternal(RELEASES_URL)}
+          className="text-[12.5px] text-go hover:underline"
+        >
+          Release notes ↗
+        </button>
       </section>
     </div>
   );

@@ -82,8 +82,13 @@ export function composeCommand(action: 'up' | 'down' | 'restart' | 'logs', linke
   if (action === 'logs') {
     return `${base} logs -f --tail=200`;
   }
-  const up = `${base} up -d --build`;
-  const down = `${base} down`;
+  // --remove-orphans: compose only manages the services named in the file it
+  // is given, and bootstrap rewrites that file. A service the agent renames or
+  // drops between runs is left running forever — still holding its port, so
+  // the next `up` cannot bind it. Never --volumes here: Stop must not delete
+  // the database. That belongs to deleting the project, and lives there.
+  const up = `${base} up -d --build --remove-orphans`;
+  const down = `${base} down --remove-orphans`;
   const compose = action === 'up' ? up : action === 'down' ? down : `${down} && ${up}`;
   return `${ENSURE_DAEMON} && ${compose}`;
 }

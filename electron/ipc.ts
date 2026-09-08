@@ -1,6 +1,6 @@
 import { dialog, ipcMain, shell } from 'electron';
 import * as path from 'node:path';
-import { McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
+import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
 import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
 import { cliCheck, loginCommand } from './services/cli';
@@ -52,7 +52,7 @@ export function registerIpc(): void {
   ipcMain.handle('stop-run', (_ev, runId: string) => stopRun(runId));
   ipcMain.handle(
     'docker-compose',
-    (_ev, runId: string, repoPath: string, action: 'up' | 'down' | 'restart' | 'logs') => {
+    (_ev, runId: string, repoPath: string, action: ComposeAction) => {
       const resolved = path.resolve(repoPath);
       if (!isAllowedWorkspace(resolved)) {
         throw new Error('docker compose is restricted to managed and linked project directories');

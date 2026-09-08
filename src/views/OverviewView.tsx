@@ -57,6 +57,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   const [branches, setBranches] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [forceArmed, setForceArmed] = useState(false);
 
   useEffect(() => {
     if (c.busy) return;
@@ -175,6 +176,29 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                       className="btn-secondary h-[34px] px-3.5"
                     >
                       Stop
+                    </button>
+                    {/* Second click only: Stop waits out each container's
+                        shutdown, which is the right default. Force is for the
+                        one that never comes back, and it should be a decision
+                        rather than the button next to the one you meant. */}
+                    <button
+                      onClick={() => {
+                        if (forceArmed) {
+                          setForceArmed(false);
+                          void c.docker('force-down');
+                        } else {
+                          setForceArmed(true);
+                        }
+                      }}
+                      onBlur={() => setForceArmed(false)}
+                      title="Kill the containers immediately, without waiting for them to shut down cleanly"
+                      className={`h-[34px] rounded-md px-3 text-[13px] ${
+                        forceArmed
+                          ? 'bg-danger font-medium text-white'
+                          : 'text-muted hover:text-danger'
+                      }`}
+                    >
+                      {forceArmed ? 'Force stop — confirm' : 'Force stop'}
                     </button>
                   </>
                 )}

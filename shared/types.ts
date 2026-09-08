@@ -53,6 +53,13 @@ export function configDirFor(mode: Project['mode']): string {
   return mode === 'linked' ? '.mvpfy/' : '';
 }
 
+/**
+ * Compose lifecycle actions. 'force-down' is the escape hatch for a stack
+ * that will not stop politely: it SIGKILLs rather than waiting out the
+ * shutdown grace period.
+ */
+export type ComposeAction = 'up' | 'down' | 'restart' | 'force-down' | 'logs';
+
 export interface TenantConfig {
   slug: string;
   host: string;
@@ -241,11 +248,7 @@ export interface MvpfyApi {
   deleteProject(workspacePath: string): Promise<{ ok: boolean; error?: string }>;
   runAgent(req: RunAgentRequest): Promise<void>;
   stopRun(runId: string): Promise<void>;
-  dockerCompose(
-    runId: string,
-    repoPath: string,
-    action: 'up' | 'down' | 'restart' | 'logs'
-  ): Promise<void>;
+  dockerCompose(runId: string, repoPath: string, action: ComposeAction): Promise<void>;
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
   /** Live IDE-container state from docker (stored idePort can go stale). */
   ideStatus(workspacePath: string): Promise<{ running: boolean; port: number | null }>;

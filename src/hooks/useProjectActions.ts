@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ANSWERS_FILE, QUESTIONS_FILE, TRIAGE_FILE } from '../../shared/types';
+import { ANSWERS_FILE, ComposeAction, QUESTIONS_FILE, TRIAGE_FILE } from '../../shared/types';
 import {
   startAppLogsRun,
   startBootstrapPlanRun,
@@ -18,7 +18,7 @@ import { ControllerContext, contentOf } from './controllerContext';
 export interface ProjectActions {
   bootstrap(): Promise<boolean>;
   saveAnswersAndRerun(): Promise<boolean>;
-  docker(action: 'up' | 'down' | 'restart'): Promise<boolean>;
+  docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */
@@ -97,7 +97,7 @@ export function useProjectActions(
       await bootstrapWork();
     });
 
-  const docker = (action: 'up' | 'down' | 'restart') =>
+  const docker = (action: Exclude<ComposeAction, 'logs'>) =>
     guarded(async () => {
       const handle = await startDockerRun(project, action);
       runsApi.track(handle);

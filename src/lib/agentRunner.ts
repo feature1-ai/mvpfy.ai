@@ -13,6 +13,7 @@ import pullFeatureTemplate from '../prompts/pull-feature.txt?raw';
 import {
   AgentKind,
   BOOTSTRAP_FILE,
+  ComposeAction,
   LAUNCH_FILE,
   Project,
   READINESS_FILE,
@@ -240,14 +241,14 @@ export async function startShipFeatureRun(
   return { runId, kind: 'ship', projectId: project.id, storyId };
 }
 
-export async function startDockerRun(
-  project: Project,
-  action: 'up' | 'down' | 'restart' | 'logs'
-): Promise<RunHandle> {
+export async function startDockerRun(project: Project, action: ComposeAction): Promise<RunHandle> {
   const runId = makeRunId(`docker-${action}`);
   await window.mvpfy.dockerCompose(runId, project.localPath, action);
-  // 'restart' counts as an up: on success the project is running.
-  return { runId, kind: action === 'down' ? 'docker-down' : 'docker-up', projectId: project.id };
+  // 'restart' counts as an up: on success the project is running. Both ways of
+  // stopping land on 'docker-down', so the forceful one leaves the project in
+  // the same state as the polite one.
+  const stopping = action === 'down' || action === 'force-down';
+  return { runId, kind: stopping ? 'docker-down' : 'docker-up', projectId: project.id };
 }
 
 /** Ship the workspace's uncommitted product changes as pull request(s). */

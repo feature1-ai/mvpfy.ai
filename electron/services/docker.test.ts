@@ -58,3 +58,25 @@ describe('ideCommand', () => {
     expect(ideContainerName('/Users/pm/code/My App!')).toBe('mvpfy-ide-my-app-');
   });
 });
+
+describe('composeCommand force-down', () => {
+  it('kills first, then tears down whatever is left', () => {
+    const force = composeCommand('force-down');
+    const killAt = force.indexOf(' kill ');
+    const downAt = force.indexOf(' down --remove-orphans');
+    expect(killAt).toBeGreaterThan(-1);
+    expect(downAt).toBeGreaterThan(killAt);
+  });
+
+  it('tears down even though kill exits non-zero with nothing running', () => {
+    // && would swallow the teardown on an already-stopped stack.
+    const force = composeCommand('force-down');
+    const between = force.slice(force.indexOf(' kill ') + 6, force.indexOf(' down --remove'));
+    expect(between).toContain(IS_WIN ? '&' : ';');
+    expect(between).not.toContain('&&');
+  });
+
+  it('is still not allowed to delete volumes', () => {
+    expect(composeCommand('force-down')).not.toContain('--volumes');
+  });
+});

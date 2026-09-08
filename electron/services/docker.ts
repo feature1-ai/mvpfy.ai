@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { ComposeAction } from '../../shared/types';
 import { IS_WIN, shellQuote, spawnShellSync } from './shell';
 
 /** Docker specifics: local-context pinning, daemon checks, command builders. */
@@ -71,7 +72,7 @@ export function ideStatus(workspacePath: string): { running: boolean; port: numb
   return { running: true, port: m ? Number(m[1]) : null };
 }
 
-export function composeCommand(action: 'up' | 'down' | 'restart' | 'logs', linked = false): string {
+export function composeCommand(action: ComposeAction, linked = false): string {
   // Linked repos keep the compose file inside .mvpfy/; --project-directory
   // pins relative build contexts and volume paths to the workspace root so
   // the file's content works identically in both modes.
@@ -89,7 +90,20 @@ export function composeCommand(action: 'up' | 'down' | 'restart' | 'logs', linke
   // the database. That belongs to deleting the project, and lives there.
   const up = `${base} up -d --build --remove-orphans`;
   const down = `${base} down --remove-orphans`;
-  const compose = action === 'up' ? up : action === 'down' ? down : `${down} && ${up}`;
+  // Force stop: SIGKILL now rather than the polite SIGTERM-then-wait, for a
+  // container that ignores the signal or takes minutes to drain. `kill` exits
+  // non-zero when nothing is running, so the teardown must follow regardless
+  // of its result — that is `;` in a shell and `&` in cmd.
+  const alsoRun = IS_WIN ? '&' : ';';
+  const forceDown = `${base} kill ${alsoRun} ${down}`;
+  const compose =
+    action === 'up'
+      ? up
+      : action === 'down'
+        ? down
+        : action === 'force-down'
+          ? forceDown
+          : `${down} && ${up}`;
   return `${ENSURE_DAEMON} && ${compose}`;
 }
 

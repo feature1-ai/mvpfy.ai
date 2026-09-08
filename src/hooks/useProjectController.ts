@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ANSWERS_FILE,
   BOOTSTRAP_FILE,
+  ComposeAction,
   CHANGE_FILE,
   SUMMARY_FILE,
   TRIAGE_FILE,
@@ -101,7 +102,7 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   // Actions
   bootstrap(): Promise<boolean>;
   saveAnswersAndRerun(): Promise<boolean>;
-  docker(action: 'up' | 'down' | 'restart'): Promise<boolean>;
+  docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */

@@ -27,6 +27,7 @@ import { RunsApi, RunState } from '../lib/useRuns';
 import { ControllerContext, contentOf, UpdateState } from './controllerContext';
 import { BootstrapFlowState, useBootstrapFlow } from './useBootstrapFlow';
 import { Feature1LoginState, useFeature1Login } from './useFeature1Login';
+import { Feature1SyncState, useFeature1Sync } from './useFeature1Sync';
 import { useAgentActions } from './useAgentActions';
 import { LaunchActions, useLaunchActions } from './useLaunchActions';
 import { ReadinessActions, useReadinessActions } from './useReadinessActions';
@@ -65,6 +66,8 @@ function hiddenFromViewer(name: string): boolean {
 export interface ProjectController extends BootstrapFlowState, ReadinessActions, LaunchActions {
   /** Signing in to Feature1, available wherever the user needs it. */
   feature1Login: Feature1LoginState;
+  /** The features Feature1 says are assigned to the signed-in user. */
+  feature1Sync: Feature1SyncState;
   project: Project;
   // Derived view state
   appUrl: string;
@@ -311,6 +314,7 @@ export function useProjectController(
     guarded,
   };
   const feature1Login = useFeature1Login(state, updateState);
+  const feature1Sync = useFeature1Sync(state);
   const projectActions = useProjectActions(ctx, lastFailure, latestRun, appLogsRun);
   const planActions = usePlanActions(ctx);
   const agentActions = useAgentActions(ctx);
@@ -378,6 +382,7 @@ export function useProjectController(
     activeFileContent: files.find((f) => f.relativePath === activeFile)?.content ?? '',
     tenantConnected: state.tenant !== null,
     feature1Login,
+    feature1Sync,
     refreshFiles,
     stopRun: runsApi.stop,
     setActiveFile,

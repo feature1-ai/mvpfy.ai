@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { mcpBaseUrl, mcpHost, tenantSlugFrom, tokenKeychainEntry } from './feature1Mcp';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  Feature1McpClient,
+  mcpBaseUrl,
+  mcpHost,
+  tenantSlugFrom,
+  tokenKeychainEntry,
+} from './feature1Mcp';
 
 describe('tenantSlugFrom', () => {
   it('accepts the address the user actually has in their browser', () => {
@@ -42,5 +48,88 @@ describe('tenantSlugFrom', () => {
     expect(mcpHost(slug)).toBe('acme-mcp.feature1.ai');
     expect(mcpBaseUrl(slug)).toBe('https://acme-mcp.feature1.ai/mcp/');
     expect(tokenKeychainEntry(slug)).toBe('feature1-mcp-acme');
+  });
+});
+
+describe('listAssignedFeatures', () => {
+  const reply = (result: unknown) => {
+    (globalThis as { window?: unknown }).window = {
+      mvpfy: {
+        mcpFetch: async () => ({
+          ok: true,
+          status: 200,
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, result }),
+        }),
+      },
+    };
+  };
+
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it('reads the structured payload, not the Markdown written for agents', async () => {
+    reply({
+      structuredContent: {
+        features: [
+          {
+            id: 'uuid-1',
+            code: 'FEA-142',
+            title: 'Invoice PDF export',
+            status: 'in_progress',
+            story_count: 4,
+            project_name: 'billing',
+          },
+        ],
+        total: 1,
+      },
+      content: [{ type: 'text', text: '# Features (1 found)\n## Invoice PDF export' }],
+    });
+    const features = await new Feature1McpClient('acme', 't').listAssignedFeatures();
+    expect(features).toEqual([
+      {
+        id: 'uuid-1',
+        code: 'FEA-142',
+        title: 'Invoice PDF export',
+        status: 'in_progress',
+        priority: undefined,
+        description: undefined,
+        projectName: 'billing',
+        storyCount: 4,
+        updatedAt: undefined,
+      },
+    ]);
+  });
+
+  it('drops a feature with no code, which could never be pulled', async () => {
+    reply({
+      structuredContent: {
+        features: [
+          { id: 'a', code: '', title: 'No code', status: 'draft' },
+          { id: 'b', code: 'FEA-9', title: 'Fine', status: 'draft' },
+        ],
+      },
+    });
+    const features = await new Feature1McpClient('acme', 't').listAssignedFeatures();
+    expect(features.map((f) => f.code)).toEqual(['FEA-9']);
+  });
+
+  it('survives the optional fields being absent', async () => {
+    reply({
+      structuredContent: {
+        features: [{ id: 'a', code: 'FEA-1', title: 'Bare', status: 'draft' }],
+      },
+    });
+    const [feature] = await new Feature1McpClient('acme', 't').listAssignedFeatures();
+    expect(feature.storyCount).toBeUndefined();
+    expect(feature.projectName).toBeUndefined();
+  });
+
+  it('says so plainly when the workspace has no assigned-feature support', async () => {
+    // An older server answers with prose only, and no structuredContent.
+    reply({ content: [{ type: 'text', text: '# Features (3 found)' }] });
+    await expect(new Feature1McpClient('acme', 't').listAssignedFeatures()).rejects.toThrow(
+      /without assigned-feature support/
+    );
   });
 });

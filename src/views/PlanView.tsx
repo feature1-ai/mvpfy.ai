@@ -10,6 +10,7 @@ import {
   canMove,
   uncoveredItems,
 } from '../lib/plan';
+import { Feature1Feature } from '../lib/feature1Mcp';
 import Feature1LoginPrompt from './Feature1LoginPrompt';
 import ReadinessPanel from './ReadinessPanel';
 
@@ -36,6 +37,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
   const [featureRef, setFeatureRef] = useState('');
 
   const login = c.feature1Login;
+  const sync = c.feature1Sync;
   const plans = c.plans;
   const active = c.activePlan;
   const plan = active?.plan ?? null;
@@ -57,6 +59,15 @@ export default function PlanView({ c, onOpenTab }: Props) {
   };
 
   const hasChips = readinessKnown || plans.length > 0;
+
+  // A synced feature already on a board is one of the chips above; only the
+  // ones with nothing behind them yet need an offer to pull.
+  const pulledRefs = new Set(
+    plans.map((f) => (f.plan?.feature1FeatureRef ?? '').toLowerCase()).filter(Boolean)
+  );
+  const assignedNotPulled = sync.features.filter(
+    (f) => !pulledRefs.has(f.code.toLowerCase()) && !pulledRefs.has(f.id.toLowerCase())
+  );
 
   const toolbar = (
     <div className="mb-6 flex flex-wrap items-center gap-2">
@@ -97,13 +108,58 @@ export default function PlanView({ c, onOpenTab }: Props) {
           Plan
         </button>
       )}
+      {/* Not connected: Sync leads to the sign-in rather than an error. */}
+      <button
+        onClick={() => {
+          if (!c.tenantConnected) {
+            goPlanHome();
+            setPlanMode('feature1');
+            return;
+          }
+          void sync.sync();
+        }}
+        disabled={sync.syncing}
+        title="Fetch the Feature1 features assigned to you"
+        className="ml-auto h-7 rounded-full border border-line bg-surface px-3 text-xs text-body transition-colors hover:border-muted disabled:opacity-60"
+      >
+        {sync.syncing ? 'Syncing…' : '⇅ Sync Feature1'}
+      </button>
       <button
         onClick={c.refreshFiles}
         title="Re-read plans, stories and launch readiness from disk"
-        className="ml-auto h-7 rounded-full border border-line bg-surface px-3 text-xs text-muted transition-colors hover:border-muted hover:text-body"
+        className="h-7 rounded-full border border-line bg-surface px-3 text-xs text-muted transition-colors hover:border-muted hover:text-body"
       >
         ↻ Refresh
       </button>
+      {(sync.error || assignedNotPulled.length > 0 || sync.syncedAt) && (
+        <div className="w-full">
+          {sync.error && <p className="mt-1 text-[12px] text-danger">{sync.error}</p>}
+          {!sync.error && assignedNotPulled.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-[11.5px] text-muted">Assigned to you in Feature1:</span>
+              {assignedNotPulled.map((f) => (
+                <AssignedFeaturePill
+                  key={f.id}
+                  feature={f}
+                  pulling={c.planBlocked}
+                  onClick={() => {
+                    setPick('plans');
+                    setCreatingNew(false);
+                    void c.pullFeature(f.code);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {!sync.error && sync.syncedAt && assignedNotPulled.length === 0 && (
+            <p className="mt-1 text-[11.5px] text-muted">
+              {sync.features.length === 0
+                ? 'Nothing is assigned to you in Feature1.'
+                : 'Every feature assigned to you is already on a board.'}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -185,9 +241,12 @@ export default function PlanView({ c, onOpenTab }: Props) {
             <>
               <label className="section-label mb-1.5 block">Feature1 feature</label>
               <p className="mb-2 text-[13px] leading-relaxed text-body">
-                Paste the feature code or id from Feature1. mvpfy pulls its PRD, user stories and
-                acceptance criteria in as a board — implementing a story here also updates it in
-                Feature1.
+                <button onClick={() => void sync.sync()} className="text-go hover:underline">
+                  Sync Feature1
+                </button>{' '}
+                to list what is assigned to you, or paste a feature code or id here. Either way
+                mvpfy pulls its PRD, user stories and acceptance criteria in as a board —
+                implementing a story here also updates it in Feature1.
               </p>
               <input
                 value={featureRef}
@@ -476,6 +535,41 @@ function ReadinessChip({
           {count}
         </span>
       )}
+    </button>
+  );
+}
+
+/**
+ * A Feature1 feature that is assigned to you but has no board here yet.
+ * Dashed, to read as an offer rather than a place: clicking it starts the
+ * pull that turns it into a real feature chip.
+ */
+function AssignedFeaturePill({
+  feature,
+  pulling,
+  onClick,
+}: {
+  feature: Feature1Feature;
+  pulling: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={pulling}
+      title={
+        pulling
+          ? 'Another run is using the workspace — wait for it to finish'
+          : `${feature.title}${feature.description ? ` — ${feature.description}` : ''}\n\nPull its PRD, stories and acceptance criteria into this project.`
+      }
+      className="flex h-7 max-w-[300px] items-center gap-1.5 rounded-full border border-dashed border-line bg-surface px-3 text-xs text-body transition-colors hover:border-muted disabled:opacity-50"
+    >
+      <span className="shrink-0 font-mono text-[10px] text-faint">{feature.code}</span>
+      <span className="truncate">{feature.title}</span>
+      {feature.storyCount !== undefined && feature.storyCount > 0 && (
+        <span className="shrink-0 font-mono text-[10px] text-faint">{feature.storyCount}</span>
+      )}
+      <span className="shrink-0 text-[10px] text-go">+ pull</span>
     </button>
   );
 }

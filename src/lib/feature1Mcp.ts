@@ -12,6 +12,23 @@ export interface BrowserLoginStart {
   loginId: string;
 }
 
+/**
+ * A Feature1 feature as the list tool returns it. id, code, title and status
+ * are guaranteed by the server; everything else is decoration and may be
+ * absent. `code` is the one that matters most — it is what a pull takes.
+ */
+export interface Feature1Feature {
+  id: string;
+  code: string;
+  title: string;
+  status: string;
+  priority?: string;
+  description?: string;
+  projectName?: string;
+  storyCount?: number;
+  updatedAt?: string;
+}
+
 export function mcpBaseUrl(tenantSlug: string): string {
   return `https://${tenantSlug}-mcp.feature1.ai/mcp/`;
 }
@@ -176,6 +193,40 @@ export class Feature1McpClient {
 
   markReadyForTesting(): Promise<unknown> {
     return this.callTool('mark_ready_for_testing');
+  }
+
+  /**
+   * The features assigned to whoever is signed in. Read directly rather than
+   * through an agent: it is one call, and a run per feature would cost
+   * minutes of subscription before the user has picked anything.
+   *
+   * Reads the structured payload; the tool also returns the same list as
+   * Markdown for agents, which is not what we want to be parsing.
+   */
+  async listAssignedFeatures(): Promise<Feature1Feature[]> {
+    const raw = await this.callTool('list_features', { assigned_to_me: true, limit: 100 });
+    const items = (raw as { features?: unknown[] })?.features;
+    if (!Array.isArray(items)) {
+      throw new Feature1McpError(
+        'Feature1 did not return a feature list. The workspace may be running a version without assigned-feature support.'
+      );
+    }
+    return (
+      (items as Array<Record<string, unknown>>)
+        .map((f) => ({
+          id: String(f.id ?? ''),
+          code: String(f.code ?? ''),
+          title: String(f.title ?? 'Untitled feature'),
+          status: String(f.status ?? 'unknown'),
+          priority: f.priority ? String(f.priority) : undefined,
+          description: f.description ? String(f.description) : undefined,
+          projectName: f.project_name ? String(f.project_name) : undefined,
+          storyCount: Number.isFinite(Number(f.story_count)) ? Number(f.story_count) : undefined,
+          updatedAt: f.updated_at ? String(f.updated_at) : undefined,
+        }))
+        // A feature with no code cannot be pulled — the pull is by reference.
+        .filter((f) => f.id && f.code)
+    );
   }
 
   async listUserStories(): Promise<UserStory[]> {

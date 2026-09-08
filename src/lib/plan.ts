@@ -68,6 +68,14 @@ export interface ProjectPlan {
   stories: PlanStory[];
   /** The PM has reviewed the PRD and agreed — only then does the board show. */
   approved: boolean;
+  /** 'feature1' when this plan was pulled rather than written here. */
+  source?: 'feature1';
+  /**
+   * The Feature1 feature this plan came from, by code or id. Kept so a synced
+   * feature can be matched to the board that already holds it — the slug is
+   * derived from the reference and collides, so it cannot carry this itself.
+   */
+  feature1FeatureRef?: string;
 }
 
 /**
@@ -225,7 +233,16 @@ export function parsePlan(content: string | null | undefined): ProjectPlan | nul
   // Work already under way implies agreement even if the flag was lost
   // (e.g. a spec refinement rewrote the file without it).
   const approved = raw.approved === true || stories.some((s) => s.lane !== 'todo' || s.prUrl);
-  return { version: 1, generatedAt: String(raw.generatedAt ?? ''), spec, stories, approved };
+  const featureRef = String(raw.feature1FeatureRef ?? '').trim();
+  return {
+    version: 1,
+    generatedAt: String(raw.generatedAt ?? ''),
+    spec,
+    stories,
+    approved,
+    ...(raw.source === 'feature1' ? { source: 'feature1' as const } : {}),
+    ...(featureRef ? { feature1FeatureRef: featureRef } : {}),
+  };
 }
 
 export function serializePlan(plan: ProjectPlan): string {

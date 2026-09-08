@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AgentKind, CliStatus, InstallPlan, MvpfyState } from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
 import { CLI_HELP, cliRequired, installHintFor } from '../lib/cliCheck';
-import { Feature1McpClient, mcpHost, tenantSlugFrom, tokenKeychainEntry } from '../lib/feature1Mcp';
+import { useFeature1Login } from '../hooks/useFeature1Login';
 
 interface Props {
   state: MvpfyState;
@@ -17,39 +17,7 @@ function nextRunId(kind: string, tool: string): string {
 }
 
 export default function SettingsView({ state, cliStatuses, onRefreshClis, updateState }: Props) {
-  const [slugInput, setSlugInput] = useState(state.tenant?.slug ?? '');
-  const [loginStatus, setLoginStatus] = useState<'idle' | 'waiting' | 'error'>('idle');
-  const [loginError, setLoginError] = useState<string | null>(null);
-
-  async function connectFeature1() {
-    // People know the address in their browser, not their "slug".
-    const slug = tenantSlugFrom(slugInput);
-    if (!slug) {
-      setLoginStatus('error');
-      setLoginError(
-        `"${slugInput.trim()}" doesn't look like a Feature1 workspace. Paste its address, e.g. acme.feature1.ai`
-      );
-      return;
-    }
-    setLoginStatus('waiting');
-    setLoginError(null);
-    try {
-      const client = new Feature1McpClient(slug, null);
-      const { loginUrl, loginId } = await client.browserLogin();
-      await window.mvpfy.openExternal(loginUrl);
-      const token = await client.pollLoginStatus(loginId);
-      const entry = tokenKeychainEntry(slug);
-      await window.mvpfy.keychainSet(entry, token);
-      updateState((prev) => ({
-        ...prev,
-        tenant: { slug, host: mcpHost(slug), tokenKeychainEntry: entry },
-      }));
-      setLoginStatus('idle');
-    } catch (err) {
-      setLoginStatus('error');
-      setLoginError(err instanceof Error ? err.message : String(err));
-    }
-  }
+  const login = useFeature1Login(state, updateState);
 
   const gh = cliStatuses.find((s) => s.name === 'gh');
   const [toolRun, setToolRun] = useState<{
@@ -254,7 +222,7 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
             <div className="flex shrink-0 items-center gap-3">
               <span className="font-mono text-[11.5px] text-go">{state.tenant.host}</span>
               <button
-                onClick={() => updateState((prev) => ({ ...prev, tenant: null }))}
+                onClick={login.disconnect}
                 className="text-[11.5px] text-muted hover:text-ink"
               >
                 Disconnect
@@ -263,25 +231,25 @@ export default function SettingsView({ state, cliStatuses, onRefreshClis, update
           ) : (
             <div className="flex shrink-0 items-center gap-2">
               <input
-                value={slugInput}
-                onChange={(e) => setSlugInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void connectFeature1()}
+                value={login.address}
+                onChange={(e) => login.setAddress(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && void login.connect()}
                 placeholder="acme.feature1.ai"
                 spellCheck={false}
                 className="h-[30px] w-48 rounded-md border border-line px-2.5 font-mono text-[12px] outline-none focus:border-muted"
               />
               <button
-                onClick={() => void connectFeature1()}
-                disabled={loginStatus === 'waiting' || !slugInput.trim()}
+                onClick={() => void login.connect()}
+                disabled={login.status === 'waiting' || !login.address.trim()}
                 className="btn-primary h-[30px] px-3 text-[12.5px] disabled:opacity-50"
               >
-                {loginStatus === 'waiting' ? 'Waiting…' : 'Connect'}
+                {login.status === 'waiting' ? 'Waiting…' : 'Connect'}
               </button>
             </div>
           )}
         </div>
-        {loginStatus === 'error' && loginError && (
-          <p className="text-[12.5px] text-danger">{loginError}</p>
+        {login.status === 'error' && login.error && (
+          <p className="text-[12.5px] text-danger">{login.error}</p>
         )}
         <div className="border-t border-line-subtle" />
         <div className="flex items-center gap-4">

@@ -10,6 +10,7 @@ import {
   canMove,
   uncoveredItems,
 } from '../lib/plan';
+import Feature1LoginPrompt from './Feature1LoginPrompt';
 import ReadinessPanel from './ReadinessPanel';
 
 interface Props {
@@ -34,6 +35,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
   const [planMode, setPlanMode] = useState<'describe' | 'feature1'>('describe');
   const [featureRef, setFeatureRef] = useState('');
 
+  const login = c.feature1Login;
   const plans = c.plans;
   const active = c.activePlan;
   const plan = active?.plan ?? null;
@@ -129,22 +131,23 @@ export default function PlanView({ c, onOpenTab }: Props) {
             {plans.length > 0 &&
               ' Each feature gets its own board — planning this one never touches the others.'}
           </p>
-          {c.tenantConnected && (
-            <div className="mb-4 inline-flex rounded-lg border border-line p-0.5 text-[13px]">
-              <button
-                onClick={() => setPlanMode('describe')}
-                className={`rounded-md px-3 py-1.5 ${planMode === 'describe' ? 'bg-surface font-medium' : 'text-muted'}`}
-              >
-                Describe it
-              </button>
-              <button
-                onClick={() => setPlanMode('feature1')}
-                className={`rounded-md px-3 py-1.5 ${planMode === 'feature1' ? 'bg-surface font-medium' : 'text-muted'}`}
-              >
-                Pull from Feature1
-              </button>
-            </div>
-          )}
+          {/* Shown whether or not Feature1 is connected: hiding it meant the
+              only people who could find it were those who had already set it
+              up in Settings. Not connected simply leads to signing in. */}
+          <div className="mb-4 inline-flex rounded-lg border border-line p-0.5 text-[13px]">
+            <button
+              onClick={() => setPlanMode('describe')}
+              className={`rounded-md px-3 py-1.5 ${planMode === 'describe' ? 'bg-surface font-medium' : 'text-muted'}`}
+            >
+              Describe it
+            </button>
+            <button
+              onClick={() => setPlanMode('feature1')}
+              className={`rounded-md px-3 py-1.5 ${planMode === 'feature1' ? 'bg-surface font-medium' : 'text-muted'}`}
+            >
+              Pull from Feature1
+            </button>
+          </div>
 
           {planMode === 'describe' ? (
             <>
@@ -176,6 +179,8 @@ export default function PlanView({ c, onOpenTab }: Props) {
                 <span className="text-xs text-muted">~2–3 minutes, on your agent subscription</span>
               </div>
             </>
+          ) : !c.tenantConnected ? (
+            <Feature1LoginPrompt login={login} />
           ) : (
             <>
               <label className="section-label mb-1.5 block">Feature1 feature</label>

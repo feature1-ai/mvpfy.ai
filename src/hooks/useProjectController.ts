@@ -26,6 +26,7 @@ import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
 import { ControllerContext, contentOf, UpdateState } from './controllerContext';
 import { BootstrapFlowState, useBootstrapFlow } from './useBootstrapFlow';
+import { Feature1LoginState, useFeature1Login } from './useFeature1Login';
 import { useAgentActions } from './useAgentActions';
 import { LaunchActions, useLaunchActions } from './useLaunchActions';
 import { ReadinessActions, useReadinessActions } from './useReadinessActions';
@@ -62,6 +63,8 @@ function hiddenFromViewer(name: string): boolean {
  * health polling, and derived view state. Components stay presentational.
  */
 export interface ProjectController extends BootstrapFlowState, ReadinessActions, LaunchActions {
+  /** Signing in to Feature1, available wherever the user needs it. */
+  feature1Login: Feature1LoginState;
   project: Project;
   // Derived view state
   appUrl: string;
@@ -307,6 +310,7 @@ export function useProjectController(
     refreshFiles,
     guarded,
   };
+  const feature1Login = useFeature1Login(state, updateState);
   const projectActions = useProjectActions(ctx, lastFailure, latestRun, appLogsRun);
   const planActions = usePlanActions(ctx);
   const agentActions = useAgentActions(ctx);
@@ -373,6 +377,7 @@ export function useProjectController(
     activeFile,
     activeFileContent: files.find((f) => f.relativePath === activeFile)?.content ?? '',
     tenantConnected: state.tenant !== null,
+    feature1Login,
     refreshFiles,
     stopRun: runsApi.stop,
     setActiveFile,

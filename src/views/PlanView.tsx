@@ -19,8 +19,9 @@ interface Props {
 
 /**
  * Plan tab: one board per planned feature (Todo → Coding → Testing → Done),
- * with a switcher to hop between features. Planning a new feature is allowed
- * while another feature's story is still being implemented.
+ * under a toolbar that hops between features, returns to planning home, and
+ * re-reads the files from disk. Planning a new feature is allowed while
+ * another feature's story is still being implemented.
  */
 export default function PlanView({ c, onOpenTab }: Props) {
   const [draft, setDraft] = useState('');
@@ -45,10 +46,27 @@ export default function PlanView({ c, onOpenTab }: Props) {
   const showReadiness =
     pick === 'readiness' || (pick === null && readinessKnown && plans.length === 0);
 
-  const switcher = (readinessKnown || plans.length > 0) && (
+  // Planning home — the "Plan a feature" screen. Reachable from anywhere in
+  // the tab rather than only on the way in, so a board is never a dead end.
+  const goPlanHome = () => {
+    setPick('plans');
+    setCreatingNew(true);
+    setBounce(null);
+  };
+
+  const hasChips = readinessKnown || plans.length > 0;
+
+  const toolbar = (
     <div className="mb-6 flex flex-wrap items-center gap-2">
       {readinessKnown && (
-        <ReadinessChip c={c} selected={showReadiness} onClick={() => setPick('readiness')} />
+        <ReadinessChip
+          c={c}
+          selected={showReadiness}
+          onClick={() => {
+            setPick('readiness');
+            setCreatingNew(false);
+          }}
+        />
       )}
       {plans.map((f) => (
         <FeatureChip
@@ -63,24 +81,34 @@ export default function PlanView({ c, onOpenTab }: Props) {
           }}
         />
       ))}
-      {!creatingNew && (
+      {/* Only worth showing once there is somewhere to come back from. */}
+      {hasChips && (
         <button
-          onClick={() => {
-            setPick('plans');
-            setCreatingNew(true);
-          }}
-          className="h-7 rounded-full border border-dashed border-line px-3 text-xs text-muted hover:border-muted hover:text-body"
+          onClick={goPlanHome}
+          title="Plan a feature"
+          className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors ${
+            !showReadiness && creatingNew
+              ? 'border-ink bg-ink text-white'
+              : 'border-line bg-surface text-body hover:border-muted'
+          }`}
         >
-          + New feature
+          Plan
         </button>
       )}
+      <button
+        onClick={c.refreshFiles}
+        title="Re-read plans, stories and launch readiness from disk"
+        className="ml-auto h-7 rounded-full border border-line bg-surface px-3 text-xs text-muted transition-colors hover:border-muted hover:text-body"
+      >
+        ↻ Refresh
+      </button>
     </div>
   );
 
   if (showReadiness) {
     return (
       <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
-        {switcher}
+        {toolbar}
         <div className="mx-auto w-full max-w-[880px]">
           <ReadinessPanel c={c} onOpenTab={onOpenTab} />
         </div>
@@ -91,7 +119,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
   if (creatingNew || plans.length === 0) {
     return (
       <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
-        {switcher}
+        {toolbar}
         <div className={`mx-auto w-full max-w-[640px] ${plans.length === 0 ? 'pt-14' : 'pt-4'}`}>
           <h1 className="mb-2 text-[26px] font-semibold tracking-[-0.02em]">Plan a feature</h1>
           <p className="mb-7 text-sm leading-relaxed text-body [text-wrap:pretty]">
@@ -190,7 +218,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
   if (active?.generating) {
     return (
       <div className="flex h-full flex-col px-6 pt-7">
-        <div className="mx-auto w-full max-w-[1120px]">{switcher}</div>
+        <div className="mx-auto w-full max-w-[1120px]">{toolbar}</div>
         <Center>
           <span className="dot-pulse mb-3 inline-block h-[9px] w-[9px] rounded-full bg-go" />
           <h2 className="text-[15px] font-semibold">Writing the product spec…</h2>
@@ -268,7 +296,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
   if (!plan.approved) {
     return (
       <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
-        {switcher}
+        {toolbar}
         <div className="mx-auto w-full max-w-[880px]">
           <div className="mb-5">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{plan.spec.feature}</h1>
@@ -318,7 +346,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
 
   return (
     <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
-      {switcher}
+      {toolbar}
 
       {/* Header */}
       <div className="mb-5 flex items-start justify-between gap-4">

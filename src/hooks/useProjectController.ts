@@ -75,6 +75,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   ideUrl: string | null;
   ideHealthy: boolean;
   ideStarting: boolean;
+  /** Why the editor did not start, when the last attempt failed. */
+  ideError: string | null;
   busy: boolean;
   latestRun: RunState | null;
   /** The follow-mode docker logs stream, when one has been started. */
@@ -275,6 +277,12 @@ export function useProjectController(
   // Poll a local port until it answers HTTP so the PM can see when the app
   // (or IDE) is actually ready, not just when its process started.
   useHealthPoll(project.status === 'running' ? appPort : null, setAppHealthy, appHealthy);
+  // Derived from the LAST editor attempt, not from any failed one, so a
+  // successful retry clears it without anything having to remember.
+  const lastIdeRun = projectRuns.filter((r) => r.handle.kind === 'ide-up' && !r.running).pop();
+  const ideError =
+    lastIdeRun && lastIdeRun.exitCode !== 0 ? lastIdeRun.log.trim().slice(-800) || null : null;
+
   const idePort = project.idePort ?? null;
   useHealthPoll(idePort, setIdeHealthy, ideHealthy);
 
@@ -357,6 +365,7 @@ export function useProjectController(
     ideUrl: idePort ? `http://localhost:${idePort}` : null,
     ideHealthy,
     ideStarting: latestRun?.running === true && latestRun.handle.kind === 'ide-up',
+    ideError,
     busy,
     latestRun,
     appLogsRun,

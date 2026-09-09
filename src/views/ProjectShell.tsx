@@ -172,6 +172,31 @@ export default function ProjectShell({
               title="Starting the editor…"
               body="First launch downloads the editor image (~300 MB)."
             />
+          ) : c.ideError ? (
+            /* A failed launch used to look exactly like one never attempted:
+               the button came back and nothing said why. Docker's own words
+               are what makes this reportable. */
+            <div className="mx-auto flex h-full w-full max-w-[720px] flex-col justify-center px-8">
+              <h2 className="text-[15px] font-semibold">The editor did not start</h2>
+              <p className="mt-1 text-[13px] text-body">
+                Docker could not run the editor container. Its output is below.
+              </p>
+              <pre className="mt-3 max-h-[280px] overflow-auto rounded-lg border border-line bg-sunken p-3 font-mono text-[11.5px] leading-relaxed text-body">
+                {c.ideError}
+              </pre>
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  onClick={() => void c.startIde()}
+                  disabled={c.busy}
+                  className="btn-primary h-[34px] px-3.5 text-[13px] disabled:opacity-50"
+                >
+                  Try again
+                </button>
+                <span className="text-xs text-muted">
+                  Docker Desktop needs to be running before the editor can start.
+                </span>
+              </div>
+            </div>
           ) : (
             <Placeholder
               title="Open the code in VS Code"

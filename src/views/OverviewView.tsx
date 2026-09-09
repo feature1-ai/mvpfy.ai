@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ProjectController } from '../hooks/useProjectController';
 import { parsePorts } from '../lib/ports';
+import { latestActivity } from '../lib/runActivity';
 import BootstrapFlowCard from './BootstrapFlowCard';
 import EnvVarsCard from './EnvVarsCard';
 
@@ -66,6 +67,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   }, [project.repos, c.busy]);
 
   const env = envState(c);
+  const activity = c.busy ? latestActivity(c.latestRun?.log ?? '') : null;
   const ports = parsePorts(mvpfyYml);
   const cred = c.demoCredentials[0] ?? null;
   const name = project.localPath.split('/').pop();
@@ -93,7 +95,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
     },
     working: {
       title: env.kind === 'working' ? env.label : '',
-      bodyText: 'This can take a couple of minutes. Watch the progress in Logs.',
+      // Setting a project up begins with a phase that writes the task list,
+      // and until that file lands there are no cards to watch. The agent's
+      // own last step is something true to show in the meantime.
+      bodyText: activity ?? 'This can take a couple of minutes. Watch the progress in Logs.',
     },
     starting: {
       title: 'Waiting for the app to respond…',

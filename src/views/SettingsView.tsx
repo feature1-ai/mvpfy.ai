@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { AgentKind, CliStatus, InstallPlan, MvpfyState, RELEASES_URL } from '../../shared/types';
+import {
+  AgentKind,
+  CliStatus,
+  InstallPlan,
+  MvpfyState,
+  RELEASES_URL,
+  UpdateStatus,
+} from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
 import { CLI_HELP, cliRequired, installHintFor } from '../lib/cliCheck';
 import { useFeature1Login } from '../hooks/useFeature1Login';
@@ -25,6 +32,35 @@ export default function SettingsView({
   updateState,
 }: Props) {
   const login = useFeature1Login(state, updateState);
+  const [checking, setChecking] = useState(false);
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
+
+  // An update that finishes downloading while Settings is open should change
+  // the button under the user, not wait for them to ask again. Only progress
+  // is taken from the launch check — its failures are nobody's question yet,
+  // and an offline start would otherwise greet them with an error they never
+  // asked for.
+  useEffect(
+    () =>
+      window.mvpfy.onUpdateStatus((status) => {
+        if (status.kind === 'available' || status.kind === 'downloaded') setUpdate(status);
+      }),
+    []
+  );
+
+  const updateLine = checking
+    ? 'Checking for a newer version…'
+    : update?.kind === 'downloaded'
+      ? `Version ${update.version ?? ''} is ready to install.`
+      : update?.kind === 'available'
+        ? `Version ${update.version ?? ''} is available.`
+        : update?.kind === 'none'
+          ? 'This is the newest version.'
+          : update?.kind === 'unsupported'
+            ? 'Development builds do not update themselves.'
+            : update?.kind === 'error'
+              ? `Could not check for updates — ${update.message ?? 'the update server did not answer'}.`
+              : 'mvpfy updates itself; this is the build you are running now.';
 
   const gh = cliStatuses.find((s) => s.name === 'gh');
   const [toolRun, setToolRun] = useState<{
@@ -366,21 +402,54 @@ export default function SettingsView({
       </section>
 
       <div className="section-label mb-3 mt-7">About</div>
-      <section className="card flex items-center gap-4 px-[18px] py-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-[13.5px] font-medium">
-            mvpfy <span className="font-mono text-[12.5px] text-body">{version || '—'}</span>
-          </p>
-          <p className="text-[12.5px] text-muted">
-            mvpfy updates itself; this is the build you are running now.
-          </p>
+      <section className="card flex flex-col gap-3 px-[18px] py-4">
+        <div className="flex items-center gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-medium">
+              mvpfy <span className="font-mono text-[12.5px] text-body">{version || '—'}</span>
+            </p>
+            <p className="text-[12.5px] text-muted">{updateLine}</p>
+          </div>
+          {/* Downloaded: the only thing left is the restart, so that is the
+              button. macOS cannot install an unsigned update, so there an
+              available one sends you to the download instead. */}
+          {update?.kind === 'downloaded' ? (
+            <button
+              onClick={() => void window.mvpfy.installUpdate()}
+              className="btn-primary h-[30px] shrink-0 px-3 text-[12.5px]"
+            >
+              Restart to update
+            </button>
+          ) : update?.kind === 'available' ? (
+            <button
+              onClick={() => void window.mvpfy.openExternal(RELEASES_URL)}
+              className="btn-primary h-[30px] shrink-0 px-3 text-[12.5px]"
+            >
+              Download ↗
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setChecking(true);
+                setUpdate(null);
+                void window.mvpfy
+                  .checkForUpdates()
+                  .then(setUpdate)
+                  .finally(() => setChecking(false));
+              }}
+              disabled={checking}
+              className="btn-secondary h-[30px] shrink-0 px-3 text-[12.5px] disabled:opacity-50"
+            >
+              {checking ? 'Checking…' : 'Check for updates'}
+            </button>
+          )}
+          <button
+            onClick={() => void window.mvpfy.openExternal(RELEASES_URL)}
+            className="shrink-0 text-[12.5px] text-go hover:underline"
+          >
+            Release notes ↗
+          </button>
         </div>
-        <button
-          onClick={() => void window.mvpfy.openExternal(RELEASES_URL)}
-          className="text-[12.5px] text-go hover:underline"
-        >
-          Release notes ↗
-        </button>
       </section>
     </div>
   );

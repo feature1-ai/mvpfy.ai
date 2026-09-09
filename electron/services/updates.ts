@@ -25,6 +25,46 @@ export function initAutoUpdates(send: (status: UpdateStatus) => void): void {
   autoUpdater.checkForUpdates().catch(() => undefined);
 }
 
+/**
+ * A check the user asked for, which therefore owes them an answer — including
+ * "you are up to date" and the reason it failed, neither of which the launch
+ * check has any reason to report.
+ *
+ * Resolves on whichever of the updater's outcomes arrives first. The timeout
+ * exists because a stalled network produces no event at all, and a button
+ * that spins forever is worse than one that admits defeat.
+ */
+export function checkForUpdates(): Promise<UpdateStatus> {
+  if (!app.isPackaged) {
+    return Promise.resolve({ kind: 'unsupported', message: 'Development build' });
+  }
+  return new Promise((resolve) => {
+    const finish = (status: UpdateStatus) => {
+      clearTimeout(timer);
+      autoUpdater.off('update-available', onAvailable);
+      autoUpdater.off('update-not-available', onNone);
+      autoUpdater.off('error', onError);
+      resolve(status);
+    };
+    const onAvailable = (info: { version: string }) =>
+      finish({ kind: 'available', version: info.version });
+    const onNone = () => finish({ kind: 'none', version: app.getVersion() });
+    const onError = (err: Error) => finish({ kind: 'error', message: err?.message });
+    const timer = setTimeout(
+      () => finish({ kind: 'error', message: 'Timed out reaching the update server' }),
+      30_000
+    );
+    autoUpdater.on('update-available', onAvailable);
+    autoUpdater.on('update-not-available', onNone);
+    autoUpdater.on('error', onError);
+    autoUpdater
+      .checkForUpdates()
+      .catch((err: unknown) =>
+        finish({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
+      );
+  });
+}
+
 export function installUpdate(): void {
   autoUpdater.quitAndInstall();
 }

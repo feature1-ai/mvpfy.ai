@@ -234,8 +234,15 @@ export function specFileFor(slug: string): string {
 }
 
 export interface UpdateStatus {
-  kind: 'available' | 'downloaded' | 'error';
+  /**
+   * 'none' and 'unsupported' only ever answer a check the user asked for —
+   * nothing to say is not worth a banner. 'unsupported' is a dev build, which
+   * has no release to update from.
+   */
+  kind: 'available' | 'downloaded' | 'error' | 'none' | 'unsupported';
   version?: string;
+  /** Why a check failed, in whatever words the updater used. */
+  message?: string;
 }
 
 /** Where users can always fetch the newest build by hand. */
@@ -276,5 +283,10 @@ export interface MvpfyApi {
   onRunOutput(cb: (ev: RunOutputEvent) => void): () => void;
   onRunExit(cb: (ev: RunExitEvent) => void): () => void;
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
+  /**
+   * Ask now rather than waiting for the check at launch. Resolves once the
+   * updater has an answer, so the caller can show one.
+   */
+  checkForUpdates(): Promise<UpdateStatus>;
   installUpdate(): Promise<void>;
 }

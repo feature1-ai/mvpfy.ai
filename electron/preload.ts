@@ -51,6 +51,7 @@ const api: MvpfyApi = {
   onRunOutput: (cb: (ev: RunOutputEvent) => void) => subscribe('run-output', cb),
   onRunExit: (cb: (ev: RunExitEvent) => void) => subscribe('run-exit', cb),
   onUpdateStatus: (cb: (status: UpdateStatus) => void) => subscribe('update-status', cb),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
 };
 

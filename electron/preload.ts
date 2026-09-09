@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 import {
+  AgentKind,
   ComposeAction,
   McpFetchRequest,
   MvpfyApi,
@@ -19,6 +20,7 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 const api: MvpfyApi = {
   appVersion: () => ipcRenderer.invoke('app-version'),
   cliCheck: () => ipcRenderer.invoke('cli-check'),
+  agentModels: (agent: AgentKind) => ipcRenderer.invoke('agent-models', agent),
   readState: () => ipcRenderer.invoke('read-state'),
   writeState: (state: MvpfyState) => ipcRenderer.invoke('write-state', state),
   keychainGet: (entry: string) => ipcRenderer.invoke('keychain-get', entry),

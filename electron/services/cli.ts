@@ -56,6 +56,44 @@ export function loginOpensTerminal(tool: string): boolean {
   return LOGIN_COMMANDS[tool]?.mode === 'terminal';
 }
 
+/**
+ * Model names an agent CLI advertises in its own --help.
+ *
+ * Neither CLI can list its models — there is no `claude models` and no
+ * `[possible values]` on codex's --model — but claude's help text names the
+ * current aliases in prose, and that text ships with the installed version.
+ * Reading it beats a list hardcoded here, which is wrong the moment a model
+ * is added. Anything unparseable yields nothing, and the caller falls back to
+ * letting the user type a name.
+ */
+export function parseModelsFromHelp(help: string): string[] {
+  const lines = help.split('\n');
+  const start = lines.findIndex((l) => /^\s*(-\w,\s*)?--model\b/.test(l));
+  if (start === -1) return [];
+  const block: string[] = [lines[start]];
+  for (let i = start + 1; i < lines.length; i++) {
+    // The description is the indented continuation; the next option ends it.
+    if (/^\s*-\w?[\w-]*,?\s*--/.test(lines[i]) || lines[i].trim() === '') break;
+    block.push(lines[i]);
+  }
+  const quoted = block.join(' ').match(/'([A-Za-z][A-Za-z0-9.-]*)'/g) ?? [];
+  return [...new Set(quoted.map((q) => q.slice(1, -1)))];
+}
+
+/** Ask an agent CLI which models it will accept. Empty when it will not say. */
+export function agentModels(agent: CliName): string[] {
+  // codex documents --model on its `exec` subcommand, not at the top level.
+  const help = agent === 'claude' ? 'claude --help' : 'codex exec --help';
+  // Piped into cat on purpose: claude writes its help to a pipe and exits
+  // without waiting for the drain, so reading it directly returns a few
+  // kilobytes cut off mid-line — and --model sorts past the cut. cmd.exe has
+  // no cat, and gets the plain form; a short read there simply yields nothing
+  // and the user types the name instead.
+  const probe = IS_WIN ? `${help} 2>&1` : `${help} 2>&1 | cat`;
+  const result = spawnShellSync(probe, { encoding: 'utf8', timeout: 15_000 });
+  return parseModelsFromHelp(result.stdout ?? '');
+}
+
 export function cliCheck(): CliStatus[] {
   // Re-read PATH from the registry first, so installing a tool (or fixing
   // PATH) and pressing Re-check works without restarting mvpfy. Two reg

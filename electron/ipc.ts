@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
 import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
-import { cliCheck, loginCommand } from './services/cli';
+import { agentModels, cliCheck, loginCommand } from './services/cli';
 import { composeCommand, ideCommand, ideStatus } from './services/docker';
 import { installCommand, installPlans } from './services/install';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
@@ -25,6 +25,7 @@ import { checkForUpdates, installUpdate } from './services/updates';
 export function registerIpc(): void {
   ipcMain.handle('app-version', () => app.getVersion());
   ipcMain.handle('cli-check', () => cliCheck());
+  ipcMain.handle('agent-models', (_ev, agent: 'claude' | 'codex') => agentModels(agent));
   ipcMain.handle('read-state', () => readState());
   ipcMain.handle('write-state', (_ev, state: MvpfyState) => writeState(state));
   ipcMain.handle('keychain-get', (_ev, entry: string) => keychainGet(entry));

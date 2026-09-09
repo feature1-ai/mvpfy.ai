@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loginCommand, loginOpensTerminal } from './cli';
+import { loginCommand, loginOpensTerminal, parseModelsFromHelp } from './cli';
 
 const onMac = process.platform === 'darwin';
 
@@ -32,5 +32,41 @@ describe('loginCommand', () => {
     expect(() => loginCommand('git')).toThrow('No in-app sign-in for "git"');
     expect(() => loginCommand('rm -rf /')).toThrow(/No in-app sign-in/);
     expect(loginOpensTerminal('git')).toBe(false);
+  });
+});
+
+describe('parseModelsFromHelp', () => {
+  // Claude Code's real --help, which names the aliases in prose.
+  const claudeHelp = [
+    '  --mcp-config <configs...>             Load MCP servers from JSON',
+    '  --model <model>                       Model for the current session. Provide',
+    '                                        an alias for the latest model (e.g.',
+    "                                        'fable', 'opus', or 'sonnet') or a",
+    "                                        model's full name (e.g.",
+    "                                        'claude-fable-5').",
+    '  -n, --name <name>                     Set a display name for this session',
+  ].join('\n');
+
+  it('reads the models the CLI advertises, in order, without duplicates', () => {
+    expect(parseModelsFromHelp(claudeHelp)).toEqual(['fable', 'opus', 'sonnet', 'claude-fable-5']);
+  });
+
+  it('stops at the next option, so a later quoted word is not a model', () => {
+    const help = `${claudeHelp}\n  --output-format <format>              choices: 'text', 'stream-json'`;
+    expect(parseModelsFromHelp(help)).not.toContain('text');
+    expect(parseModelsFromHelp(help)).not.toContain('stream-json');
+  });
+
+  it('handles a short flag before the long one, as codex writes it', () => {
+    const help = "  -m, --model <MODEL>\n          Use 'o3' or 'gpt-5'\n\n      --oss";
+    expect(parseModelsFromHelp(help)).toEqual(['o3', 'gpt-5']);
+  });
+
+  it('returns nothing when the CLI names no models, so the user can type one', () => {
+    expect(
+      parseModelsFromHelp('  -m, --model <MODEL>\n          Model the agent should use')
+    ).toEqual([]);
+    expect(parseModelsFromHelp('no options here at all')).toEqual([]);
+    expect(parseModelsFromHelp('')).toEqual([]);
   });
 });

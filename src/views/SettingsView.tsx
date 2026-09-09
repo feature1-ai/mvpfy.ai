@@ -79,6 +79,15 @@ export default function SettingsView({
     void window.mvpfy.installPlans().then(setPlans);
   }, [cliStatuses]);
 
+  // The models come from the installed CLIs, so they are re-read whenever the
+  // checklist is — installing or updating an agent can change the list.
+  const [models, setModels] = useState<Record<AgentKind, string[]>>({ claude: [], codex: [] });
+  useEffect(() => {
+    void Promise.all([window.mvpfy.agentModels('claude'), window.mvpfy.agentModels('codex')]).then(
+      ([claude, codex]) => setModels({ claude, codex })
+    );
+  }, [cliStatuses]);
+
   // Stream sign-in and install output: device codes, URLs and progress bars
   // all matter to the person watching.
   useEffect(() => {
@@ -346,30 +355,17 @@ export default function SettingsView({
           <div className="min-w-0 flex-1">
             <p className="text-[13.5px] font-medium">Claude model</p>
             <p className="text-[12.5px] text-muted">
-              Used only when the default agent is Claude Code. Leave empty to use whatever{' '}
+              Used only when the default agent is Claude Code. Leave on default to use whatever{' '}
               <code className="font-mono">claude</code> is already set to.
             </p>
           </div>
-          {/* A list, not a menu: the aliases cover most people, and anyone on
-              a model mvpfy has not heard of can still type its id. */}
-          <input
+          <ModelPicker
             value={state.settings.claudeModel}
-            onChange={(e) =>
-              updateState((prev) => ({
-                ...prev,
-                settings: { ...prev.settings, claudeModel: e.target.value.trim() },
-              }))
+            models={models.claude}
+            onChange={(claudeModel) =>
+              updateState((prev) => ({ ...prev, settings: { ...prev.settings, claudeModel } }))
             }
-            list="claude-models"
-            placeholder="default"
-            spellCheck={false}
-            className="h-[34px] w-44 rounded-md border border-line px-[11px] font-mono text-[12.5px] outline-none placeholder:text-faint focus:border-muted"
           />
-          <datalist id="claude-models">
-            <option value="opus" />
-            <option value="sonnet" />
-            <option value="haiku" />
-          </datalist>
         </div>
         <div className="border-t border-line-subtle" />
         <div className="flex items-center gap-4">
@@ -377,15 +373,12 @@ export default function SettingsView({
             <p className="text-[13.5px] font-medium">Codex model</p>
             <p className="text-[12.5px] text-muted">Used only when the default agent is Codex.</p>
           </div>
-          <input
+          <ModelPicker
             value={state.settings.codexModel}
-            onChange={(e) =>
-              updateState((prev) => ({
-                ...prev,
-                settings: { ...prev.settings, codexModel: e.target.value },
-              }))
+            models={models.codex}
+            onChange={(codexModel) =>
+              updateState((prev) => ({ ...prev, settings: { ...prev.settings, codexModel } }))
             }
-            className="h-[34px] w-44 rounded-md border border-line px-[11px] font-mono text-[12.5px] outline-none focus:border-muted"
           />
         </div>
       </section>
@@ -452,5 +445,65 @@ export default function SettingsView({
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * Pick a model, from what the CLI itself advertises.
+ *
+ * Neither agent can list its models, so this is whatever their --help names.
+ * When that comes back empty the field stays free text rather than offering a
+ * guess: a wrong list is worse than no list, since it would hide the model the
+ * user actually wants.
+ */
+function ModelPicker({
+  value,
+  models,
+  onChange,
+}: {
+  value: string;
+  models: string[];
+  onChange: (value: string) => void;
+}) {
+  // A state file written before this setting existed has no value at all;
+  // treat that as the default rather than as a model named "undefined".
+  const current = value ?? '';
+  const known = current === '' || models.includes(current);
+  const [custom, setCustom] = useState(false);
+  const typing = custom || !known;
+
+  if (models.length === 0 || typing) {
+    return (
+      <input
+        value={current}
+        onChange={(e) => onChange(e.target.value.trim())}
+        onBlur={() => setCustom(false)}
+        placeholder="default"
+        spellCheck={false}
+        autoFocus={custom}
+        className="h-[34px] w-44 shrink-0 rounded-md border border-line px-[11px] font-mono text-[12.5px] outline-none placeholder:text-faint focus:border-muted"
+      />
+    );
+  }
+  return (
+    <select
+      value={current}
+      onChange={(e) => {
+        if (e.target.value === '__custom__') {
+          setCustom(true);
+          return;
+        }
+        onChange(e.target.value);
+      }}
+      className="h-[34px] w-44 shrink-0 rounded-md border border-line bg-surface px-2 font-mono text-[12.5px]"
+    >
+      <option value="">default</option>
+      {models.map((m) => (
+        <option key={m} value={m}>
+          {m}
+        </option>
+      ))}
+      <option value="__custom__">Other…</option>
+    </select>
   );
 }

@@ -253,6 +253,8 @@ export interface MvpfyApi {
   /** The running build's version, for support and update checks. */
   appVersion(): Promise<string>;
   cliCheck(): Promise<CliStatus[]>;
+  /** Model names this agent's CLI advertises; empty when it will not say. */
+  agentModels(agent: AgentKind): Promise<string[]>;
   readState(): Promise<MvpfyState>;
   writeState(state: MvpfyState): Promise<void>;
   keychainGet(entry: string): Promise<string | null>;

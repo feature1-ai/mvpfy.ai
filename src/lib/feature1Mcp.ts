@@ -124,7 +124,10 @@ export class Feature1McpClient {
     try {
       return JSON.parse(text);
     } catch {
-      return text;
+      // Prose, not JSON. Hand back the whole result rather than the string:
+      // a tool may carry its real answer in fields beside `content`, and
+      // returning the text alone threw those away.
+      return result;
     }
   }
 
@@ -134,8 +137,20 @@ export class Feature1McpClient {
     const raw = (await this.callTool('browser_login')) as Record<string, unknown>;
     const loginUrl = (raw?.login_url ?? raw?.loginUrl) as string | undefined;
     const loginId = (raw?.login_id ?? raw?.loginId) as string | undefined;
-    if (!loginUrl || !loginId) {
-      throw new Feature1McpError('browser_login did not return a login URL');
+    if (!loginUrl) {
+      throw new Feature1McpError(
+        'Feature1 did not offer a sign-in URL. Check the address is right and that the workspace is reachable.'
+      );
+    }
+    // A sign-in mvpfy can finish has to end with a token it can keep: it holds
+    // one per workspace in the OS keychain and sends it with every request, so
+    // that each person sees their own work. A workspace whose browser sign-in
+    // leaves the token on the server has nothing to hand back, and mvpfy
+    // cannot pretend otherwise.
+    if (!loginId) {
+      throw new Feature1McpError(
+        'This Feature1 workspace signs in without handing back a token, so mvpfy cannot sign in as you. It needs browser_login to return a login_id alongside the URL, and /login/status to return the token once you have signed in.'
+      );
     }
     return { loginUrl, loginId };
   }

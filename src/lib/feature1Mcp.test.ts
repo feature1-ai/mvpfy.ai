@@ -133,3 +133,58 @@ describe('listAssignedFeatures', () => {
     );
   });
 });
+
+describe('browserLogin', () => {
+  const reply = (result: unknown) => {
+    (globalThis as { window?: unknown }).window = {
+      mvpfy: {
+        mcpFetch: async () => ({
+          ok: true,
+          status: 200,
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, result }),
+        }),
+      },
+    };
+  };
+
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it('reads a login handed back beside the prose, not only inside it', async () => {
+    // The tool's answer lives in fields next to `content`; the text block is
+    // instructions for a human and is not JSON.
+    reply({
+      content: [{ type: 'text', text: 'Open this URL to sign in:\n\nhttps://x/login' }],
+      loginUrl: 'https://x/login',
+      loginId: 'abc123',
+    });
+    expect(await new Feature1McpClient('acme', null).browserLogin()).toEqual({
+      loginUrl: 'https://x/login',
+      loginId: 'abc123',
+    });
+  });
+
+  it('accepts snake_case too', async () => {
+    reply({ content: [], login_url: 'https://x/login', login_id: 'abc123' });
+    const start = await new Feature1McpClient('acme', null).browserLogin();
+    expect(start.loginId).toBe('abc123');
+  });
+
+  it('says the workspace keeps the token when there is no login id', async () => {
+    reply({
+      content: [{ type: 'text', text: 'Open https://x/login' }],
+      loginUrl: 'https://x/login',
+    });
+    await expect(new Feature1McpClient('acme', null).browserLogin()).rejects.toThrow(
+      /without handing back a token/
+    );
+  });
+
+  it('says so plainly when there is no sign-in URL at all', async () => {
+    reply({ content: [{ type: 'text', text: 'nope' }] });
+    await expect(new Feature1McpClient('acme', null).browserLogin()).rejects.toThrow(
+      /did not offer a sign-in URL/
+    );
+  });
+});

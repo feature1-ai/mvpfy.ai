@@ -79,6 +79,9 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   ideError: string | null;
   busy: boolean;
   latestRun: RunState | null;
+  /** Every run this project has had this session, oldest first — the log of
+   *  a finished run is the only record of why it failed. */
+  runHistory: RunState[];
   /** The follow-mode docker logs stream, when one has been started. */
   appLogsRun: RunState | null;
   startAppLogs(): Promise<boolean>;
@@ -368,6 +371,7 @@ export function useProjectController(
     ideError,
     busy,
     latestRun,
+    runHistory: projectRuns.filter((r) => r.handle.kind !== 'app-logs'),
     appLogsRun,
     lastShipPrUrl: lastShipRun?.prUrl ?? null,
     actionError,

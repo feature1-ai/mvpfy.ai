@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { MvpfyState, Project } from '../../shared/types';
 import { UpdateState, useProjectController } from '../hooks/useProjectController';
@@ -36,6 +36,12 @@ export default function ProjectShell({
   // Auto-follow container logs when the PM opens the Logs tab of a running
   // environment; stays running until stopped or the environment goes down.
   const appLogsActive = c.appLogsRun?.running === true;
+
+  // Follows the newest run until the user picks one, then stays where they
+  // put it — a log being read should not be swapped out underneath them.
+  const [pickedRunId, setPickedRunId] = useState<string | null>(null);
+  const shownRun =
+    (pickedRunId && c.runHistory.find((r) => r.handle.runId === pickedRunId)) || c.latestRun;
   useEffect(() => {
     if (tab === 'logs' && project.status === 'running' && !appLogsActive) {
       void c.startAppLogs();
@@ -249,8 +255,26 @@ export default function ProjectShell({
                 <span className="text-[11px] text-faint">
                   agent runs, bootstraps, and environment commands
                 </span>
+                {/* Every run is kept for the session. Showing only the newest
+                    meant the log explaining a failure disappeared the moment
+                    anything else ran — which is exactly when it is wanted. */}
+                {c.runHistory.length > 1 && (
+                  <select
+                    value={shownRun?.handle.runId ?? ''}
+                    onChange={(e) => setPickedRunId(e.target.value)}
+                    className="ml-auto h-7 max-w-[280px] rounded-md border border-line bg-surface px-2 text-xs"
+                  >
+                    {[...c.runHistory].reverse().map((run, i) => (
+                      <option key={run.handle.runId} value={run.handle.runId}>
+                        {i === 0 ? 'Latest — ' : ''}
+                        {RUN_LABELS[run.handle.kind] ?? run.handle.kind}
+                        {run.running ? ' · running' : run.exitCode === 0 ? '' : ' · failed'}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-              <LogPanel run={c.latestRun} onStop={c.stopRun} />
+              <LogPanel run={shownRun} onStop={c.stopRun} />
             </div>
           </div>
         </Pane>
@@ -258,6 +282,25 @@ export default function ProjectShell({
     </div>
   );
 }
+
+/** What each kind of run is called, for someone reading their own logs. */
+const RUN_LABELS: Record<string, string> = {
+  'bootstrap-plan': 'Working out what the app needs',
+  bootstrap: 'Setting the app up',
+  'docker-up': 'Starting the environment',
+  'docker-down': 'Stopping the environment',
+  'ide-up': 'Starting the editor',
+  'ide-down': 'Stopping the editor',
+  triage: 'Diagnosing a failure',
+  instruct: 'Making a change',
+  sync: 'Syncing repositories',
+  readiness: 'Checking launch readiness',
+  'readiness-fix': 'Fixing a readiness finding',
+  'launch-plan': 'Pricing a launch',
+  'plan-spec': 'Writing a product spec',
+  'plan-story': 'Implementing a story',
+  ship: 'Shipping a pull request',
+};
 
 function Pane({
   active,

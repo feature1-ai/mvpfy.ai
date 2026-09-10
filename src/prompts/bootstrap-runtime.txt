@@ -91,6 +91,26 @@ Follow these steps:
      interpolation in the compose file) so the values actually reach the containers — the
      product manager edits this file from the app and expects changes to take effect on
      restart. Optional third-party keys stay as empty values with the feature disabled.
+   • CLAUDE.md — in the workspace root, a block telling any coding agent which files
+     here belong to mvpfy's LOCAL setup and are not part of the product. Wrap it in
+     the exact markers below and replace only what is between them; if CLAUDE.md
+     already exists, leave every other line of it untouched, and if it does not,
+     create it containing just this block.
+
+     <!-- mvpfy:start --> (do not edit inside; mvpfy rewrites this)
+     ## mvpfy's local setup
+     These files exist so this product can run on a laptop. They are NOT part of the
+     product and are not deployed: mvpfy.yml, docker-compose.mvpfy.yml, .env.mvpfy.example,
+     the local .env, mvpfy-*.md, mvpfy-*.json, and everything under mvpfy/.
+     Do not treat anything in them as production behaviour, and do not change them when
+     implementing a feature — mvpfy owns them.
+     <then list, in one line each, every stand-in you created and what the product would
+     need instead in production — e.g. "mvpfy/services/payments is a stand-in; the real
+     product needs a payment provider configured via STRIPE_SECRET_KEY">
+     The generated Dockerfile and compose file run the app in DEVELOPMENT mode with a file
+     watcher. They are not a production build.
+     <!-- mvpfy:end -->
+
    • mvpfy-summary.md — 5–8 plain-language lines FOR THE PRODUCT MANAGER: what will run,
      the ports, what was mocked or disabled, roughly how long the first build takes, and a
      closing line confirming everything runs locally on their machine. No jargon — they
@@ -127,7 +147,13 @@ Rules:
   needs them: modern npm packages ship prebuilt binaries (sharp needs no libvips build,
   puppeteer downloads its own chromium). If a truly heavy native dependency is required,
   pick an official base image that already contains it instead of installing via apt.
-• Do not overwrite existing files without creating a .bak backup first.
+• Do not overwrite existing files without creating a .bak backup first. CLAUDE.md is the
+  exception in one direction only: replace what is between the mvpfy markers, never the
+  rest of the file, and never back it up.
+• Add mvpfy's own files to .gitignore if they are not already there — mvpfy.yml,
+  docker-compose.mvpfy.yml, .env.mvpfy.example, .env, mvpfy-*.md, mvpfy-*.json and mvpfy/.
+  They are scaffolding, and a story's pull request should never contain them. CLAUDE.md is
+  NOT ignored: it is useful to whoever works on this repo next.
 • Everything you generate must live under the repo root (use mvpfy/ for mock services).
 
 Finish by writing mvpfy-run.md: which services run, their ports, how the product manager can

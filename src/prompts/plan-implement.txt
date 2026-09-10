@@ -26,6 +26,11 @@ Hard rules:
 • Touch only what this story needs. Never modify {planFile}, {specFile}, or any
   mvpfy-* file — the app owns those, and other mvpfy-plan.* / mvpfy-spec.* files
   belong to other planned features.
+• Never COMMIT mvpfy's own files either, even if they show as untracked: mvpfy.yml,
+  docker-compose.mvpfy.yml, .env.mvpfy.example, .env, mvpfy-*.md, mvpfy-*.json and
+  anything under mvpfy/. They are local scaffolding, not part of the product, and a
+  reviewer should never see them in this pull request. Stage the files you changed by
+  name rather than staging everything.
 • Never commit env files or secrets.
 • Do not ask for confirmation mid-flow. If truly blocked on information only the product
   manager has, write numbered questions to mvpfy-questions.md and stop.

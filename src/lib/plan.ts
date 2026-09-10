@@ -68,6 +68,14 @@ export interface ProjectPlan {
   stories: PlanStory[];
   /** The PM has reviewed the PRD and agreed — only then does the board show. */
   approved: boolean;
+  /**
+   * The builder has tried every story and accepts the feature as a whole —
+   * the gate before its pull request. Story-level Done is still theirs too;
+   * this is the second one, over the finished set.
+   */
+  tested?: boolean;
+  /** Pull requests raised for this feature: one per repository that changed. */
+  prUrls?: string[];
   /** 'feature1' when this plan was pulled rather than written here. */
   source?: 'feature1';
   /**
@@ -234,12 +242,15 @@ export function parsePlan(content: string | null | undefined): ProjectPlan | nul
   // (e.g. a spec refinement rewrote the file without it).
   const approved = raw.approved === true || stories.some((s) => s.lane !== 'todo' || s.prUrl);
   const featureRef = String(raw.feature1FeatureRef ?? '').trim();
+  const prUrls = normalizeStrings(raw.prUrls);
   return {
     version: 1,
     generatedAt: String(raw.generatedAt ?? ''),
     spec,
     stories,
     approved,
+    ...(raw.tested === true ? { tested: true } : {}),
+    ...(prUrls.length > 0 ? { prUrls } : {}),
     ...(raw.source === 'feature1' ? { source: 'feature1' as const } : {}),
     ...(featureRef ? { feature1FeatureRef: featureRef } : {}),
   };

@@ -5,6 +5,7 @@ import {
   LANES,
   LANE_LABELS,
   PlanStory,
+  ProjectPlan,
   SpecItem,
   StoryLane,
   canMove,
@@ -426,9 +427,12 @@ export default function PlanView({ c, onOpenTab }: Props) {
             )}
           </p>
         </div>
-        <button onClick={() => setSpecOpen((v) => !v)} className="btn-secondary h-8 px-3.5">
-          {specOpen ? 'Hide spec' : 'View spec'}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <FeatureShipControls c={c} plan={plan} />
+          <button onClick={() => setSpecOpen((v) => !v)} className="btn-secondary h-8 px-3.5">
+            {specOpen ? 'Hide spec' : 'View spec'}
+          </button>
+        </div>
       </div>
 
       {c.actionError && (
@@ -482,12 +486,66 @@ export default function PlanView({ c, onOpenTab }: Props) {
         ))}
       </div>
       <p className="mt-3 text-[11.5px] text-muted">
-        mvpfy moves stories through Coding into Testing and opens the PR. Only you can move a story
-        to Done — test it in the App tab first. Drag a Testing story back to Coding to send it back
-        with feedback. One story is implemented at a time across all features; planning new features
-        is always allowed.
+        mvpfy moves stories through Coding into Testing. Only you can move a story to Done — test it
+        in the App tab first. Drag a Testing story back to Coding to send it back with feedback.
+        Every story in this feature commits to one branch, and one pull request opens for the whole
+        feature once you have accepted them all. One story is implemented at a time across all
+        features; planning new features is always allowed.
       </p>
     </div>
+  );
+}
+
+/**
+ * Getting the finished feature out: the builder's gate over the whole set,
+ * then its pull requests. Stories are still accepted one at a time — this is
+ * the second gate, over what they add up to.
+ */
+function FeatureShipControls({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
+  const prUrls = plan.prUrls ?? [];
+  if (prUrls.length > 0) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {prUrls.map((url) => (
+          <button
+            key={url}
+            onClick={() => c.openExternal(url)}
+            className="max-w-[240px] truncate font-mono text-[11.5px] text-go hover:underline"
+          >
+            {url.replace('https://', '')}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  const done = plan.stories.filter((s) => s.lane === 'done').length;
+  const allDone = plan.stories.length > 0 && done === plan.stories.length;
+
+  // Every story accepted: the feature is ready to go out, so that is the
+  // primary action. Before then it stays available but quiet — a builder may
+  // want a reviewer on a half-finished feature, and that is their call.
+  return allDone ? (
+    <button
+      onClick={() => {
+        void c.markFeatureTested();
+        void c.raisePr();
+      }}
+      disabled={c.busy}
+      title="Push the feature branch and open a pull request in each repository that changed"
+      className="btn-primary h-8 px-3.5 disabled:opacity-50"
+    >
+      Raise pull request
+    </button>
+  ) : (
+    <button
+      onClick={() => void c.raisePr()}
+      disabled={c.busy}
+      title="Open a pull request now, before every story has been accepted"
+      className="h-8 px-3 text-[13px] text-muted hover:text-body disabled:opacity-50"
+    >
+      Raise PR early
+    </button>
   );
 }
 

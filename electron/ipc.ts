@@ -13,6 +13,7 @@ import {
   linkProject,
   readRepoBranches,
   readRepoFiles,
+  raisePrCommand,
   repoSyncCommand,
   writeRepoFile,
 } from './services/projects';
@@ -96,6 +97,24 @@ export function registerIpc(): void {
     }
     startRun(runId, repoSyncCommand(dirs), resolved);
   });
+  ipcMain.handle(
+    'raise-pr',
+    (
+      _ev,
+      runId: string,
+      workspacePath: string,
+      dirs: string[],
+      branch: string,
+      title: string,
+      body: string
+    ) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Pull requests are restricted to managed and linked project directories');
+      }
+      startRun(runId, raisePrCommand(dirs, branch, title, body), resolved);
+    }
+  );
   ipcMain.handle('cli-login', (_ev, runId: string, tool: string) =>
     startRun(runId, loginCommand(tool), TMP_DIR)
   );

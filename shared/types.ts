@@ -278,6 +278,15 @@ export interface MvpfyApi {
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
   repoBranches(dirs: string[]): Promise<Record<string, string>>;
+  /** Push a feature branch and open a pull request in each repo that changed. */
+  raisePullRequests(
+    runId: string,
+    workspacePath: string,
+    dirs: string[],
+    branch: string,
+    title: string,
+    body: string
+  ): Promise<void>;
   repoSync(runId: string, workspacePath: string, dirs: string[]): Promise<void>;
   findFreePort(start: number): Promise<number>;
   probeUrl(url: string): Promise<{ reachable: boolean; status: number }>;

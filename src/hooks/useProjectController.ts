@@ -147,6 +147,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   generateSpec(description: string): Promise<boolean>;
   pullFeature(featureRef: string): Promise<boolean>;
   refineSpec(instruction: string): Promise<boolean>;
+  /** The builder accepts the finished feature — the gate before its PR. */
+  markFeatureTested(): Promise<boolean>;
+  /** Push the feature branch and open a PR in each repo that changed. */
+  raisePr(): Promise<boolean>;
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;

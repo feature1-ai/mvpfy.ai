@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { canMove, itemId, parsePlan, slugForFeature, snapEstimate, uncoveredItems } from './plan';
+import {
+  canMove,
+  itemId,
+  parsePlan,
+  serializePlan,
+  slugForFeature,
+  snapEstimate,
+  uncoveredItems,
+} from './plan';
 
 const rawPlan = JSON.stringify({
   generatedAt: '2026-08-23',
@@ -122,5 +130,41 @@ describe('slugForFeature', () => {
 
   it('falls back to "feature" when the description has no usable words', () => {
     expect(slugForFeature('!!!', [])).toBe('feature');
+  });
+});
+
+describe('feature-level shipping', () => {
+  const withFeature = (extra: Record<string, unknown>) =>
+    parsePlan(
+      JSON.stringify({
+        version: 1,
+        spec: { feature: 'Invoice export', overview: {}, scope: {}, requirements: {} },
+        stories: [{ code: 'US-01', title: 'Download as PDF' }],
+        ...extra,
+      })
+    );
+
+  it('carries the builder’s acceptance of the whole feature', () => {
+    expect(withFeature({ tested: true })?.tested).toBe(true);
+    expect(withFeature({})?.tested).toBeUndefined();
+    // Only a real true counts — an agent writing "yes" does not open a PR.
+    expect(withFeature({ tested: 'yes' })?.tested).toBeUndefined();
+  });
+
+  it('keeps one pull request per repository that changed', () => {
+    const urls = ['https://github.com/acme/api/pull/12', 'https://github.com/acme/web/pull/7'];
+    expect(withFeature({ prUrls: urls })?.prUrls).toEqual(urls);
+  });
+
+  it('has no pull requests until one is raised', () => {
+    expect(withFeature({})?.prUrls).toBeUndefined();
+    expect(withFeature({ prUrls: [] })?.prUrls).toBeUndefined();
+  });
+
+  it('survives a round trip, so a raised PR is not lost on the next write', () => {
+    const plan = withFeature({ tested: true, prUrls: ['https://github.com/acme/api/pull/12'] })!;
+    const again = parsePlan(serializePlan(plan))!;
+    expect(again.tested).toBe(true);
+    expect(again.prUrls).toEqual(['https://github.com/acme/api/pull/12']);
   });
 });

@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PROJECTS_DIR, setLinkedRoots } from '../paths';
-import { repoSyncCommand } from './projects';
+import { raisePrCommand, repoSyncCommand } from './projects';
 import { IS_WIN, shellQuote } from './shell';
 
 afterEach(() => setLinkedRoots([]));
@@ -42,5 +42,23 @@ describe('repoSyncCommand', () => {
   it('rejects traversal that escapes the managed root', () => {
     const sneaky = path.join(PROJECTS_DIR, 'app', '..', '..', '..', 'Documents');
     expect(() => repoSyncCommand([sneaky])).toThrow(/restricted to managed and linked/);
+  });
+});
+
+describe('raisePrCommand', () => {
+  const dir = path.join(PROJECTS_DIR, 'shop', 'api');
+
+  it('refuses to raise a pull request with no commits behind it', () => {
+    // GitHub rejects an empty PR outright, so this must fail here, clearly,
+    // rather than as a 422 halfway through a run.
+    expect(() => raisePrCommand([dir], 'mvpfy/invoice-export', 'Invoice export', 'body')).toThrow(
+      /No repository has commits on mvpfy\/invoice-export/i
+    );
+  });
+
+  it('rejects any directory outside a managed or linked workspace', () => {
+    expect(() => raisePrCommand(['/etc'], 'mvpfy/x', 't', 'b')).toThrow(
+      /restricted to managed and linked/
+    );
   });
 });

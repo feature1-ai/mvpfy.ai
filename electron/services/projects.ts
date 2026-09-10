@@ -11,7 +11,7 @@ import {
   PROJECTS_DIR,
 } from '../paths';
 import { ideContainerName, spawnEnv } from './docker';
-import { shellQuote, spawnShell, spawnShellSync } from './shell';
+import { cdTo, shellQuote, spawnShell, spawnShellSync } from './shell';
 
 /** Project workspace lifecycle: create (clone), read/write files, delete. */
 
@@ -181,6 +181,78 @@ export function repoSyncCommand(dirs: string[]): string {
       }
       const heading = shellQuote(`── ${path.basename(dir)}`);
       return `echo ${heading} && git -C ${shellQuote(dir)} pull --ff-only`;
+    })
+    .join(' && ');
+}
+
+/**
+ * The branch a repository treats as its trunk. Read from origin/HEAD, which is
+ * what the remote itself says; `main` only as a last resort.
+ */
+function defaultBranchOf(dir: string): string {
+  const res = spawnShellSync(`git -C ${shellQuote(dir)} rev-parse --abbrev-ref origin/HEAD`, {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  const name = res.status === 0 ? res.stdout.trim().replace(/^origin\//, '') : '';
+  return name || 'main';
+}
+
+/** Commits `branch` has that `base` does not, or -1 when the range is unknown. */
+function commitsAhead(dir: string, base: string, branch: string): number {
+  const count = (range: string) =>
+    spawnShellSync(`git -C ${shellQuote(dir)} rev-list --count ${shellQuote(range)}`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+  // Prefer the remote's copy of the trunk; fall back to the local one, which is
+  // all there is on a repository that has never been pushed.
+  for (const range of [`origin/${base}..${branch}`, `${base}..${branch}`]) {
+    const res = count(range);
+    if (res.status === 0) return Number(res.stdout.trim()) || 0;
+  }
+  return -1;
+}
+
+/**
+ * Push a feature branch and open its pull requests.
+ *
+ * A pull request with no commits cannot exist — GitHub rejects it outright — so
+ * the branch is uniform across every repository but the pull requests are not.
+ * Which repositories changed is decided here by counting commits, never by
+ * asking the agent what it thinks it touched.
+ */
+export function raisePrCommand(
+  dirs: string[],
+  branch: string,
+  title: string,
+  body: string
+): string {
+  const targets: Array<{ dir: string; base: string }> = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Pull requests are restricted to managed and linked project directories');
+    }
+    const base = defaultBranchOf(dir);
+    if (commitsAhead(dir, base, branch) > 0) targets.push({ dir, base });
+  }
+  if (targets.length === 0) {
+    throw new Error(
+      `No repository has commits on ${branch} yet — implement a story before raising a pull request.`
+    );
+  }
+  return targets
+    .map(({ dir, base }) => {
+      const heading = shellQuote(`── ${path.basename(dir)}`);
+      // An existing pull request is success, not failure: print its URL rather
+      // than failing the run because the branch was raised once already.
+      return (
+        `echo ${heading} && ${cdTo(dir)} && git push -u origin ${shellQuote(branch)} && ` +
+        `(gh pr create --base ${shellQuote(base)} --head ${shellQuote(branch)} ` +
+        `--title ${shellQuote(title)} --body ${shellQuote(body)} || ` +
+        `gh pr view ${shellQuote(branch)} --json url -q .url)`
+      );
     })
     .join(' && ');
 }

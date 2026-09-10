@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { planFileFor, specFileFor } from '../../shared/types';
-import { startPlanSpecRun, startPlanStoryRun, startPullFeatureRun } from '../lib/agentRunner';
+import {
+  startPlanSpecRun,
+  startPlanStoryRun,
+  startPullFeatureRun,
+  startRaisePrRun,
+} from '../lib/agentRunner';
 import { mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
 import {
@@ -40,6 +45,10 @@ export interface PlanActions {
   /** Pull a Feature1 feature in as a native plan (agent reads it over MCP). */
   pullFeature(featureRef: string): Promise<boolean>;
   refineSpec(instruction: string): Promise<boolean>;
+  /** The builder accepts the finished feature — the gate before its PR. */
+  markFeatureTested(): Promise<boolean>;
+  /** Push the feature branch and open a PR in each repo that changed. */
+  raisePr(): Promise<boolean>;
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
@@ -127,6 +136,47 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       });
     }
   }, [storyRuns, plans, writePlan]);
+
+  // Every pull request the raise printed — a multi-repo feature opens one per
+  // repository that changed, so a single URL would lose the rest.
+  const prRuns = projectRuns.filter((r) => r.handle.kind === 'raise-pr');
+  const processedPrRuns = useRef(new Set<string>());
+  useEffect(() => {
+    for (const run of prRuns) {
+      if (run.running || run.exitCode !== 0) continue;
+      if (processedPrRuns.current.has(run.handle.runId)) continue;
+      const slug = run.handle.planSlug ?? '';
+      const plan = plans.find((p) => p.slug === slug)?.plan;
+      if (!plan) continue;
+      processedPrRuns.current.add(run.handle.runId);
+      const urls = [...new Set(run.log.match(/https:\/\/\S*\/pull\/\d+/g) ?? [])];
+      if (urls.length > 0) void writePlan(slug, { ...plan, prUrls: urls });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prRuns, plans]);
+
+  const markFeatureTested = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active?.plan) return;
+      await writePlan(active.slug, { ...active.plan, tested: true });
+    });
+
+  const raisePr = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active?.plan) return;
+      const feature = active.plan.spec.feature || active.slug || 'feature';
+      const stories = active.plan.stories.map((st) => `- ${st.code} ${st.title}`).join('\n');
+      const handle = await startRaisePrRun(
+        project,
+        active.slug,
+        `mvpfy/${active.slug || 'feature'}`,
+        feature,
+        `${active.plan.spec.overview.summary}\n\n## Stories\n${stories}\n\n— planned and implemented with mvpfy`
+      );
+      runsApi.track(handle);
+    });
 
   const generateSpec = (description: string) =>
     guarded(async () => {
@@ -266,6 +316,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     generateSpec,
     pullFeature,
     refineSpec,
+    markFeatureTested,
+    raisePr,
     approvePlan,
     implementStory,
     moveStory,

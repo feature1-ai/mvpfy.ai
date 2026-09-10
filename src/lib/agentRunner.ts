@@ -82,7 +82,8 @@ export type RunKind =
   | 'app-logs'
   | 'sync'
   | 'plan-spec'
-  | 'plan-story';
+  | 'plan-story'
+  | 'raise-pr';
 
 export interface RunHandle {
   runId: string;
@@ -396,7 +397,6 @@ export async function startPlanStoryRun(
   mcp?: RunAgentMcp
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
-  const storyCodeSlug = storyCode.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
@@ -405,9 +405,9 @@ export async function startPlanStoryRun(
       storyCode,
       planFile: configDirFor(project.mode) + planFileFor(planSlug),
       specFile: configDirFor(project.mode) + specFileFor(planSlug),
-      // Legacy (pre-multi-feature) plans keep their unprefixed branch names
-      // so re-runs land on the branch the earlier round already pushed.
-      branchSlug: planSlug ? `${planSlug}-${storyCodeSlug}` : storyCodeSlug,
+      // One branch per FEATURE: every story in it commits here, and the
+      // feature opens a single pull request when the builder is ready.
+      branchSlug: planSlug || 'feature',
       feedbackBlock: storyFeedback
         ? `The product manager tested the previous round and sent it back with this feedback — address it fully:\n---\n${storyFeedback}\n---`
         : '',
@@ -475,6 +475,32 @@ export async function startInstructRun(
     ...agentFor(settings),
   });
   return { runId, kind: 'instruct', projectId: project.id };
+}
+
+/**
+ * Push the feature branch and open its pull requests.
+ *
+ * No agent: mvpfy works out which repositories actually changed by counting
+ * commits, so nothing can misreport what it touched, and opening a pull
+ * request costs no subscription time.
+ */
+export async function startRaisePrRun(
+  project: Project,
+  planSlug: string,
+  branch: string,
+  title: string,
+  body: string
+): Promise<RunHandle> {
+  const runId = makeRunId('raise-pr');
+  await window.mvpfy.raisePullRequests(
+    runId,
+    project.localPath,
+    project.repos.map((r) => r.dir),
+    branch,
+    title,
+    body
+  );
+  return { runId, kind: 'raise-pr', projectId: project.id, planSlug };
 }
 
 export async function startIdeRun(

@@ -37,6 +37,50 @@ export function mcpHost(tenantSlug: string): string {
   return `${tenantSlug}-mcp.feature1.ai`;
 }
 
+/** The workspace's own web address, which is where its API lives. */
+export function tenantApiBase(tenantSlug: string): string {
+  return `https://${tenantSlug}.feature1.ai/api`;
+}
+
+/**
+ * Sign in with the same email and password as the Feature1 website, and keep
+ * the token it returns.
+ *
+ * The browser sign-in is the better route and is tried first — but a workspace
+ * whose browser flow keeps the token on the server has nothing to hand back,
+ * and mvpfy needs a token of its own for every request so that "assigned to
+ * me" means the person sitting here. The password is used once and never
+ * stored; only the token reaches the keychain.
+ */
+export async function signInWithPassword(
+  tenantSlug: string,
+  email: string,
+  password: string
+): Promise<string> {
+  const res = await window.mvpfy.mcpFetch({
+    url: `${tenantApiBase(tenantSlug)}/auth/login`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ email, password, tenantSlug }),
+  });
+  let parsed: { token?: string; error?: string; message?: string } = {};
+  try {
+    parsed = JSON.parse(res.body) as typeof parsed;
+  } catch {
+    // A workspace that answers with something other than JSON is not one we
+    // can sign in to; say where we looked rather than showing its HTML.
+    throw new Feature1McpError(
+      `${tenantApiBase(tenantSlug)} did not answer like a Feature1 workspace. Check the address.`
+    );
+  }
+  if (!res.ok || !parsed.token) {
+    throw new Feature1McpError(
+      parsed.error || parsed.message || `Sign-in failed (HTTP ${res.status})`
+    );
+  }
+  return parsed.token;
+}
+
 export function tokenKeychainEntry(tenantSlug: string): string {
   return `feature1-mcp-${tenantSlug}`;
 }

@@ -151,6 +151,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   markFeatureTested(): Promise<boolean>;
   /** Push the feature branch and open a PR in each repo that changed. */
   raisePr(): Promise<boolean>;
+  /** Put the running app on this feature's code, or back on the trunk. */
+  testFeature(slug: string | null): Promise<boolean>;
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;

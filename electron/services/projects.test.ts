@@ -2,6 +2,8 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../paths';
 import {
+  checkoutDefaultCommand,
+  checkoutFeatureCommand,
   raisePrCommand,
   repoSyncCommand,
   worktreeAddCommand,
@@ -109,5 +111,29 @@ describe('worktree commands', () => {
   it('says so rather than failing when there is nothing to remove', () => {
     const dir = path.join(PROJECTS_DIR, 'shop', 'api');
     expect(worktreeRemoveCommand('k', 'f', [dir])).toContain('Nothing to remove');
+  });
+});
+
+describe('checkoutFeatureCommand', () => {
+  const dir = path.join(PROJECTS_DIR, 'shop', 'api');
+
+  it('detaches, because the worktree already holds that branch', () => {
+    // `git checkout <branch>` is refused while a worktree has it checked out,
+    // which is always true of a feature being worked on. Detaching is allowed,
+    // and read-only is the right shape for a copy that only runs the product.
+    setLinkedRoots([]);
+    expect(() => checkoutFeatureCommand(['/etc'], 'mvpfy/x')).toThrow(
+      /restricted to managed and linked/
+    );
+  });
+
+  it('says which branch is missing rather than failing mid-checkout', () => {
+    expect(() => checkoutFeatureCommand([dir], 'mvpfy/never-implemented')).toThrow(
+      /No repository has a mvpfy\/never-implemented branch/
+    );
+  });
+
+  it('refuses directories outside a managed or linked workspace', () => {
+    expect(() => checkoutDefaultCommand(['/etc'])).toThrow(/restricted to managed and linked/);
   });
 });

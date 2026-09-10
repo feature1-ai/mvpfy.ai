@@ -41,6 +41,12 @@ export interface Project {
    */
   readinessAccepted?: string[];
   /**
+   * The feature whose code the workspace is currently checked out on, so the
+   * app that is running is that feature's. Only one at a time — there is one
+   * working copy, which is the whole reason implementation happens elsewhere.
+   */
+  testingSlug?: string | null;
+  /**
    * One Claude conversation per feature, by plan slug. Planning, refining and
    * implementing a feature all continue it, so refining a spec knows why the
    * spec says what it does. Kept here rather than in the agent-written plan
@@ -321,6 +327,12 @@ export interface MvpfyApi {
     branch: string,
     action: 'add' | 'remove'
   ): Promise<{ ok: boolean; paths?: Record<string, string>; error?: string }>;
+  /** Put the workspace on a feature's branch for testing, or null for trunk. */
+  checkoutFeature(
+    workspacePath: string,
+    dirs: string[],
+    branch: string | null
+  ): Promise<{ ok: boolean; error?: string }>;
   repoSync(runId: string, workspacePath: string, dirs: string[]): Promise<void>;
   findFreePort(start: number): Promise<number>;
   probeUrl(url: string): Promise<{ reachable: boolean; status: number }>;

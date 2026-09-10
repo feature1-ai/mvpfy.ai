@@ -49,6 +49,8 @@ export interface PlanActions {
   markFeatureTested(): Promise<boolean>;
   /** Push the feature branch and open a PR in each repo that changed. */
   raisePr(): Promise<boolean>;
+  /** Put the running app on this feature's code, or back on the trunk. */
+  testFeature(slug: string | null): Promise<boolean>;
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
@@ -151,6 +153,25 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       processedPrRuns.current.add(run.handle.runId);
       const urls = [...new Set(run.log.match(/https:\/\/\S*\/pull\/\d+/g) ?? [])];
       if (urls.length > 0) void writePlan(slug, { ...plan, prUrls: urls });
+      // Testing this feature is over, so the workspace goes back to its trunk.
+      // Done here rather than through the action so the effect does not depend
+      // on something declared below it.
+      if (project.testingSlug === slug) {
+        void window.mvpfy
+          .checkoutFeature(
+            project.localPath,
+            project.repos.map((r) => r.dir),
+            null
+          )
+          .then(() =>
+            updateState((prev) => ({
+              ...prev,
+              projects: prev.projects.map((p) =>
+                p.id === project.id ? { ...p, testingSlug: null } : p
+              ),
+            }))
+          );
+      }
       // The branch is pushed, so the checkouts hold nothing that is not also
       // on the remote. Recreated from it if the feature comes back.
       void window.mvpfy.worktree(
@@ -164,6 +185,27 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prRuns, plans]);
+
+  /**
+   * Run the app from a feature's code. There is one working copy, so this
+   * replaces whatever was under test — said plainly in the UI, because a
+   * builder accepting a story against the wrong branch is the failure that
+   * matters here.
+   */
+  const testFeature = (slug: string | null) =>
+    guarded(async () => {
+      const branch = slug === null ? null : `mvpfy/${slug || 'feature'}`;
+      const res = await window.mvpfy.checkoutFeature(
+        project.localPath,
+        project.repos.map((r) => r.dir),
+        branch
+      );
+      if (!res.ok) throw new Error(res.error || 'Could not switch the workspace to that branch');
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, testingSlug: slug } : p)),
+      }));
+    });
 
   const markFeatureTested = () =>
     guarded(async () => {
@@ -421,6 +463,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     refineSpec,
     markFeatureTested,
     raisePr,
+    testFeature,
     approvePlan,
     implementStory,
     moveStory,

@@ -353,6 +353,68 @@ function commitsAhead(dir: string, base: string, branch: string): number {
 }
 
 /**
+ * Put the workspace on a feature's code so the running app is that feature.
+ *
+ * Detached on purpose, and not merely to be careful: git refuses to check a
+ * branch out when a worktree already has it, which is always the case for a
+ * feature being worked on. Detaching is allowed alongside a worktree, and the
+ * semantics are the ones wanted here anyway — the workspace is for running the
+ * product, not for committing to it.
+ */
+export function checkoutFeatureCommand(dirs: string[], branch: string): string {
+  const parts: string[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Checkout is restricted to managed and linked project directories');
+    }
+    const known =
+      spawnShellSync(`git -C ${shellQuote(dir)} rev-parse --verify ${shellQuote(branch)}`, {
+        encoding: 'utf8',
+        timeout: 10_000,
+      }).status === 0;
+    // A repository the feature never reached has no such branch; leaving it on
+    // its trunk is correct, not an error.
+    if (!known) continue;
+    parts.push(
+      `echo ${shellQuote(`── ${path.basename(dir)}`)} && ` +
+        `git -C ${shellQuote(dir)} checkout --detach ${shellQuote(branch)}`
+    );
+  }
+  if (parts.length === 0) {
+    throw new Error(`No repository has a ${branch} branch yet — implement a story first.`);
+  }
+  return parts.join(' && ');
+}
+
+/** Put every repository back on its own trunk. */
+export function checkoutDefaultCommand(dirs: string[]): string {
+  return dirs
+    .map((d) => {
+      const dir = path.resolve(d);
+      if (!isAllowedWorkspace(dir)) {
+        throw new Error('Checkout is restricted to managed and linked project directories');
+      }
+      return `git -C ${shellQuote(dir)} checkout ${shellQuote(defaultBranchOf(dir))}`;
+    })
+    .join(' && ');
+}
+
+/** Check a feature's code out for testing, or go back to the trunk. */
+export async function checkoutFeature(
+  dirs: string[],
+  branch: string | null
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const command = branch ? checkoutFeatureCommand(dirs, branch) : checkoutDefaultCommand(dirs);
+    const result = await runCapturing(command);
+    return result.ok ? { ok: true } : { ok: false, error: result.output };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
  * Push a feature branch and open its pull requests.
  *
  * A pull request with no commits cannot exist — GitHub rejects it outright — so

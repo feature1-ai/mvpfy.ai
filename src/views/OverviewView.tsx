@@ -67,6 +67,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   }, [project.repos, c.busy]);
 
   const env = envState(c);
+  const testingFeature = project.testingSlug
+    ? (c.plans.find((f) => f.slug === project.testingSlug)?.plan?.spec.feature ??
+      project.testingSlug)
+    : null;
   const activity = c.busy ? latestActivity(c.latestRun?.log ?? '') : null;
   const ports = parsePorts(mvpfyYml);
   const cred = c.demoCredentials[0] ?? null;
@@ -160,6 +164,15 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               <div className="min-w-0 flex-1">
                 <h2 className="text-[15px] font-semibold">{s.title}</h2>
                 <p className="mt-0.5 text-[13px] leading-normal text-body">{s.bodyText}</p>
+                {/* Which code is running is not a detail: accepting a story
+                    against another feature's build is the mistake this
+                    prevents. */}
+                {testingFeature && (
+                  <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-go-bg px-2 py-0.5 text-[11.5px] text-go">
+                    <span className="h-1.5 w-1.5 rounded-full bg-go" />
+                    Running the feature “{testingFeature}”
+                  </p>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {/* The containers are up in both states — the app answering

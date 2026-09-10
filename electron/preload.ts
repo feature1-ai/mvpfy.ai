@@ -61,6 +61,8 @@ const api: MvpfyApi = {
     branch: string,
     action: 'add' | 'remove'
   ) => ipcRenderer.invoke('worktree', workspacePath, dirs, projectKey, featureSlug, branch, action),
+  checkoutFeature: (workspacePath: string, dirs: string[], branch: string | null) =>
+    ipcRenderer.invoke('checkout-feature', workspacePath, dirs, branch),
   repoSync: (runId: string, workspacePath: string, dirs: string[]) =>
     ipcRenderer.invoke('repo-sync', runId, workspacePath, dirs),
   findFreePort: (start: number) => ipcRenderer.invoke('find-free-port', start),

@@ -14,6 +14,7 @@ import {
   readRepoBranches,
   readRepoFiles,
   addWorktrees,
+  checkoutFeature,
   raisePrCommand,
   removeWorktrees,
   repoSyncCommand,
@@ -135,6 +136,16 @@ export function registerIpc(): void {
       return action === 'add'
         ? addWorktrees(projectKey, featureSlug, dirs, branch)
         : removeWorktrees(projectKey, featureSlug, dirs);
+    }
+  );
+  ipcMain.handle(
+    'checkout-feature',
+    (_ev, workspacePath: string, dirs: string[], branch: string | null) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Checkout is restricted to managed and linked project directories');
+      }
+      return checkoutFeature(dirs, branch);
     }
   );
   ipcMain.handle('cli-login', (_ev, runId: string, tool: string) =>

@@ -428,6 +428,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <TestFeatureButton c={c} slug={active.slug} />
           <FeatureShipControls c={c} plan={plan} />
           <button onClick={() => setSpecOpen((v) => !v)} className="btn-secondary h-8 px-3.5">
             {specOpen ? 'Hide spec' : 'View spec'}
@@ -469,6 +470,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
                   key={story.code}
                   story={story}
                   c={c}
+                  testable={c.project.testingSlug === active.slug}
                   running={active.runningStory === story.code}
                   bounce={bounce}
                   setBounce={setBounce}
@@ -493,6 +495,31 @@ export default function PlanView({ c, onOpenTab }: Props) {
         features; planning new features is always allowed.
       </p>
     </div>
+  );
+}
+
+/**
+ * Run the app from this feature's code. One working copy means one feature at
+ * a time, so the button says which state it is in rather than leaving the
+ * builder to guess which branch they are testing.
+ */
+function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) {
+  const live = c.project.testingSlug === slug;
+  return (
+    <button
+      onClick={() => void c.testFeature(live ? null : slug)}
+      disabled={c.busy}
+      title={
+        live
+          ? 'Put the workspace back on its default branch'
+          : 'Check this feature out in the workspace, so the running app is this feature'
+      }
+      className={`h-8 rounded-md px-3 text-[13px] disabled:opacity-50 ${
+        live ? 'bg-go-bg font-medium text-go' : 'btn-secondary'
+      }`}
+    >
+      {live ? '● Running this feature' : 'Test this feature'}
+    </button>
   );
 }
 
@@ -675,6 +702,7 @@ function FeatureChip({
 function StoryCard({
   story,
   c,
+  testable,
   running,
   bounce,
   setBounce,
@@ -683,6 +711,8 @@ function StoryCard({
 }: {
   story: PlanStory;
   c: ProjectController;
+  /** The app is running this feature's code, so a test would be honest. */
+  testable: boolean;
   running: boolean;
   bounce: { code: string; feedback: string } | null;
   setBounce: (b: { code: string; feedback: string } | null) => void;
@@ -766,7 +796,13 @@ function StoryCard({
           <div className="mt-2 flex gap-1.5">
             <button
               onClick={() => onOpenTab('app')}
-              className="btn-secondary h-6 flex-1 text-[11px]"
+              disabled={!testable}
+              title={
+                testable
+                  ? 'Open the running app'
+                  : 'The app is not running this feature yet — use Test this feature above'
+              }
+              className="btn-secondary h-6 flex-1 text-[11px] disabled:opacity-40"
             >
               Test in App
             </button>

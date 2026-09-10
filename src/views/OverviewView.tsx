@@ -162,14 +162,20 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                 <p className="mt-0.5 text-[13px] leading-normal text-body">{s.bodyText}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {env.kind === 'running' && (
+                {/* The containers are up in both states — the app answering
+                    is the only difference — so the controls that act on them
+                    belong in both. Waiting for an app that never answers is
+                    exactly when someone needs a way out. */}
+                {(env.kind === 'running' || env.kind === 'starting') && (
                   <>
-                    <button
-                      onClick={() => c.openExternal(c.appUrl)}
-                      className="h-[34px] rounded-md bg-go px-3.5 text-[13px] font-medium text-white hover:bg-go-hover"
-                    >
-                      Open localhost:{project.basePort} ↗
-                    </button>
+                    {env.kind === 'running' && (
+                      <button
+                        onClick={() => c.openExternal(c.appUrl)}
+                        className="h-[34px] rounded-md bg-go px-3.5 text-[13px] font-medium text-white hover:bg-go-hover"
+                      >
+                        Open localhost:{project.basePort} ↗
+                      </button>
+                    )}
                     <button
                       onClick={() => void c.docker('restart')}
                       className="btn-secondary h-[34px] px-3.5"

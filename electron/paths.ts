@@ -5,11 +5,18 @@ import * as path from 'node:path';
 export const MVPFY_HOME = path.join(os.homedir(), '.mvpfy');
 export const PROJECTS_DIR = path.join(MVPFY_HOME, 'projects');
 export const TMP_DIR = path.join(MVPFY_HOME, 'tmp');
+/**
+ * Per-feature checkouts, so implementing a story never disturbs the working
+ * copy the builder is testing from. A root mvpfy owns outright, like the
+ * projects directory — which is what keeps the path guard a containment check
+ * rather than a new kind of permission.
+ */
+export const WORKTREES_DIR = path.join(MVPFY_HOME, 'worktrees');
 export const STATE_FILE = path.join(MVPFY_HOME, 'state.json');
 export const SECRETS_FILE = path.join(MVPFY_HOME, 'secrets.json');
 
 export function ensureDirs(): void {
-  for (const dir of [MVPFY_HOME, PROJECTS_DIR, TMP_DIR]) {
+  for (const dir of [MVPFY_HOME, PROJECTS_DIR, TMP_DIR, WORKTREES_DIR]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }
@@ -32,6 +39,17 @@ export function setLinkedRoots(roots: string[]): void {
 export function isLinkedPath(candidate: string): boolean {
   const resolved = path.resolve(candidate);
   return linkedRoots.some((root) => resolved === root || resolved.startsWith(root + path.sep));
+}
+
+/**
+ * True when `candidate` is inside the worktrees directory. Deliberately NOT
+ * part of isAllowedWorkspace: a worktree is somewhere mvpfy puts code, not a
+ * workspace anything may be pointed at, and widening the workspace guard would
+ * widen what every agent run, docker command and file write may reach.
+ */
+export function isWorktreePath(candidate: string): boolean {
+  const resolved = path.resolve(candidate);
+  return resolved !== WORKTREES_DIR && resolved.startsWith(WORKTREES_DIR + path.sep);
 }
 
 /** Managed clone or an explicitly linked in-place workspace. */

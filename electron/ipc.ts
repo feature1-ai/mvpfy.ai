@@ -13,7 +13,9 @@ import {
   linkProject,
   readRepoBranches,
   readRepoFiles,
+  addWorktrees,
   raisePrCommand,
+  removeWorktrees,
   repoSyncCommand,
   writeRepoFile,
 } from './services/projects';
@@ -113,6 +115,26 @@ export function registerIpc(): void {
         throw new Error('Pull requests are restricted to managed and linked project directories');
       }
       startRun(runId, raisePrCommand(dirs, branch, title, body), resolved);
+    }
+  );
+  ipcMain.handle(
+    'worktree',
+    (
+      _ev,
+      workspacePath: string,
+      dirs: string[],
+      projectKey: string,
+      featureSlug: string,
+      branch: string,
+      action: 'add' | 'remove'
+    ) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Worktrees are restricted to managed and linked project directories');
+      }
+      return action === 'add'
+        ? addWorktrees(projectKey, featureSlug, dirs, branch)
+        : removeWorktrees(projectKey, featureSlug, dirs);
     }
   );
   ipcMain.handle('cli-login', (_ev, runId: string, tool: string) =>

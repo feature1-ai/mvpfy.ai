@@ -53,6 +53,14 @@ const api: MvpfyApi = {
     title: string,
     body: string
   ) => ipcRenderer.invoke('raise-pr', runId, workspacePath, dirs, branch, title, body),
+  worktree: (
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string,
+    action: 'add' | 'remove'
+  ) => ipcRenderer.invoke('worktree', workspacePath, dirs, projectKey, featureSlug, branch, action),
   repoSync: (runId: string, workspacePath: string, dirs: string[]) =>
     ipcRenderer.invoke('repo-sync', runId, workspacePath, dirs),
   findFreePort: (start: number) => ipcRenderer.invoke('find-free-port', start),

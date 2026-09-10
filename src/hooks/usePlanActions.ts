@@ -151,6 +151,16 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       processedPrRuns.current.add(run.handle.runId);
       const urls = [...new Set(run.log.match(/https:\/\/\S*\/pull\/\d+/g) ?? [])];
       if (urls.length > 0) void writePlan(slug, { ...plan, prUrls: urls });
+      // The branch is pushed, so the checkouts hold nothing that is not also
+      // on the remote. Recreated from it if the feature comes back.
+      void window.mvpfy.worktree(
+        project.localPath,
+        project.repos.map((r) => r.dir),
+        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+        slug,
+        `mvpfy/${slug || 'feature'}`,
+        'remove'
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prRuns, plans]);
@@ -349,6 +359,18 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       // A Feature1-sourced story also drives the Feature1 workflow over MCP,
       // so register the tenant's MCP server for the run and pass the link.
       const mcp = story.feature1StoryId ? await feature1Mcp() : undefined;
+      // The feature's own checkouts, created on first use. A failure here is
+      // not fatal: the run falls back to the workspace, which is how it worked
+      // before worktrees existed.
+      const branch = `mvpfy/${slug || 'feature'}`;
+      const trees = await window.mvpfy.worktree(
+        project.localPath,
+        project.repos.map((r) => r.dir),
+        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+        slug,
+        branch,
+        'add'
+      );
       const handle = await startPlanStoryRun(
         project,
         state.settings,
@@ -357,7 +379,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         story.feedback,
         story.feature1StoryId,
         mcp,
-        sessionFor(slug, false)
+        sessionFor(slug, false),
+        trees.ok ? (trees.paths ?? {}) : {}
       );
       runsApi.track(handle);
     });

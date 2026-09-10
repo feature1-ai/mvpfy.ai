@@ -1,7 +1,13 @@
 import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROJECTS_DIR, setLinkedRoots } from '../paths';
-import { raisePrCommand, repoSyncCommand } from './projects';
+import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../paths';
+import {
+  raisePrCommand,
+  repoSyncCommand,
+  worktreeAddCommand,
+  worktreePathFor,
+  worktreeRemoveCommand,
+} from './projects';
 import { IS_WIN, shellQuote } from './shell';
 
 afterEach(() => setLinkedRoots([]));
@@ -60,5 +66,48 @@ describe('raisePrCommand', () => {
     expect(() => raisePrCommand(['/etc'], 'mvpfy/x', 't', 'b')).toThrow(
       /restricted to managed and linked/
     );
+  });
+});
+
+describe('worktreePathFor', () => {
+  it('keeps every checkout inside the directory mvpfy owns', () => {
+    const p = worktreePathFor(
+      'shop-a1b2c3',
+      'invoice-export',
+      '/Users/pm/.mvpfy/projects/shop/api'
+    );
+    expect(isWorktreePath(p)).toBe(true);
+    expect(p.startsWith(WORKTREES_DIR + path.sep)).toBe(true);
+  });
+
+  it('separates features, repos and projects that share a name', () => {
+    const a = worktreePathFor('shop-a1b2c3', 'invoice-export', '/x/api');
+    const b = worktreePathFor('shop-d4e5f6', 'invoice-export', '/x/api');
+    const c = worktreePathFor('shop-a1b2c3', 'bulk-download', '/x/api');
+    const d = worktreePathFor('shop-a1b2c3', 'invoice-export', '/x/web');
+    expect(new Set([a, b, c, d]).size).toBe(4);
+  });
+
+  it('cannot be steered out of that directory by its inputs', () => {
+    // Slashes and dots in a slug are flattened, not followed.
+    const p = worktreePathFor('../../etc', '../../..', '/x/../../passwd');
+    expect(isWorktreePath(p)).toBe(true);
+    expect(p).not.toContain('..');
+  });
+});
+
+describe('worktree commands', () => {
+  it('refuses repositories outside a managed or linked workspace', () => {
+    expect(() => worktreeAddCommand('k', 'f', ['/etc'], 'mvpfy/f')).toThrow(
+      /restricted to managed and linked/
+    );
+    expect(() => worktreeRemoveCommand('k', 'f', ['/etc'])).toThrow(
+      /restricted to managed and linked/
+    );
+  });
+
+  it('says so rather than failing when there is nothing to remove', () => {
+    const dir = path.join(PROJECTS_DIR, 'shop', 'api');
+    expect(worktreeRemoveCommand('k', 'f', [dir])).toContain('Nothing to remove');
   });
 });

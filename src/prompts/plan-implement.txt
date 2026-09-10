@@ -10,16 +10,18 @@ every acceptance criterion, plus tests, in the appropriate repository within the
 Follow this sequence:
 1. Read the story's acceptance criteria and the spec context. Look at how the product
    already does similar things and match its patterns.
-2. Get on mvpfy/{branchSlug} in the affected repository — the branch for this FEATURE, which
-   every story in it shares:
-   • If it already exists, check it out and continue on it. Earlier stories of this feature
-     are already committed there and must be kept.
-   • Otherwise fetch the repository's default branch and create the branch from THAT, never
-     from whatever happens to be checked out.
+2. Work in this feature's own checkouts, already on the branch mvpfy/{branchSlug} and already
+   holding any earlier story of this feature:
+{worktrees}
+   Read the product's code there, make every change there, and run every git command there.
+   Never edit the product's code in {repoPath} — that copy is what the product manager has
+   running, and changing it under them would swap the app they are testing.
+   The mvpfy files named above ({planFile}, {specFile}) stay in {repoPath}. Read them from
+   there; do not copy them into a checkout.
 3. Implement every acceptance criterion, with tests. Run the repo's test command and only
    proceed when tests pass.
-4. Commit with the message "{storyCode}: <story title>" — the story code is how a reviewer
-   tells this story's work from the rest of the feature's. Push the branch with -u.
+4. Commit in the checkout, with the message "{storyCode}: <story title>" — the story code is
+   how a reviewer tells this story's work from the rest of the feature's. Push with -u.
 5. Do NOT open a pull request. One is opened for the whole feature, by mvpfy, once the
    builder has tested every story in it. Stop after pushing.
 

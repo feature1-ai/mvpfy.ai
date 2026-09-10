@@ -8,7 +8,9 @@ import {
   isAllowedWorkspace,
   isLinkedPath,
   isManagedPath,
+  isWorktreePath,
   PROJECTS_DIR,
+  WORKTREES_DIR,
 } from '../paths';
 import { ideContainerName, spawnEnv } from './docker';
 import { cdTo, shellQuote, spawnShell, spawnShellSync } from './shell';
@@ -183,6 +185,142 @@ export function repoSyncCommand(dirs: string[]): string {
       return `echo ${heading} && git -C ${shellQuote(dir)} pull --ff-only`;
     })
     .join(' && ');
+}
+
+/**
+ * Where a feature's checkout of one repository lives. Keyed by project as well
+ * as feature, because two projects may hold repositories of the same name.
+ */
+export function worktreePathFor(projectKey: string, featureSlug: string, repoDir: string): string {
+  const safe = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'x';
+  return path.join(
+    WORKTREES_DIR,
+    safe(projectKey),
+    safe(featureSlug || 'feature'),
+    safe(path.basename(repoDir))
+  );
+}
+
+/**
+ * Add a checkout of the feature branch for every repository, so implementing a
+ * story never touches the working copy the builder tests from.
+ *
+ * Worktrees share the repository's object store, so a commit made in one is
+ * immediately visible to the original — which is why raising the pull request
+ * still works from the workspace and needs to know nothing about any of this.
+ */
+export function worktreeAddCommand(
+  projectKey: string,
+  featureSlug: string,
+  dirs: string[],
+  branch: string
+): string {
+  const parts: string[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Worktrees are restricted to managed and linked project directories');
+    }
+    const target = worktreePathFor(projectKey, featureSlug, dir);
+    // Guaranteed by construction; asserted because this path is handed to rm.
+    if (!isWorktreePath(target)) throw new Error('Refusing to place a worktree outside ~/.mvpfy');
+    if (fs.existsSync(target)) continue;
+    const base = defaultBranchOf(dir);
+    const exists =
+      spawnShellSync(`git -C ${shellQuote(dir)} rev-parse --verify ${shellQuote(branch)}`, {
+        encoding: 'utf8',
+        timeout: 10_000,
+      }).status === 0;
+    // An existing branch is checked out as it stands; a new one starts from the
+    // trunk, never from whatever the workspace happens to have checked out.
+    const add = exists
+      ? `git -C ${shellQuote(dir)} worktree add ${shellQuote(target)} ${shellQuote(branch)}`
+      : `git -C ${shellQuote(dir)} worktree add -b ${shellQuote(branch)} ${shellQuote(target)} ` +
+        `${shellQuote(`origin/${base}`)}`;
+    parts.push(`echo ${shellQuote(`── ${path.basename(dir)}`)} && ${add}`);
+  }
+  if (parts.length === 0) return 'echo "Every worktree for this feature already exists"';
+  return parts.join(' && ');
+}
+
+/**
+ * Create the feature's checkouts and report where they are.
+ *
+ * Runs to completion rather than streaming: it is quick — a worktree shares
+ * the repository's object store — and the caller needs the paths before it can
+ * tell an agent where to work.
+ */
+export async function addWorktrees(
+  projectKey: string,
+  featureSlug: string,
+  dirs: string[],
+  branch: string
+): Promise<{ ok: boolean; paths: Record<string, string>; error?: string }> {
+  ensureDirs();
+  const paths: Record<string, string> = {};
+  for (const d of dirs) paths[path.resolve(d)] = worktreePathFor(projectKey, featureSlug, d);
+  try {
+    const command = worktreeAddCommand(projectKey, featureSlug, dirs, branch);
+    const result = await runCapturing(command);
+    return result.ok ? { ok: true, paths } : { ok: false, paths, error: result.output };
+  } catch (err) {
+    return { ok: false, paths, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Remove a feature's checkouts, once its work is safely on the remote. */
+export async function removeWorktrees(
+  projectKey: string,
+  featureSlug: string,
+  dirs: string[]
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const result = await runCapturing(worktreeRemoveCommand(projectKey, featureSlug, dirs));
+    return result.ok ? { ok: true } : { ok: false, error: result.output };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function runCapturing(command: string): Promise<{ ok: boolean; output: string }> {
+  return new Promise((resolve) => {
+    const child = spawnShell(command, { cwd: PROJECTS_DIR, env: spawnEnv() });
+    let output = '';
+    child.stdout?.on('data', (d: Buffer) => (output += d.toString('utf8')));
+    child.stderr?.on('data', (d: Buffer) => (output += d.toString('utf8')));
+    child.on('error', (err) => resolve({ ok: false, output: err.message }));
+    child.on('close', (code) => resolve({ ok: code === 0, output: output.trim() }));
+  });
+}
+
+/** Remove a feature's checkouts once its work is pushed. */
+export function worktreeRemoveCommand(
+  projectKey: string,
+  featureSlug: string,
+  dirs: string[]
+): string {
+  const parts: string[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Worktrees are restricted to managed and linked project directories');
+    }
+    const target = worktreePathFor(projectKey, featureSlug, dir);
+    if (!isWorktreePath(target)) throw new Error('Refusing to remove a path outside ~/.mvpfy');
+    if (!fs.existsSync(target)) continue;
+    // --force because the checkout may hold build output; the branch and its
+    // commits live in the repository and are untouched by this.
+    parts.push(
+      `git -C ${shellQuote(dir)} worktree remove --force ${shellQuote(target)} && ` +
+        `git -C ${shellQuote(dir)} worktree prune`
+    );
+  }
+  if (parts.length === 0) return 'echo "Nothing to remove"';
+  return parts.join(' && ');
 }
 
 /**

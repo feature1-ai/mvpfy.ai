@@ -420,9 +420,12 @@ export async function startPlanStoryRun(
   feature1StoryId?: string,
   /** Feature1 MCP server to register (required when feature1StoryId is set). */
   mcp?: RunAgentMcp,
-  session?: RunSession
+  session?: RunSession,
+  /** Repo directory → this feature's checkout of it. */
+  worktrees: Record<string, string> = {}
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
+  const checkouts = Object.entries(worktrees);
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
@@ -439,6 +442,10 @@ export async function startPlanStoryRun(
         ? `The product manager tested the previous round and sent it back with this feedback — address it fully:\n---\n${storyFeedback}\n---`
         : '',
       feature1Block: feature1BlockFor(feature1StoryId),
+      worktrees:
+        checkouts.length > 0
+          ? checkouts.map(([repo, tree]) => `   • ${repo} → ${tree}`).join('\n')
+          : `   • ${project.localPath} (no separate checkout — work here)`,
     }),
     ...agentFor(settings),
     ...(mcp ? { mcp } : {}),

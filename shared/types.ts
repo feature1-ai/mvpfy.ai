@@ -309,6 +309,18 @@ export interface MvpfyApi {
     title: string,
     body: string
   ): Promise<void>;
+  /**
+   * Add or remove a feature's per-repository checkouts. Resolves with where
+   * they are, so the caller can tell an agent where to work.
+   */
+  worktree(
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string,
+    action: 'add' | 'remove'
+  ): Promise<{ ok: boolean; paths?: Record<string, string>; error?: string }>;
   repoSync(runId: string, workspacePath: string, dirs: string[]): Promise<void>;
   findFreePort(start: number): Promise<number>;
   probeUrl(url: string): Promise<{ reachable: boolean; status: number }>;

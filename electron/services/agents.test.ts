@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { sweepRunArtifacts } from './agents';
+import { claudeCommandFor, sweepRunArtifacts } from './agents';
+import { shellQuote } from './shell';
 
 let dir: string;
 
@@ -55,5 +56,36 @@ describe('sweepRunArtifacts', () => {
 
   it('does not throw when the directory is missing', () => {
     expect(() => sweepRunArtifacts(HOUR, path.join(dir, 'nope'))).not.toThrow();
+  });
+});
+
+describe('session flags', () => {
+  const build = (session?: { id: string; resume: boolean }) =>
+    claudeCommandFor(
+      { ...(session ? { session } : {}) },
+      { repoPath: '/x/repo', promptFile: '/tmp/p.txt' }
+    );
+
+  it('names the conversation on the run that opens it', () => {
+    expect(build({ id: 'abc-123', resume: false })).toContain(
+      '--session-id ' + shellQuote('abc-123')
+    );
+  });
+
+  it('continues it on every run after', () => {
+    const command = build({ id: 'abc-123', resume: true });
+    expect(command).toContain('--resume ' + shellQuote('abc-123'));
+    expect(command).not.toContain('--session-id');
+  });
+
+  it('passes neither when the run belongs to no conversation', () => {
+    const command = build();
+    expect(command).not.toContain('--session-id');
+    expect(command).not.toContain('--resume');
+  });
+
+  it('keeps the flag ahead of -p, where claude expects its options', () => {
+    const command = build({ id: 'abc', resume: true });
+    expect(command.indexOf('--resume')).toBeLessThan(command.indexOf(' -p '));
   });
 });

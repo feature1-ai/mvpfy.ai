@@ -2,6 +2,7 @@ You are writing a minimal product spec for a non-technical product manager. They
 plain language; the spec must be sharp, short, and free of jargon.
 
 Workspace: {repoPath}
+{resumeNote}
 The product manager wants to plan this feature:
 ---
 {featureDescription}

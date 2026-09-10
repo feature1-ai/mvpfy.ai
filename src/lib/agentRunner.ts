@@ -18,6 +18,7 @@ import {
   Project,
   READINESS_FILE,
   RunAgentMcp,
+  RunSession,
   Settings,
   configDirFor,
   planFileFor,
@@ -61,6 +62,26 @@ const REGENERATE_NOTE =
   'ports, the same service names where you can, the same demo credentials, and the existing ' +
   'env file and its values. NEVER delete or recreate a database volume — the product manager ' +
   'has data in it. Their app code is not yours to change.';
+
+/**
+ * Continuing a conversation rather than starting one.
+ *
+ * The earlier turns are still in context, rules and all — the planning step
+ * that forbade changing anything, the step that told it to write the plan
+ * file it is now forbidden to touch. Saying which instructions are live is
+ * the whole job of this note.
+ */
+const RESUME_NOTE =
+  'NOTE — this continues our earlier conversation about this workspace, so you already know ' +
+  'the code and the decisions behind it; use that rather than reading everything again. The ' +
+  'instructions below REPLACE the ones from that earlier step: where they differ, these win, ' +
+  'and any restriction you were under before no longer applies unless it is repeated here. ' +
+  'The files on disk may have changed since — check anything you are about to rely on rather ' +
+  'than trusting what you remember of it.';
+
+function resumeNoteFor(session?: RunSession): string {
+  return session?.resume ? RESUME_NOTE : '';
+}
 
 function regenerateNoteFor(regenerate: boolean): string {
   return regenerate ? REGENERATE_NOTE : '';
@@ -301,7 +322,8 @@ export async function startPlanSpecRun(
   settings: Settings,
   planSlug: string,
   featureDescription: string,
-  refinement?: string
+  refinement?: string,
+  session?: RunSession
 ): Promise<RunHandle> {
   const runId = makeRunId('planspec');
   const cfg = configDirFor(project.mode);
@@ -311,6 +333,7 @@ export async function startPlanSpecRun(
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(planSpecTemplate, {
+      resumeNote: resumeNoteFor(session),
       repoPath: project.localPath,
       featureDescription,
       planFile,
@@ -335,7 +358,8 @@ export async function startPullFeatureRun(
   settings: Settings,
   planSlug: string,
   featureRef: string,
-  mcp: RunAgentMcp
+  mcp: RunAgentMcp,
+  session?: RunSession
 ): Promise<RunHandle> {
   const runId = makeRunId('pullfeature');
   const cfg = configDirFor(project.mode);
@@ -343,6 +367,7 @@ export async function startPullFeatureRun(
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(pullFeatureTemplate, {
+      resumeNote: resumeNoteFor(session),
       repoPath: project.localPath,
       featureRef,
       planFile: cfg + planFileFor(planSlug),
@@ -394,13 +419,15 @@ export async function startPlanStoryRun(
   /** Feature1 story session id, when this story was pulled from Feature1. */
   feature1StoryId?: string,
   /** Feature1 MCP server to register (required when feature1StoryId is set). */
-  mcp?: RunAgentMcp
+  mcp?: RunAgentMcp,
+  session?: RunSession
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(planImplementTemplate, {
+      resumeNote: resumeNoteFor(session),
       repoPath: project.localPath,
       storyCode,
       planFile: configDirFor(project.mode) + planFileFor(planSlug),
@@ -415,6 +442,7 @@ export async function startPlanStoryRun(
     }),
     ...agentFor(settings),
     ...(mcp ? { mcp } : {}),
+    ...(session ? { session } : {}),
   });
   return { runId, kind: 'plan-story', projectId: project.id, storyId: storyCode, planSlug };
 }

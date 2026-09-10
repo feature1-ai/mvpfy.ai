@@ -3,6 +3,7 @@ here exactly like a feature planned in mvpfy — a product manager will read the
 work the board.
 
 Workspace: {repoPath}
+{resumeNote}
 Feature1 feature to pull: {featureRef}
 
 Do this in order:

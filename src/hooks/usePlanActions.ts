@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { planFileFor, specFileFor } from '../../shared/types';
+import { RunSession, planFileFor, specFileFor } from '../../shared/types';
 import {
   startPlanSpecRun,
   startPlanStoryRun,
@@ -178,6 +178,70 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       runsApi.track(handle);
     });
 
+  /**
+   * The conversation this feature owns. The first run of a feature opens one;
+   * everything after continues it, so refining a spec knows why the spec says
+   * what it does instead of re-deriving it from the file.
+   *
+   * Claude only — codex can resume a conversation but cannot be told which id
+   * to give a new one, so there is nothing to hand it up front.
+   */
+  const sessionFor = useCallback(
+    (slug: string, open: boolean): RunSession | undefined => {
+      if (state.settings.defaultAgent !== 'claude') return undefined;
+      const existing = project.featureSessions?.[slug];
+      if (existing && !open) return { id: existing, resume: true };
+      const id = existing && open ? existing : crypto.randomUUID();
+      if (id !== existing) {
+        updateState((prev) => ({
+          ...prev,
+          projects: prev.projects.map((p) =>
+            p.id === project.id
+              ? { ...p, featureSessions: { ...(p.featureSessions ?? {}), [slug]: id } }
+              : p
+          ),
+        }));
+      }
+      return { id, resume: false };
+    },
+    [project.id, project.featureSessions, state.settings.defaultAgent, updateState]
+  );
+
+  /**
+   * A conversation that cannot be resumed must not strand the feature. Forget
+   * it and the next attempt opens a fresh one — the plan and spec files carry
+   * everything that matters anyway.
+   */
+  const forgetSession = useCallback(
+    (slug: string) => {
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => {
+          if (p.id !== project.id) return p;
+          const rest = { ...(p.featureSessions ?? {}) };
+          delete rest[slug];
+          return { ...p, featureSessions: rest };
+        }),
+      }));
+    },
+    [project.id, updateState]
+  );
+
+  // A resumed run that failed may simply have lost its conversation; drop it so
+  // pressing the button again works rather than failing the same way.
+  const failedRuns = projectRuns.filter(
+    (r) => !r.running && r.exitCode !== 0 && r.handle.planSlug !== undefined
+  );
+  const processedFailures = useRef(new Set<string>());
+  useEffect(() => {
+    for (const run of failedRuns) {
+      if (processedFailures.current.has(run.handle.runId)) continue;
+      processedFailures.current.add(run.handle.runId);
+      forgetSession(run.handle.planSlug ?? '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [failedRuns]);
+
   const generateSpec = (description: string) =>
     guarded(async () => {
       const text = description.trim();
@@ -185,7 +249,14 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
       const slug = slugForFeature(text, ['', ...(project.planSlugs ?? [])]);
-      const handle = await startPlanSpecRun(project, state.settings, slug, text);
+      const handle = await startPlanSpecRun(
+        project,
+        state.settings,
+        slug,
+        text,
+        undefined,
+        sessionFor(slug, true)
+      );
       runsApi.track(handle);
       updateState((prev) => ({
         ...prev,
@@ -205,7 +276,14 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       const mcp = await feature1Mcp();
       // Slug the plan off the feature ref; the agent fills the real name.
       const slug = slugForFeature(`feature1 ${ref}`, ['', ...(project.planSlugs ?? [])]);
-      const handle = await startPullFeatureRun(project, state.settings, slug, ref, mcp);
+      const handle = await startPullFeatureRun(
+        project,
+        state.settings,
+        slug,
+        ref,
+        mcp,
+        sessionFor(slug, true)
+      );
       runsApi.track(handle);
       updateState((prev) => ({
         ...prev,
@@ -227,7 +305,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         state.settings,
         activePlan.slug,
         activePlan.plan?.spec.feature ?? text,
-        text
+        text,
+        sessionFor(activePlan.slug, false)
       );
       runsApi.track(handle);
     });
@@ -277,7 +356,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         code,
         story.feedback,
         story.feature1StoryId,
-        mcp
+        mcp,
+        sessionFor(slug, false)
       );
       runsApi.track(handle);
     });

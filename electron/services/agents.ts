@@ -96,6 +96,34 @@ function removeQuietly(targets: string[]): void {
   }
 }
 
+/**
+ * The claude invocation for one run. Pure and exported so the flag assembly —
+ * three optional flags whose order matters to the CLI — can be tested without
+ * spawning anything.
+ */
+export function claudeCommandFor(
+  req: Pick<RunAgentRequest, 'model' | 'session'>,
+  opts: { repoPath: string; promptFile: string; mcpConfig?: string }
+): string {
+  const q = shellQuote;
+  const mcpFlag = opts.mcpConfig ? `--mcp-config ${q(opts.mcpConfig)} ` : '';
+  // No --model unless one was chosen: claude then uses the model the user has
+  // already configured, which never goes stale as the models change.
+  const modelFlag = req.model ? `--model ${q(req.model)} ` : '';
+  // --session-id names the conversation on the run that opens it; --resume
+  // continues it. mvpfy chooses the id, so the two always agree.
+  const sessionFlag = req.session
+    ? req.session.resume
+      ? `--resume ${q(req.session.id)} `
+      : `--session-id ${q(req.session.id)} `
+    : '';
+  return (
+    `${cdTo(opts.repoPath)} && claude ${mcpFlag}${modelFlag}${sessionFlag}` +
+    `-p --verbose --output-format stream-json --dangerously-skip-permissions ` +
+    `< ${q(opts.promptFile)}`
+  );
+}
+
 export function runAgent(req: RunAgentRequest): void {
   const repoPath = path.resolve(req.repoPath);
   if (!isAllowedWorkspace(repoPath)) {
@@ -122,12 +150,11 @@ export function runAgent(req: RunAgentRequest): void {
     // individual tool calls), and the process is confined to the cloned repo.
     // --mcp-config registers the Feature1 server for this run only.
     if (req.mcp) scratch.push(writeClaudeMcpConfig(req.runId, req.mcp));
-    const mcpFlag = req.mcp ? `--mcp-config ${q(scratch[scratch.length - 1])} ` : '';
-    // No --model unless one was chosen: claude then uses the model the user
-    // has already configured, which is the right answer for most people and
-    // never goes stale as the available models change.
-    const modelFlag = req.model ? `--model ${q(req.model)} ` : '';
-    command = `${cdTo(repoPath)} && claude ${mcpFlag}${modelFlag}-p --verbose --output-format stream-json --dangerously-skip-permissions < ${q(promptFile)}`;
+    command = claudeCommandFor(req, {
+      repoPath,
+      promptFile,
+      mcpConfig: req.mcp ? scratch[scratch.length - 1] : undefined,
+    });
   } else {
     const model = req.model || DEFAULT_STATE.settings.codexModel;
     if (req.mcp) {

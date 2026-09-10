@@ -41,6 +41,13 @@ export interface Project {
    */
   readinessAccepted?: string[];
   /**
+   * One Claude conversation per feature, by plan slug. Planning, refining and
+   * implementing a feature all continue it, so refining a spec knows why the
+   * spec says what it does. Kept here rather than in the agent-written plan
+   * file, which the agent would be rewriting underneath us.
+   */
+  featureSessions?: Record<string, string>;
+  /**
    * 'managed' (default): a clone under ~/.mvpfy/projects, fully owned by
    * mvpfy. 'linked': the user's own folder used in place — mvpfy keeps all
    * its files inside a .mvpfy/ subfolder and never deletes the folder.
@@ -148,6 +155,19 @@ export interface RunAgentMcp {
   token: string;
 }
 
+/**
+ * The conversation a run continues. mvpfy mints the id, so it never has to
+ * read one back out of the agent's output to know what to resume.
+ *
+ * Claude Code only: codex can resume a session but cannot be told which id to
+ * use for a new one, so there is nothing to hand it up front.
+ */
+export interface RunSession {
+  id: string;
+  /** False on the run that opens the conversation, true on every one after. */
+  resume: boolean;
+}
+
 export interface RunAgentRequest {
   /** Unique id used to correlate streamed output events. */
   runId: string;
@@ -158,6 +178,8 @@ export interface RunAgentRequest {
   model?: string;
   /** When set, the Feature1 MCP server is registered with the agent. */
   mcp?: RunAgentMcp;
+  /** When set, the run opens or continues a named conversation. */
+  session?: RunSession;
 }
 
 export interface RunOutputEvent {

@@ -1,6 +1,7 @@
 You are implementing one planned user story for a non-technical product manager.
 
 Workspace: {repoPath}
+{resumeNote}
 Read {planFile} and {specFile} in the workspace root. Implement story {storyCode}:
 every acceptance criterion, plus tests, in the appropriate repository within the workspace.
 {feedbackBlock}

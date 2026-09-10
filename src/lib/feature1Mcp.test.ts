@@ -171,14 +171,17 @@ describe('browserLogin', () => {
     expect(start.loginId).toBe('abc123');
   });
 
-  it('says the workspace keeps the token when there is no login id', async () => {
+  it('accepts a workspace that keeps the session and issues no login id', async () => {
+    // Signing in is still real; the agent's own connection to the workspace
+    // carries the identity instead of a token mvpfy holds.
     reply({
       content: [{ type: 'text', text: 'Open https://x/login' }],
       loginUrl: 'https://x/login',
     });
-    await expect(new Feature1McpClient('acme', null).browserLogin()).rejects.toThrow(
-      /without handing back a token/
-    );
+    expect(await new Feature1McpClient('acme', null).browserLogin()).toEqual({
+      loginUrl: 'https://x/login',
+      loginId: null,
+    });
   });
 
   it('says so plainly when there is no sign-in URL at all', async () => {

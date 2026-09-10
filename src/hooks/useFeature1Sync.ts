@@ -36,8 +36,11 @@ export function useFeature1Sync(state: MvpfyState): Feature1SyncState {
     setSyncing(true);
     setError(null);
     try {
-      const token = await window.mvpfy.keychainGet(tenant.tokenKeychainEntry);
-      if (!token) throw new Error('Your Feature1 sign-in has expired — sign in again.');
+      const entry = tenant.tokenKeychainEntry;
+      const token = entry ? await window.mvpfy.keychainGet(entry) : null;
+      if (entry && !token) throw new Error('Your Feature1 sign-in has expired — sign in again.');
+      // Without a token the request goes unauthenticated and the workspace
+      // answers as whoever signed in through the browser.
       const client = new Feature1McpClient(tenant.slug, token);
       setFeatures(await client.listAssignedFeatures());
       setSyncedAt(new Date());

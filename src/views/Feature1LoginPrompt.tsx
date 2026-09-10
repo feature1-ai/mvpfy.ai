@@ -1,5 +1,4 @@
 import { Feature1LoginState } from '../hooks/useFeature1Login';
-import Feature1PasswordForm from './Feature1PasswordForm';
 
 /**
  * Sign in to Feature1, shown where the user asked for something that needs
@@ -38,7 +37,6 @@ export default function Feature1LoginPrompt({ login }: { login: Feature1LoginSta
       {login.status === 'error' && login.error && (
         <p className="mt-2.5 text-[12.5px] text-danger">{login.error}</p>
       )}
-      {login.needsPassword && <Feature1PasswordForm login={login} />}
     </div>
   );
 }

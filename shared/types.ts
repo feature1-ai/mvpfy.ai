@@ -157,8 +157,12 @@ export interface CreateProjectResult {
 export interface RunAgentMcp {
   /** e.g. https://<slug>-mcp.feature1.ai/mcp/ */
   url: string;
-  /** Bearer token for the tenant (from the OS keychain). */
-  token: string;
+  /**
+   * Bearer token for the tenant, when the workspace issued one. Absent for a
+   * workspace that keeps the session itself — the agent reaches it through the
+   * MCP server registered on Claude Code instead.
+   */
+  token?: string;
 }
 
 /**
@@ -300,6 +304,8 @@ export interface MvpfyApi {
   ideStatus(workspacePath: string): Promise<{ running: boolean; port: number | null }>;
   cliLogin(runId: string, tool: string): Promise<void>;
   /** How each required tool would be installed on this machine (macOS only). */
+  /** Add an MCP server to Claude Code itself, at user scope. */
+  registerMcpServer(runId: string, name: string, url: string): Promise<void>;
   installPlans(): Promise<InstallPlan[]>;
   /** Install one required tool, streaming its output like any other run. */
   installTool(runId: string, tool: string): Promise<void>;

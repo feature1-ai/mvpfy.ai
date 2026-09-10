@@ -9,7 +9,8 @@ export interface UserStory {
 
 export interface BrowserLoginStart {
   loginUrl: string;
-  loginId: string;
+  /** Null on a workspace that keeps the session rather than issuing one. */
+  loginId: string | null;
 }
 
 /**
@@ -35,50 +36,6 @@ export function mcpBaseUrl(tenantSlug: string): string {
 
 export function mcpHost(tenantSlug: string): string {
   return `${tenantSlug}-mcp.feature1.ai`;
-}
-
-/** The workspace's own web address, which is where its API lives. */
-export function tenantApiBase(tenantSlug: string): string {
-  return `https://${tenantSlug}.feature1.ai/api`;
-}
-
-/**
- * Sign in with the same email and password as the Feature1 website, and keep
- * the token it returns.
- *
- * The browser sign-in is the better route and is tried first — but a workspace
- * whose browser flow keeps the token on the server has nothing to hand back,
- * and mvpfy needs a token of its own for every request so that "assigned to
- * me" means the person sitting here. The password is used once and never
- * stored; only the token reaches the keychain.
- */
-export async function signInWithPassword(
-  tenantSlug: string,
-  email: string,
-  password: string
-): Promise<string> {
-  const res = await window.mvpfy.mcpFetch({
-    url: `${tenantApiBase(tenantSlug)}/auth/login`,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ email, password, tenantSlug }),
-  });
-  let parsed: { token?: string; error?: string; message?: string } = {};
-  try {
-    parsed = JSON.parse(res.body) as typeof parsed;
-  } catch {
-    // A workspace that answers with something other than JSON is not one we
-    // can sign in to; say where we looked rather than showing its HTML.
-    throw new Feature1McpError(
-      `${tenantApiBase(tenantSlug)} did not answer like a Feature1 workspace. Check the address.`
-    );
-  }
-  if (!res.ok || !parsed.token) {
-    throw new Feature1McpError(
-      parsed.error || parsed.message || `Sign-in failed (HTTP ${res.status})`
-    );
-  }
-  return parsed.token;
 }
 
 export function tokenKeychainEntry(tenantSlug: string): string {
@@ -186,30 +143,37 @@ export class Feature1McpClient {
         'Feature1 did not offer a sign-in URL. Check the address is right and that the workspace is reachable.'
       );
     }
-    // A sign-in mvpfy can finish has to end with a token it can keep: it holds
-    // one per workspace in the OS keychain and sends it with every request, so
-    // that each person sees their own work. A workspace whose browser sign-in
-    // leaves the token on the server has nothing to hand back, and mvpfy
-    // cannot pretend otherwise.
-    if (!loginId) {
-      throw new Feature1McpError(
-        'This Feature1 workspace signs in without handing back a token, so mvpfy cannot sign in as you. It needs browser_login to return a login_id alongside the URL, and /login/status to return the token once you have signed in.'
-      );
-    }
-    return { loginUrl, loginId };
+    // login_id is optional: a workspace that holds the session itself has no
+    // id to hand out, and signing in is then finished when it says somebody
+    // is authenticated rather than when it returns a token.
+    return { loginUrl, loginId: loginId ?? null };
   }
 
-  /** Poll /login/status until the browser flow completes; resolves to the session token. */
-  async pollLoginStatus(loginId: string, timeoutMs = 5 * 60_000): Promise<string> {
-    const statusUrl = `https://${mcpHost(this.tenantSlug)}/login/status?login_id=${encodeURIComponent(loginId)}`;
+  /**
+   * Wait for the browser sign-in to finish.
+   *
+   * Resolves to a token when the workspace issues one, and to null when it
+   * keeps the session itself and only reports that somebody is now signed in —
+   * which is a completed sign-in either way, just one where the agent's own
+   * connection to the workspace carries the identity instead of mvpfy's.
+   */
+  async pollLoginStatus(loginId: string | null, timeoutMs = 5 * 60_000): Promise<string | null> {
+    const statusUrl =
+      `https://${mcpHost(this.tenantSlug)}/login/status` +
+      (loginId ? `?login_id=${encodeURIComponent(loginId)}` : '');
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const res = await window.mvpfy.mcpFetch({ url: statusUrl });
       if (res.ok) {
         try {
-          const body = JSON.parse(res.body) as { status?: string; token?: string };
+          const body = JSON.parse(res.body) as {
+            status?: string;
+            token?: string;
+            authenticated?: boolean;
+          };
           if (body.status === 'complete' && body.token) return body.token;
           if (body.status === 'failed') throw new Feature1McpError('Browser login failed');
+          if (body.authenticated === true) return null;
         } catch (err) {
           if (err instanceof Feature1McpError) throw err;
           // Non-JSON response while pending; keep polling.
@@ -217,7 +181,7 @@ export class Feature1McpClient {
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
-    throw new Feature1McpError('Timed out waiting for browser login');
+    throw new Feature1McpError('Timed out waiting for the sign-in to finish in your browser');
   }
 
   // -- Workflow helpers ----------------------------------------------------

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { loginCommand, loginOpensTerminal, parseModelsFromHelp } from './cli';
+import { loginCommand, loginOpensTerminal, mcpAddCommand, parseModelsFromHelp } from './cli';
+import { shellQuote } from './shell';
 
 const onMac = process.platform === 'darwin';
 
@@ -68,5 +69,26 @@ describe('parseModelsFromHelp', () => {
     ).toEqual([]);
     expect(parseModelsFromHelp('no options here at all')).toEqual([]);
     expect(parseModelsFromHelp('')).toEqual([]);
+  });
+});
+
+describe('mcpAddCommand', () => {
+  const command = mcpAddCommand('feature1', 'https://warsha-mcp.feature1.ai/mcp/');
+
+  it('registers at user scope, so no repository gains an .mcp.json', () => {
+    expect(command).toContain('-s user');
+    expect(command).toContain('claude mcp add --transport http');
+    expect(command).toContain(shellQuote('https://warsha-mcp.feature1.ai/mcp/'));
+  });
+
+  it('removes any earlier registration first, and does so unconditionally', () => {
+    // `add` refuses a name already taken, and connecting to a second workspace
+    // has to replace the first. Not registered is the wanted state either way,
+    // so a failing remove must not stop the add.
+    const removeAt = command.indexOf('mcp remove');
+    const addAt = command.indexOf('mcp add');
+    expect(removeAt).toBeGreaterThan(-1);
+    expect(addAt).toBeGreaterThan(removeAt);
+    expect(command.slice(removeAt, addAt)).not.toContain('&&');
   });
 });

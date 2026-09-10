@@ -10,7 +10,6 @@ import {
 import { UpdateState } from '../hooks/useProjectController';
 import { CLI_HELP, cliRequired, installHintFor } from '../lib/cliCheck';
 import { useFeature1Login } from '../hooks/useFeature1Login';
-import Feature1PasswordForm from './Feature1PasswordForm';
 
 interface Props {
   version: string;
@@ -304,7 +303,6 @@ export default function SettingsView({
         {login.status === 'error' && login.error && (
           <p className="text-[12.5px] text-danger">{login.error}</p>
         )}
-        {login.needsPassword && !state.tenant && <Feature1PasswordForm login={login} />}
         <div className="border-t border-line-subtle" />
         <div className="flex items-center gap-4">
           <span

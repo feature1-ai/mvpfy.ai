@@ -38,6 +38,8 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('ide', runId, workspacePath, action, port),
   ideStatus: (workspacePath: string) => ipcRenderer.invoke('ide-status', workspacePath),
   cliLogin: (runId: string, tool: string) => ipcRenderer.invoke('cli-login', runId, tool),
+  registerMcpServer: (runId: string, name: string, url: string) =>
+    ipcRenderer.invoke('mcp-register', runId, name, url),
   installPlans: () => ipcRenderer.invoke('install-plans'),
   installTool: (runId: string, tool: string) => ipcRenderer.invoke('install-tool', runId, tool),
   readRepoFiles: (repoPath: string, relativePaths: string[]) =>

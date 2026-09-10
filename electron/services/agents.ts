@@ -149,11 +149,15 @@ export function runAgent(req: RunAgentRequest): void {
     // ship-feature flow must run unattended (the PM reviews outputs, not
     // individual tool calls), and the process is confined to the cloned repo.
     // --mcp-config registers the Feature1 server for this run only.
-    if (req.mcp) scratch.push(writeClaudeMcpConfig(req.runId, req.mcp));
+    // Only worth a per-run config when there is a token to carry: without one,
+    // the server registered on Claude Code itself is already reachable, and a
+    // second unauthenticated copy of it would add nothing.
+    const needsMcpConfig = Boolean(req.mcp?.token);
+    if (needsMcpConfig) scratch.push(writeClaudeMcpConfig(req.runId, req.mcp!));
     command = claudeCommandFor(req, {
       repoPath,
       promptFile,
-      mcpConfig: req.mcp ? scratch[scratch.length - 1] : undefined,
+      mcpConfig: needsMcpConfig ? scratch[scratch.length - 1] : undefined,
     });
   } else {
     const model = req.model || DEFAULT_STATE.settings.codexModel;

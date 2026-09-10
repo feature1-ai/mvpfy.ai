@@ -109,9 +109,14 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // so pull/implement-from-Feature1 fail loudly rather than silently.
   const feature1Mcp = useCallback(async () => {
     if (!state.tenant) throw new Error('Connect Feature1 in Settings first.');
-    const token = await window.mvpfy.keychainGet(state.tenant.tokenKeychainEntry);
-    if (!token) throw new Error('Feature1 session expired — reconnect in Settings.');
-    return { url: mcpBaseUrl(state.tenant.slug), token };
+    const entry = state.tenant.tokenKeychainEntry;
+    const token = entry ? await window.mvpfy.keychainGet(entry) : null;
+    // No token is not a failure: a workspace that keeps the session itself is
+    // reached through the MCP server registered on Claude Code, which carries
+    // the sign-in. A workspace that DID issue one and has since lost it is a
+    // real expiry, and says so.
+    if (entry && !token) throw new Error('Feature1 session expired — reconnect in Settings.');
+    return { url: mcpBaseUrl(state.tenant.slug), ...(token ? { token } : {}) };
   }, [state.tenant]);
 
   // When a story run finishes cleanly, the agent's allowed move fires on its

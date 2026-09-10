@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react';
 import { MvpfyState } from '../../shared/types';
 import {
   Feature1McpClient,
+  mcpBaseUrl,
   mcpHost,
-  signInWithPassword,
   tenantSlugFrom,
   tokenKeychainEntry,
 } from '../lib/feature1Mcp';
@@ -25,12 +25,6 @@ export interface Feature1LoginState {
   connected: boolean;
   host: string | null;
   connect(): Promise<boolean>;
-  /**
-   * True once the browser sign-in has proved this workspace cannot hand a
-   * token back, so the email and password route is the one left.
-   */
-  needsPassword: boolean;
-  signIn(email: string, password: string): Promise<boolean>;
   disconnect(): void;
 }
 
@@ -38,23 +32,6 @@ export function useFeature1Login(state: MvpfyState, updateState: UpdateState): F
   const [address, setAddress] = useState(state.tenant?.slug ?? '');
   const [status, setStatus] = useState<'idle' | 'waiting' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [needsPassword, setNeedsPassword] = useState(false);
-
-  /** Keep the token where only the OS can read it, and record the workspace. */
-  const keep = useCallback(
-    async (slug: string, token: string) => {
-      const entry = tokenKeychainEntry(slug);
-      await window.mvpfy.keychainSet(entry, token);
-      updateState((prev) => ({
-        ...prev,
-        tenant: { slug, host: mcpHost(slug), tokenKeychainEntry: entry },
-      }));
-      setStatus('idle');
-      setError(null);
-      setNeedsPassword(false);
-    },
-    [updateState]
-  );
 
   const connect = useCallback(async () => {
     // People know the address in their browser, not their "slug".
@@ -69,44 +46,34 @@ export function useFeature1Login(state: MvpfyState, updateState: UpdateState): F
     setStatus('waiting');
     setError(null);
     try {
+      // Give Claude Code the workspace first: with the server registered, the
+      // agent's own connection carries the sign-in, which is what makes a
+      // workspace that keeps its session usable at all.
+      await window.mvpfy.registerMcpServer(
+        `f1-mcp-${Date.now().toString(36)}`,
+        'feature1',
+        mcpBaseUrl(slug)
+      );
       const client = new Feature1McpClient(slug, null);
       const { loginUrl, loginId } = await client.browserLogin();
       await window.mvpfy.openExternal(loginUrl);
       const token = await client.pollLoginStatus(loginId);
-      await keep(slug, token);
+      // A token only exists when the workspace issues one; otherwise the
+      // workspace holds the session and there is nothing to keep.
+      const entry = token ? tokenKeychainEntry(slug) : '';
+      if (token) await window.mvpfy.keychainSet(entry, token);
+      updateState((prev) => ({
+        ...prev,
+        tenant: { slug, host: mcpHost(slug), tokenKeychainEntry: entry },
+      }));
+      setStatus('idle');
       return true;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       setStatus('error');
-      setError(message);
-      // The workspace completed a sign-in but kept the token. Offer the route
-      // that does return one rather than leaving a dead end.
-      if (/without handing back a token/.test(message)) setNeedsPassword(true);
+      setError(err instanceof Error ? err.message : String(err));
       return false;
     }
-  }, [address, keep]);
-
-  const signIn = useCallback(
-    async (email: string, password: string) => {
-      const slug = tenantSlugFrom(address);
-      if (!slug) {
-        setStatus('error');
-        setError('Paste your Feature1 address first, e.g. acme.feature1.ai');
-        return false;
-      }
-      setStatus('waiting');
-      setError(null);
-      try {
-        await keep(slug, await signInWithPassword(slug, email, password));
-        return true;
-      } catch (err) {
-        setStatus('error');
-        setError(err instanceof Error ? err.message : String(err));
-        return false;
-      }
-    },
-    [address, keep]
-  );
+  }, [address, updateState]);
 
   const disconnect = useCallback(() => {
     updateState((prev) => ({ ...prev, tenant: null }));
@@ -122,8 +89,6 @@ export function useFeature1Login(state: MvpfyState, updateState: UpdateState): F
     connected: state.tenant !== null,
     host: state.tenant?.host ?? null,
     connect,
-    needsPassword,
-    signIn,
     disconnect,
   };
 }

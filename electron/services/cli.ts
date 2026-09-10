@@ -1,6 +1,6 @@
 import { CliName, CliStatus, REQUIRED_CLIS } from '../../shared/types';
 import { terminalCommand } from './install';
-import { IS_WIN, resolveWindowsPath, spawnShellSync } from './shell';
+import { IS_WIN, resolveWindowsPath, shellQuote, spawnShellSync } from './shell';
 
 /** Detection of required CLIs and their sign-in state. */
 
@@ -92,6 +92,24 @@ export function agentModels(agent: CliName): string[] {
   const probe = IS_WIN ? `${help} 2>&1` : `${help} 2>&1 | cat`;
   const result = spawnShellSync(probe, { encoding: 'utf8', timeout: 15_000 });
   return parseModelsFromHelp(result.stdout ?? '');
+}
+
+/**
+ * Register a Feature1 workspace as an MCP server on Claude Code itself.
+ *
+ * User scope, so one registration serves every project and nothing is written
+ * into any repository — project scope would put an .mcp.json in the code and
+ * someone would commit it. `remove` first because `add` refuses a name that is
+ * already taken, and reconnecting to a different workspace must replace the
+ * old one rather than fail; it runs unconditionally, since "not registered" is
+ * the state we want either way.
+ */
+export function mcpAddCommand(name: string, url: string): string {
+  const alsoRun = IS_WIN ? '&' : ';';
+  return (
+    `claude mcp remove ${shellQuote(name)} -s user ${alsoRun} ` +
+    `claude mcp add --transport http ${shellQuote(name)} ${shellQuote(url)} -s user`
+  );
 }
 
 export function cliCheck(): CliStatus[] {

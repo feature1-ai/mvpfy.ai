@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
 import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
-import { agentModels, cliCheck, loginCommand } from './services/cli';
+import { agentModels, cliCheck, loginCommand, mcpAddCommand } from './services/cli';
 import { composeCommand, ideCommand, ideStatus } from './services/docker';
 import { installCommand, installPlans } from './services/install';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
@@ -151,6 +151,11 @@ export function registerIpc(): void {
   ipcMain.handle('cli-login', (_ev, runId: string, tool: string) =>
     startRun(runId, loginCommand(tool), TMP_DIR)
   );
+  ipcMain.handle('mcp-register', (_ev, runId: string, name: string, url: string) => {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') throw new Error('Only https MCP servers can be registered');
+    startRun(runId, mcpAddCommand(name, url), TMP_DIR);
+  });
   ipcMain.handle('install-plans', () => installPlans());
   ipcMain.handle('install-tool', (_ev, runId: string, tool: string) =>
     startRun(runId, installCommand(tool), TMP_DIR)

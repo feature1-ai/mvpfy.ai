@@ -63,7 +63,8 @@ export function useAgentActions(ctx: ControllerContext): AgentActions {
       setLoadingStories(true);
       setStoriesError(null);
       try {
-        const token = await window.mvpfy.keychainGet(state.tenant.tokenKeychainEntry);
+        const entry = state.tenant.tokenKeychainEntry;
+        const token = entry ? await window.mvpfy.keychainGet(entry) : null;
         const client = new Feature1McpClient(state.tenant.slug, token);
         setStories(await client.listUserStories());
       } catch (err) {
@@ -82,9 +83,10 @@ export function useAgentActions(ctx: ControllerContext): AgentActions {
       // server with this run (URL + keychain token). Without it the
       // mcp__feature1__* calls in the ship-feature prompt would not resolve.
       if (!state.tenant) throw new Error('Connect Feature1 in Settings first.');
-      const token = await window.mvpfy.keychainGet(state.tenant.tokenKeychainEntry);
-      if (!token) throw new Error('Feature1 session expired — reconnect in Settings.');
-      const mcp = { url: mcpBaseUrl(state.tenant.slug), token };
+      const entry = state.tenant.tokenKeychainEntry;
+      const token = entry ? await window.mvpfy.keychainGet(entry) : null;
+      if (entry && !token) throw new Error('Feature1 session expired — reconnect in Settings.');
+      const mcp = { url: mcpBaseUrl(state.tenant.slug), ...(token ? { token } : {}) };
       const handle = await startShipFeatureRun(
         project,
         story.id,

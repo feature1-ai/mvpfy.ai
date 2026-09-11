@@ -23,6 +23,25 @@ export interface PlanSpec {
   requirements: { functional: SpecItem[]; nonFunctional: SpecItem[] };
 }
 
+/**
+ * Where a whole feature sits, worked out from its stories and its pull
+ * requests rather than stored. Nothing writes this, so nothing can disagree
+ * with the board underneath it.
+ */
+export type FeatureLane = StoryLane;
+
+export function featureLane(plan: ProjectPlan | null, running: boolean): FeatureLane {
+  // The pull request being out is what "done" means for a feature; the
+  // builder's own acceptance is the gate that opens it.
+  if ((plan?.prUrls?.length ?? 0) > 0) return 'done';
+  if (running) return 'coding';
+  const stories = plan?.stories ?? [];
+  if (stories.length === 0) return 'todo';
+  if (stories.every((s) => s.lane === 'done')) return 'testing';
+  if (stories.some((s) => s.lane !== 'todo')) return 'coding';
+  return 'todo';
+}
+
 export type StoryLane = 'todo' | 'coding' | 'testing' | 'done';
 export const LANES: StoryLane[] = ['todo', 'coding', 'testing', 'done'];
 export const LANE_LABELS: Record<StoryLane, string> = {

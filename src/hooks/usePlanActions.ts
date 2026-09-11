@@ -54,6 +54,10 @@ export interface PlanActions {
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
+  /** Implement every remaining story in the active feature, in order. */
+  implementFeature(): Promise<boolean>;
+  /** The feature whose stories are being worked through, if any. */
+  runningFeature: string | null;
   moveStory(code: string, lane: StoryLane, feedback?: string): Promise<boolean>;
 }
 
@@ -91,6 +95,9 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       r.running && !['app-logs', 'plan-spec', 'plan-story', 'readiness'].includes(r.handle.kind)
   );
   const processedPlanRuns = useRef(new Set<string>());
+  // The feature being worked through story by story. Session-only on purpose:
+  // a run that was interrupted by a quit should not silently resume itself.
+  const [runAllSlug, setRunAllSlug] = useState<string | null>(null);
 
   const writePlan = useCallback(
     async (slug: string, next: ProjectPlan) => {
@@ -386,7 +393,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       }
       if (anyStoryRunning) {
         throw new Error(
-          'A story is already being implemented — one at a time, so branches don’t collide'
+          'A story is already being implemented — one at a time, so two runs do not write the same checkout'
         );
       }
       if (planBlocked) {
@@ -432,6 +439,58 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       runsApi.track(handle);
     });
 
+  /**
+   * Work through the feature's remaining stories in order.
+   *
+   * Chained rather than run as one large agent turn: the board keeps moving —
+   * each story visibly goes Coding then Testing — a failure stops where it
+   * happened with the earlier work already landed, and sending a story back
+   * with feedback still works, because each is still its own run. The feature
+   * shares one conversation, so nothing is re-read between them.
+   */
+  const implementFeature = () =>
+    guarded(async () => {
+      const active = activePlan;
+      const next = active?.plan?.stories.find((st) => st.lane === 'todo');
+      if (!active || !next) {
+        throw new Error('Every story in this feature has been started already');
+      }
+      setRunAllSlug(active.slug);
+      // implementStory reports its own failures; the chain below picks up from
+      // whatever it leaves behind.
+      await implementStory(next.code);
+    });
+
+  // Start the next story once the last one has landed in Testing. Waiting for
+  // that move rather than for the run to exit keeps two writes to the same
+  // plan file from racing each other.
+  const chainedStories = useRef(new Set<string>());
+  useEffect(() => {
+    if (!runAllSlug) return;
+    const run = storyRuns.find(
+      (r) =>
+        !r.running &&
+        !chainedStories.current.has(r.handle.runId) &&
+        (r.handle.planSlug ?? '') === runAllSlug
+    );
+    if (!run) return;
+    const plan = plans.find((pl) => pl.slug === runAllSlug)?.plan;
+    const finished = plan?.stories.find((st) => st.code === run.handle.storyId);
+    // Wait for the move into Testing before reading the plan again, so two
+    // writes to the same file cannot race each other.
+    if (!plan || finished?.lane === 'coding') return;
+    chainedStories.current.add(run.handle.runId);
+    // A failure stops the chain where it happened: a later story usually
+    // builds on an earlier one, and carrying on tends to produce a second
+    // failure and a board nobody can read.
+    const next = run.exitCode === 0 ? plan.stories.find((st) => st.lane === 'todo') : undefined;
+    queueMicrotask(() => {
+      if (next) void implementStory(next.code);
+      else setRunAllSlug(null);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storyRuns, plans, runAllSlug]);
+
   const moveStory = (code: string, lane: StoryLane, feedback?: string) =>
     guarded(async () => {
       const plan = activePlan?.plan;
@@ -471,6 +530,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     testFeature,
     approvePlan,
     implementStory,
+    implementFeature,
+    runningFeature: runAllSlug,
     moveStory,
   };
 }

@@ -9,6 +9,7 @@ import {
   SpecItem,
   StoryLane,
   canMove,
+  featureLane,
   uncoveredItems,
 } from '../lib/plan';
 import { Feature1Feature } from '../lib/feature1Mcp';
@@ -47,6 +48,8 @@ export default function PlanView({ c, onOpenTab }: Props) {
   // starts it with the project, so on a fresh product it is the only thing
   // there is to look at. Once real features exist, it is one chip away.
   const [pick, setPick] = useState<'readiness' | 'plans' | null>(null);
+  // null means the feature board. Opening a feature drills into its stories.
+  const [openSlug, setOpenSlug] = useState<string | null>(null);
   const readinessKnown = c.readinessVerdict !== null || c.readinessRunning;
   const showReadiness =
     pick === 'readiness' || (pick === null && readinessKnown && plans.length === 0);
@@ -59,7 +62,13 @@ export default function PlanView({ c, onOpenTab }: Props) {
     setBounce(null);
   };
 
-  const hasChips = readinessKnown || plans.length > 0;
+  const openFeature = (slug: string) => {
+    setPick('plans');
+    setCreatingNew(false);
+    setBounce(null);
+    setOpenSlug(slug);
+    c.setActivePlanSlug(slug);
+  };
 
   // A synced feature already on a board is one of the chips above; only the
   // ones with nothing behind them yet need an offer to pull.
@@ -82,33 +91,27 @@ export default function PlanView({ c, onOpenTab }: Props) {
           }}
         />
       )}
-      {plans.map((f) => (
-        <FeatureChip
-          key={f.slug}
-          feature={f}
-          selected={!showReadiness && !creatingNew && f.slug === active?.slug}
+      {(openSlug !== null || showReadiness || creatingNew) && (
+        <button
           onClick={() => {
+            setOpenSlug(null);
             setPick('plans');
             setCreatingNew(false);
-            setBounce(null);
-            c.setActivePlanSlug(f.slug);
           }}
-        />
-      ))}
-      {/* Only worth showing once there is somewhere to come back from. */}
-      {hasChips && (
-        <button
-          onClick={goPlanHome}
-          title="Plan a feature"
-          className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors ${
-            !showReadiness && creatingNew
-              ? 'border-ink bg-ink text-white'
-              : 'border-line bg-surface text-body hover:border-muted'
-          }`}
+          className="flex h-7 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-xs text-body transition-colors hover:border-muted"
         >
-          Plan
+          ← All features
         </button>
       )}
+      {openSlug !== null &&
+        plans.map((f) => (
+          <FeatureChip
+            key={f.slug}
+            feature={f}
+            selected={f.slug === active?.slug}
+            onClick={() => openFeature(f.slug)}
+          />
+        ))}
       {/* Not connected: Sync leads to the sign-in rather than an error. */}
       <button
         onClick={() => {
@@ -280,6 +283,57 @@ export default function PlanView({ c, onOpenTab }: Props) {
     );
   }
 
+  // The board of features. Opening one drills into its stories; this is where
+  // the tab lands, so the shape of the work is visible before any detail is.
+  if (openSlug === null) {
+    return (
+      <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
+        {toolbar}
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">Features</h1>
+            <p className="mt-0.5 text-[13px] text-body">
+              {plans.length} feature{plans.length === 1 ? '' : 's'} · open one to see its stories
+            </p>
+          </div>
+          <button onClick={goPlanHome} className="btn-secondary h-8 px-3.5">
+            Plan a feature
+          </button>
+        </div>
+        <div className="grid grid-cols-2 items-start gap-4 min-[980px]:grid-cols-4">
+          {LANES.map((lane) => {
+            const inLane = plans.filter(
+              (f) => featureLane(f.plan, f.generating || f.runningStory !== null) === lane
+            );
+            return (
+              <div
+                key={lane}
+                className="min-h-[220px] rounded-[10px] border border-line bg-sunken p-2.5"
+              >
+                <div className="mb-2 flex items-baseline justify-between px-1">
+                  <span className="section-label">{LANE_LABELS[lane]}</span>
+                  <span className="font-mono text-[10.5px] text-faint">{inLane.length}</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {inLane.map((f) => (
+                    <FeatureCard key={f.slug} feature={f} onOpen={() => openFeature(f.slug)} />
+                  ))}
+                  {inLane.length === 0 && (
+                    <p className="px-1 py-4 text-center text-[11.5px] text-faint">—</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-[11.5px] text-muted">
+          A feature moves across as its stories do: Coding once any story has started, Testing once
+          you have accepted them all, Done when its pull request is open.
+        </p>
+      </div>
+    );
+  }
+
   if (active?.generating) {
     return (
       <div className="flex h-full flex-col px-6 pt-7">
@@ -428,6 +482,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <ImplementFeatureButton c={c} plan={plan} slug={active.slug} />
           <TestFeatureButton c={c} slug={active.slug} />
           <FeatureShipControls c={c} plan={plan} />
           <button onClick={() => setSpecOpen((v) => !v)} className="btn-secondary h-8 px-3.5">
@@ -495,6 +550,41 @@ export default function PlanView({ c, onOpenTab }: Props) {
         features; planning new features is always allowed.
       </p>
     </div>
+  );
+}
+
+/**
+ * Work through the feature's remaining stories without being asked between
+ * each one. Each still runs on its own, so the board keeps moving and a story
+ * can still be sent back — this only removes the clicking.
+ */
+function ImplementFeatureButton({
+  c,
+  plan,
+  slug,
+}: {
+  c: ProjectController;
+  plan: ProjectPlan;
+  slug: string;
+}) {
+  const remaining = plan.stories.filter((s) => s.lane === 'todo').length;
+  const runningHere = c.runningFeature === slug;
+  if (remaining === 0 && !runningHere) return null;
+  return (
+    <button
+      onClick={() => void c.implementFeature()}
+      disabled={c.anyStoryRunning || c.planBlocked || !plan.approved}
+      title={
+        plan.approved
+          ? 'Implement the remaining stories one after another'
+          : 'Agree with the PRD first'
+      }
+      className="btn-secondary h-8 px-3.5 disabled:opacity-50"
+    >
+      {runningHere && c.anyStoryRunning
+        ? `Implementing… ${remaining} left`
+        : `Implement ${remaining} ${remaining === 1 ? 'story' : 'stories'}`}
+    </button>
   );
 }
 
@@ -619,6 +709,44 @@ function ReadinessChip({
         <span className={`shrink-0 text-[10px] ${selected ? 'text-white/70' : 'text-faint'}`}>
           {count}
         </span>
+      )}
+    </button>
+  );
+}
+
+/** One feature on the feature board: what it is, and how far along. */
+function FeatureCard({ feature, onOpen }: { feature: FeaturePlan; onOpen: () => void }) {
+  const plan = feature.plan;
+  const stories = plan?.stories ?? [];
+  const done = stories.filter((s) => s.lane === 'done').length;
+  const busy = feature.generating || feature.runningStory !== null;
+  return (
+    <button
+      onClick={onOpen}
+      className="w-full rounded-lg border border-line bg-surface p-3 text-left hover:border-muted"
+    >
+      <div className="flex items-center gap-2">
+        {busy && <span className="dot-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-go" />}
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+          {plan?.spec.feature || feature.slug || 'Feature'}
+        </span>
+      </div>
+      {plan?.spec.overview.problem && (
+        <p className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-body">
+          {plan.spec.overview.problem}
+        </p>
+      )}
+      <p className="mt-1.5 font-mono text-[10px] text-faint">
+        {feature.generating
+          ? 'writing the spec…'
+          : stories.length === 0
+            ? 'no stories yet'
+            : `${done}/${stories.length} stories accepted`}
+      </p>
+      {(plan?.prUrls?.length ?? 0) > 0 && (
+        <p className="mt-1.5 font-mono text-[10px] text-go">
+          {plan!.prUrls!.length} pull request{plan!.prUrls!.length === 1 ? '' : 's'} open
+        </p>
       )}
     </button>
   );

@@ -156,6 +156,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
+  /** Implement every remaining story in the active feature, in order. */
+  implementFeature(): Promise<boolean>;
+  /** The feature whose stories are being worked through, if any. */
+  runningFeature: string | null;
   moveStory(code: string, lane: StoryLane, feedback?: string): Promise<boolean>;
   refreshStories(): Promise<boolean>;
   implement(story: UserStory): Promise<boolean>;

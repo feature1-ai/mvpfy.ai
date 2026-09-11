@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   canMove,
+  featureLane,
   itemId,
   parsePlan,
   serializePlan,
   slugForFeature,
   snapEstimate,
+  StoryLane,
   uncoveredItems,
 } from './plan';
 
@@ -166,5 +168,46 @@ describe('feature-level shipping', () => {
     const again = parsePlan(serializePlan(plan))!;
     expect(again.tested).toBe(true);
     expect(again.prUrls).toEqual(['https://github.com/acme/api/pull/12']);
+  });
+});
+
+describe('featureLane', () => {
+  const feature = (lanes: StoryLane[], extra: Record<string, unknown> = {}) =>
+    parsePlan(
+      JSON.stringify({
+        version: 1,
+        spec: { feature: 'Invoice export', overview: {}, scope: {}, requirements: {} },
+        stories: lanes.map((lane, i) => ({ code: `US-0${i + 1}`, title: `Story ${i}`, lane })),
+        ...extra,
+      })
+    );
+
+  it('is done once its pull request is out, whatever the stories say', () => {
+    // The PR being open is what done means for a feature; a story left in
+    // Testing afterwards does not reopen it.
+    const plan = feature(['done', 'testing'], { prUrls: ['https://github.com/a/b/pull/1'] });
+    expect(featureLane(plan, false)).toBe('done');
+  });
+
+  it('is testing when every story has been accepted but no PR is out', () => {
+    expect(featureLane(feature(['done', 'done']), false)).toBe('testing');
+  });
+
+  it('is coding while any story has been started', () => {
+    expect(featureLane(feature(['todo', 'coding']), false)).toBe('coding');
+    expect(featureLane(feature(['todo', 'done']), false)).toBe('coding');
+  });
+
+  it('is coding while a run is going, even before a story moves', () => {
+    expect(featureLane(feature(['todo', 'todo']), true)).toBe('coding');
+  });
+
+  it('is todo when nothing has started', () => {
+    expect(featureLane(feature(['todo', 'todo']), false)).toBe('todo');
+  });
+
+  it('treats a feature with no plan yet as todo', () => {
+    expect(featureLane(null, false)).toBe('todo');
+    expect(featureLane(feature([]), false)).toBe('todo');
   });
 });

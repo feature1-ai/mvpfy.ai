@@ -158,6 +158,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   raisePr(): Promise<boolean>;
   /** Put the running app on this feature's code, or back on the trunk. */
   testFeature(slug: string | null): Promise<boolean>;
+  /** The workspace is on this feature but behind its latest commit. */
+  testingStale: boolean;
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;

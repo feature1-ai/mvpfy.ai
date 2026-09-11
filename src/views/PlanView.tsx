@@ -595,20 +595,34 @@ function ImplementFeatureButton({
  */
 function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) {
   const live = c.project.testingSlug === slug;
+  // Behind its own branch: the app is running this feature, but an earlier
+  // round of it. Saying "Running this feature" there would be a lie of the
+  // exact kind that gets a story accepted on work nobody saw.
+  const stale = live && c.testingStale;
   return (
     <button
-      onClick={() => void c.testFeature(live ? null : slug)}
+      onClick={() => void c.testFeature(stale ? slug : live ? null : slug)}
       disabled={c.busy}
       title={
-        live
-          ? 'Put the workspace back on its default branch'
-          : 'Check this feature out in the workspace, so the running app is this feature'
+        stale
+          ? 'A story has landed since this was checked out — bring the app up to the latest commit'
+          : live
+            ? 'Put the workspace back on its default branch'
+            : 'Check this feature out in the workspace, so the running app is this feature'
       }
       className={`h-8 rounded-md px-3 text-[13px] disabled:opacity-50 ${
-        live ? 'bg-go-bg font-medium text-go' : 'btn-secondary'
+        stale
+          ? 'bg-warn-bg font-medium text-warn-text'
+          : live
+            ? 'bg-go-bg font-medium text-go'
+            : 'btn-secondary'
       }`}
     >
-      {live ? '● Running this feature' : 'Test this feature'}
+      {stale
+        ? 'Running an older version — update'
+        : live
+          ? '● Running this feature'
+          : 'Test this feature'}
     </button>
   );
 }

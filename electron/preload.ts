@@ -64,6 +64,8 @@ const api: MvpfyApi = {
     branch: string,
     action: 'add' | 'remove'
   ) => ipcRenderer.invoke('worktree', workspacePath, dirs, projectKey, featureSlug, branch, action),
+  featureCheckedOut: (dirs: string[], branch: string) =>
+    ipcRenderer.invoke('feature-checked-out', dirs, branch),
   checkoutFeature: (workspacePath: string, dirs: string[], branch: string | null) =>
     ipcRenderer.invoke('checkout-feature', workspacePath, dirs, branch),
   repoSync: (runId: string, workspacePath: string, dirs: string[]) =>

@@ -51,6 +51,8 @@ export interface PlanActions {
   raisePr(): Promise<boolean>;
   /** Put the running app on this feature's code, or back on the trunk. */
   testFeature(slug: string | null): Promise<boolean>;
+  /** The workspace is on this feature but behind its latest commit. */
+  testingStale: boolean;
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
@@ -148,7 +150,19 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
             : s
         ),
       });
+      // The commit just made is on the branch, but the workspace was detached
+      // at the tip as it stood — so a story arrives in Testing against code the
+      // running app does not have. Follow the branch, or the PM tests the round
+      // before this one and cannot tell.
+      if ((project.testingSlug ?? null) === slug) {
+        void window.mvpfy.checkoutFeature(
+          project.localPath,
+          project.repos.map((r) => r.dir),
+          `mvpfy/${slug || 'feature'}`
+        );
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storyRuns, plans, writePlan]);
 
   // Every pull request the raise printed — a multi-repo feature opens one per
@@ -218,6 +232,36 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         projects: prev.projects.map((p) => (p.id === project.id ? { ...p, testingSlug: slug } : p)),
       }));
     });
+
+  /**
+   * Whether the workspace is still showing the feature it claims to be. HEAD
+   * was detached at a commit, so a story implemented since has moved the
+   * branch past it; asking git is the only way to know.
+   */
+  const testingSlug = project.testingSlug ?? null;
+  // Re-asked whenever a story finishes, since that is exactly what moves the
+  // branch past us. Stamped with the question it answered, so a result cannot
+  // outlive it and no effect has to reset the state.
+  const runningStories = storyRuns.filter((r) => r.running).length;
+  const testingKey = testingSlug ? `${testingSlug}:${runningStories}` : '';
+  const [staleCheck, setStaleCheck] = useState({ key: '', stale: false });
+  useEffect(() => {
+    if (!testingKey) return;
+    let cancelled = false;
+    void window.mvpfy
+      .featureCheckedOut(
+        project.repos.map((r) => r.dir),
+        `mvpfy/${testingSlug || 'feature'}`
+      )
+      .then((current) => {
+        if (!cancelled) setStaleCheck({ key: testingKey, stale: !current });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testingKey, project.repos]);
+  const testingStale = staleCheck.key === testingKey && staleCheck.stale;
 
   const markFeatureTested = () =>
     guarded(async () => {
@@ -528,6 +572,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     markFeatureTested,
     raisePr,
     testFeature,
+    testingStale,
     approvePlan,
     implementStory,
     implementFeature,

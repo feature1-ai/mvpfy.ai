@@ -15,6 +15,7 @@ import {
   readRepoFiles,
   addWorktrees,
   checkoutFeature,
+  featureCheckedOut,
   raisePrCommand,
   removeWorktrees,
   repoSyncCommand,
@@ -155,6 +156,9 @@ export function registerIpc(): void {
       }
       return checkoutFeature(dirs, branch);
     }
+  );
+  ipcMain.handle('feature-checked-out', (_ev, dirs: string[], branch: string) =>
+    featureCheckedOut(dirs, branch)
   );
   ipcMain.handle('cli-login', (_ev, runId: string, tool: string) =>
     startRun(runId, loginCommand(tool), TMP_DIR)

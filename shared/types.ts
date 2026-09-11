@@ -346,6 +346,8 @@ export interface MvpfyApi {
     branch: string,
     action: 'add' | 'remove'
   ): Promise<{ ok: boolean; paths?: Record<string, string>; error?: string }>;
+  /** True when the workspace is on this feature's latest commit, not an older one. */
+  featureCheckedOut(dirs: string[], branch: string): Promise<boolean>;
   /** Put the workspace on a feature's branch for testing, or null for trunk. */
   checkoutFeature(
     workspacePath: string,

@@ -387,6 +387,36 @@ export function checkoutFeatureCommand(dirs: string[], branch: string): string {
   return parts.join(' && ');
 }
 
+/**
+ * Is the workspace actually showing this feature's latest work?
+ *
+ * Checking a feature out detaches HEAD at the branch tip as it stands, so a
+ * story implemented afterwards adds a commit the workspace never sees — the
+ * app would keep running pre-story code while claiming to be that feature.
+ * Stored state cannot know this; only the repository can be asked.
+ */
+export function featureCheckedOut(dirs: string[], branch: string): boolean {
+  const sha = (dir: string, ref: string) => {
+    const res = spawnShellSync(`git -C ${shellQuote(dir)} rev-parse ${shellQuote(ref)}`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    return res.status === 0 ? res.stdout.trim() : '';
+  };
+  let sawBranch = false;
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) return false;
+    const tip = sha(dir, branch);
+    // A repository the feature never reached has no branch, and correctly
+    // stays on its trunk; it says nothing either way.
+    if (!tip) continue;
+    sawBranch = true;
+    if (sha(dir, 'HEAD') !== tip) return false;
+  }
+  return sawBranch;
+}
+
 /** Put every repository back on its own trunk. */
 export function checkoutDefaultCommand(dirs: string[]): string {
   return dirs

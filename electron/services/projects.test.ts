@@ -4,6 +4,7 @@ import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../
 import {
   checkoutDefaultCommand,
   checkoutFeatureCommand,
+  featureCheckedOut,
   raisePrCommand,
   repoSyncCommand,
   worktreeAddCommand,
@@ -135,5 +136,17 @@ describe('checkoutFeatureCommand', () => {
 
   it('refuses directories outside a managed or linked workspace', () => {
     expect(() => checkoutDefaultCommand(['/etc'])).toThrow(/restricted to managed and linked/);
+  });
+});
+
+describe('featureCheckedOut', () => {
+  it('refuses to answer for a directory outside a managed or linked workspace', () => {
+    // Never "yes" on a repository mvpfy has no business reading.
+    expect(featureCheckedOut(['/etc'], 'mvpfy/x')).toBe(false);
+  });
+
+  it('is false when no repository has the branch at all', () => {
+    // Nothing to be checked out to, so the workspace is certainly not on it.
+    expect(featureCheckedOut([path.join(PROJECTS_DIR, 'shop', 'api')], 'mvpfy/nope')).toBe(false);
   });
 });

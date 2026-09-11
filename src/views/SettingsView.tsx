@@ -51,7 +51,7 @@ export default function SettingsView({
   const updateLine = checking
     ? 'Checking for a newer version…'
     : update?.kind === 'downloaded'
-      ? `Version ${update.version ?? ''} is ready to install.`
+      ? `Version ${update.version ?? ''} is downloaded — it installs when you quit mvpfy.`
       : update?.kind === 'available'
         ? `Version ${update.version ?? ''} is available.`
         : update?.kind === 'none'

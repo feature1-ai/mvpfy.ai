@@ -2,16 +2,29 @@ import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { UpdateStatus } from '../../shared/types';
 
+/** Long enough not to be chatty, often enough that a machine left open finds
+ *  a release the same day it goes out. */
+const RECHECK_MS = 3 * 60 * 60_000;
+
 /**
- * Auto-updates from GitHub Releases. Windows (NSIS) and Linux (AppImage)
- * download and install silently; macOS cannot install unsigned updates, so
- * there we only notify and link to the release. Once builds are signed and
- * notarized, macOS auto-installs through this same code path.
+ * Auto-updates from GitHub Releases.
+ *
+ * Windows (NSIS) and Linux (AppImage) need nothing from the user: the update
+ * downloads in the background and installs the next time the app is quit. The
+ * banner offering a restart is a way to have it sooner, not a step.
+ *
+ * macOS only notifies, because Squirrel refuses to apply an update it cannot
+ * verify and these builds are unsigned — turning autoDownload on there would
+ * download something that then fails to install. Signing the app makes macOS
+ * behave like the others through this same code, changing one line.
  */
 export function initAutoUpdates(send: (status: UpdateStatus) => void): void {
   if (!app.isPackaged) return;
   autoUpdater.allowPrerelease = true;
   autoUpdater.autoDownload = process.platform !== 'darwin';
+  // Explicit rather than relying on the default: this is the line that makes
+  // updating hands-off, so it should be visible.
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', (info) => {
     send({ kind: 'available', version: info.version });
   });
@@ -22,7 +35,12 @@ export function initAutoUpdates(send: (status: UpdateStatus) => void): void {
     // Non-fatal: the app keeps working on the current version.
     send({ kind: 'error' });
   });
-  autoUpdater.checkForUpdates().catch(() => undefined);
+  const check = () => void autoUpdater.checkForUpdates().catch(() => undefined);
+  check();
+  // Checking only at launch meant a machine left running for a week never
+  // noticed a release. The download that follows needs nothing from anyone.
+  const timer = setInterval(check, RECHECK_MS);
+  app.once('before-quit', () => clearInterval(timer));
 }
 
 /**

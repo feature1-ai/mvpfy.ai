@@ -147,7 +147,7 @@ export default function App() {
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 shadow-[0_8px_24px_rgba(27,26,23,.10)]">
           <span className="text-[13px] text-body">
             {updateStatus.kind === 'downloaded'
-              ? `Update ${updateStatus.version ?? ''} is ready.`
+              ? `Update ${updateStatus.version ?? ''} installs when you quit.`
               : `Update ${updateStatus.version ?? ''} is available.`}
           </span>
           {updateStatus.kind === 'downloaded' ? (

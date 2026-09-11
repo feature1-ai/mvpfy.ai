@@ -31,9 +31,12 @@ export interface PlanSpec {
 export type FeatureLane = StoryLane;
 
 export function featureLane(plan: ProjectPlan | null, running: boolean): FeatureLane {
-  // The pull request being out is what "done" means for a feature; the
-  // builder's own acceptance is the gate that opens it.
-  if ((plan?.prUrls?.length ?? 0) > 0) return 'done';
+  // Done is the builder saying they are finished with it. A raised pull
+  // request also counts, for a feature accepted before this was recorded —
+  // but acceptance is the gate, and tying Done to the pull request left a
+  // feature stuck in Testing whenever raising one failed, which is the case
+  // where the board most needs to still make sense.
+  if (plan?.tested === true || (plan?.prUrls?.length ?? 0) > 0) return 'done';
   if (running) return 'coding';
   const stories = plan?.stories ?? [];
   if (stories.length === 0) return 'todo';

@@ -182,6 +182,16 @@ describe('featureLane', () => {
       })
     );
 
+  it('is done when the builder says so, even if no pull request was raised', () => {
+    // Tying Done to the pull request left a feature stuck in Testing whenever
+    // raising one failed — the case where the board most needs to make sense.
+    expect(featureLane(feature(['done', 'done'], { tested: true }), false)).toBe('done');
+  });
+
+  it('is not done just because the stories are', () => {
+    expect(featureLane(feature(['done', 'done']), false)).toBe('testing');
+  });
+
   it('is done once its pull request is out, whatever the stories say', () => {
     // The PR being open is what done means for a feature; a story left in
     // Testing afterwards does not reopen it.

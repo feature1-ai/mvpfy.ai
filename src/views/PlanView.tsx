@@ -642,6 +642,29 @@ function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) 
  */
 function FeatureShipControls({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
   const prUrls = plan.prUrls ?? [];
+  // The raise is a run like any other, and a run that failed said so only in
+  // the Logs tab. Whether the pull request happened is the whole point of the
+  // button, so its outcome belongs next to it.
+  const raise = c.runHistory.filter((r) => r.handle.kind === 'raise-pr').pop();
+  if (raise?.running) {
+    return <span className="text-[13px] text-muted">Raising the pull request…</span>;
+  }
+  if (prUrls.length === 0 && raise && raise.exitCode !== 0) {
+    return (
+      <div className="flex max-w-[420px] flex-col items-end gap-1">
+        <button
+          onClick={() => void c.raisePr()}
+          disabled={c.busy}
+          className="btn-secondary h-8 px-3.5 disabled:opacity-50"
+        >
+          Raising the pull request failed — try again
+        </button>
+        <span className="max-w-full truncate text-right font-mono text-[10.5px] text-danger">
+          {raise.log.trim().split('\n').filter(Boolean).pop()}
+        </span>
+      </div>
+    );
+  }
   if (prUrls.length > 0) {
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -667,8 +690,9 @@ function FeatureShipControls({ c, plan }: { c: ProjectController; plan: ProjectP
   return allDone ? (
     <button
       onClick={() => {
-        void c.markFeatureTested();
-        void c.raisePr();
+        // In order, not together: both report through the same error slot, and
+        // two at once means whichever finishes last decides what is shown.
+        void c.markFeatureTested().then(() => c.raisePr());
       }}
       disabled={c.busy}
       title="Push the feature branch and open a pull request in each repository that changed"

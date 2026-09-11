@@ -468,8 +468,14 @@ export function raisePrCommand(
     if (commitsAhead(dir, base, branch) > 0) targets.push({ dir, base });
   }
   if (targets.length === 0) {
+    // Say what was looked at, not just that nothing was found: the usual
+    // causes are a branch that was never created, stories moved to Done by
+    // hand without being implemented, and commits that never reached the
+    // branch — and those are told apart by naming the branch and the repos.
+    const looked = dirs.map((d) => path.basename(path.resolve(d))).join(', ');
     throw new Error(
-      `No repository has commits on ${branch} yet — implement a story before raising a pull request.`
+      `Nothing to raise: ${branch} has no commits in ${looked}. ` +
+        `Implement a story first — moving one to Done by hand does not write any code.`
     );
   }
   return targets

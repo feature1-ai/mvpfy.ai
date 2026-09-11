@@ -3,6 +3,8 @@ You are making a change for a non-technical product manager in their local works
 Workspace: {repoPath}
 {workspaceNote}
 
+{contractNote}
+
 The product manager asked:
 ---
 {instruction}

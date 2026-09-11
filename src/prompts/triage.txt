@@ -5,14 +5,16 @@ Workspace: {repoPath}
 {workspaceNote}
 The step that failed: {failedStep}
 
+{contractNote}
+
 Tail of the failure log:
 ---
 {logTail}
 ---
 
 Do this:
-1. Diagnose the root cause. Look at the workspace files (docker-compose.mvpfy.yml,
-   Dockerfile(s), .env files, generated services under mvpfy/) as needed.
+1. Diagnose the root cause. Look at the workspace files as needed — mvpfy.yml,
+   docker-compose.mvpfy.yml, Dockerfile(s), .env files, generated services under mvpfy/.
 2. FIX it by editing files in the workspace. Prefer the smallest safe change. Never delete
    data volumes or user data. If the fix truly needs information only the product manager
    has (a credential, a repo URL), write numbered questions to mvpfy-questions.md instead

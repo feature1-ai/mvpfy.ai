@@ -4,6 +4,8 @@ check found it; the product builder pressed Fix.
 Workspace: {repoPath}
 {workspaceNote}
 
+{contractNote}
+
 THE FINDING
   What is true today: {title}
   Why it matters:     {detail}

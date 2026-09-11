@@ -27,7 +27,14 @@ function envState(c: ProjectController): EnvState {
     if (k === 'bootstrap-plan')
       return { kind: 'working', label: 'Working out what your app needs…' };
     if (k === 'bootstrap') return { kind: 'working', label: 'Setting your app up…' };
-    if (k === 'docker-up') return { kind: 'working', label: 'Starting…' };
+    // A start while the app is already known to be silent is the one automatic
+    // retry, not a fresh attempt — saying so stops it looking spontaneous.
+    if (k === 'docker-up') {
+      return {
+        kind: 'working',
+        label: c.appUnresponsive ? 'The app did not answer — starting it again…' : 'Starting…',
+      };
+    }
     if (k === 'docker-down') return { kind: 'working', label: 'Stopping…' };
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
     if (k === 'instruct') return { kind: 'working', label: 'Making your change…' };

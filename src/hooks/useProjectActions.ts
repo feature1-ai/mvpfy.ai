@@ -127,6 +127,29 @@ export function useProjectActions(
       runsApi.track(handle);
     });
 
+  /**
+   * Recreate the containers once before an unresponsive app counts as failed.
+   *
+   * The commonest reason an app does not answer on a first start is not a bad
+   * configuration at all — the app container comes up before the database is
+   * accepting connections, dies, and `up -d` still exits zero because they did
+   * start. Recreating them fixes exactly that, costs no agent run and needs no
+   * diagnosis, so it is worth trying before asking anyone to read a log.
+   *
+   * Once per start: a second attempt would be a loop, and whatever is wrong by
+   * then is not a race.
+   */
+  const retriedStart = useRef<string | null>(null);
+  const lastStart = projectRuns.filter((r) => r.handle.kind === 'docker-up').pop();
+  const lastStartId = lastStart && !lastStart.running ? lastStart.handle.runId : null;
+  useEffect(() => {
+    if (!unresponsive || !lastStartId) return;
+    if (retriedStart.current === lastStartId) return;
+    retriedStart.current = lastStartId;
+    queueMicrotask(() => void docker('restart'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unresponsive, lastStartId]);
+
   // Setup runs itself end to end: the task list flows into the work, and the
   // work flows into starting the app — each step once per run, even if
   // several renders observe the same completion. The PM's own gate is the

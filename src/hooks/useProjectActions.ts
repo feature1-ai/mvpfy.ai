@@ -8,6 +8,7 @@ import {
 } from '../../shared/types';
 import {
   startAppLogsRun,
+  startSeedRun,
   startBootstrapPlanRun,
   startBootstrapRun,
   startDockerRun,
@@ -27,6 +28,8 @@ export interface ProjectActions {
   docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
   /** Run setup again on a project that already has generated files. */
   rebootstrap(): Promise<boolean>;
+  /** Run the project's recorded seed command. */
+  seed(): Promise<boolean>;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */
@@ -53,7 +56,9 @@ export function useProjectActions(
   appLogsRun: RunState | null,
   /** The app started but never answered — a failure with no failed run. */
   unresponsive: boolean,
-  stoppedServices: ServiceState[]
+  stoppedServices: ServiceState[],
+  /** The app is answering — the moment it is safe to seed. */
+  appHealthy: boolean
 ): ProjectActions {
   const { project, state, updateState, runsApi, projectRuns, pf, files, refreshFiles, guarded } =
     ctx;
@@ -120,6 +125,30 @@ export function useProjectActions(
    * own code are never touched; the agent backs up what it replaces.
    */
   const rebootstrap = () => bootstrap(true);
+
+  const seed = () =>
+    guarded(async () => {
+      const handle = await startSeedRun(project);
+      if (handle) runsApi.track(handle);
+    });
+
+  /**
+   * Seed once the app is answering — not when `up` returns, which is as soon as
+   * containers have started and a database may still be coming up.
+   *
+   * Hanging it off the app responding rather than off the start run means
+   * every route to a running app seeds: the bootstrap chain, a manual start, a
+   * restart, and the retry after Diagnose & fix. None of them has to remember.
+   */
+  const seededFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!appHealthy) return;
+    const startId = projectRuns.filter((r) => r.handle.kind === 'docker-up').pop()?.handle.runId;
+    if (!startId || seededFor.current === startId) return;
+    seededFor.current = startId;
+    queueMicrotask(() => void seed());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appHealthy, projectRuns]);
 
   const docker = (action: Exclude<ComposeAction, 'logs'>) =>
     guarded(async () => {
@@ -285,6 +314,7 @@ export function useProjectActions(
     saveAnswersAndRerun,
     docker,
     rebootstrap,
+    seed,
     diagnose,
     retryFix,
     dismissTriage,

@@ -4,7 +4,13 @@ import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../
 import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
 import { agentModels, cliCheck, loginCommand, mcpAddCommand } from './services/cli';
-import { composeCommand, composeStatus, ideCommand, ideStatus } from './services/docker';
+import {
+  composeCommand,
+  composeStatus,
+  ideCommand,
+  ideStatus,
+  seedCommandFor,
+} from './services/docker';
 import { installCommand, installPlans } from './services/install';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
@@ -78,6 +84,17 @@ export function registerIpc(): void {
       startRun(runId, ideCommand(resolved, action, port), resolved);
     }
   );
+  ipcMain.handle('seed', (_ev, runId: string, workspacePath: string) => {
+    const resolved = path.resolve(workspacePath);
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('Seeding is restricted to managed and linked project directories');
+    }
+    const linked = isLinkedPath(resolved) && !isManagedPath(resolved);
+    const command = seedCommandFor(resolved, linked);
+    if (!command) return false;
+    startRun(runId, command, resolved);
+    return true;
+  });
   ipcMain.handle('compose-status', (_ev, workspacePath: string) => {
     const resolved = path.resolve(workspacePath);
     if (!isAllowedWorkspace(resolved)) {

@@ -76,6 +76,11 @@ Follow these steps:
 
 6. Generate these files in the WORKSPACE ROOT:
    • mvpfy.yml — app name, main service, host port, list of all services, health-check URL.
+     Record how to seed as `seed_command:` — ONE line mvpfy can run from the workspace root
+     once the app is answering, e.g.
+       seed_command: docker compose -f docker-compose.mvpfy.yml exec -T app npm run seed
+     It must run INSIDE the stack, be safe to run on every start, and create nothing twice.
+     Omit the key entirely if the product needs no seeding.
      If the app has authentication, arrange for a demo account (see the seeding rule in
      Rules below) and record it in a `demo_login:` block (url, email/username, password,
      and how to get the OTP if login needs one — e.g. "read the code at the mailhog URL").

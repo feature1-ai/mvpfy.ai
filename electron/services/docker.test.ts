@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { composeCommand, ideCommand, ideContainerName, parseComposePs } from './docker';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  composeCommand,
+  ideCommand,
+  ideContainerName,
+  parseComposePs,
+  seedCommandFor,
+} from './docker';
 import { IS_WIN } from './shell';
 
 describe('composeCommand', () => {
@@ -113,5 +122,41 @@ describe('parseComposePs', () => {
     expect(parseComposePs(JSON.stringify({ Name: 'lonely', State: 'exited' }))[0].service).toBe(
       'lonely'
     );
+  });
+});
+
+describe('seedCommandFor', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-seed-'));
+  const write = (yml: string) => fs.writeFileSync(path.join(dir, 'mvpfy.yml'), yml);
+  afterEach(() => fs.rmSync(path.join(dir, 'mvpfy.yml'), { force: true }));
+
+  it('reads the one line the project recorded', () => {
+    write('app: shop\nseed_command: docker compose exec -T app npm run seed\nhost_port: 4100\n');
+    expect(seedCommandFor(dir, false)).toBe('docker compose exec -T app npm run seed');
+  });
+
+  it('accepts a quoted command', () => {
+    write('seed_command: "rails db:seed"\n');
+    expect(seedCommandFor(dir, false)).toBe('rails db:seed');
+  });
+
+  it('is null when the project needs no seeding, which is not a failure', () => {
+    write('app: shop\nhost_port: 4100\n');
+    expect(seedCommandFor(dir, false)).toBeNull();
+    expect(seedCommandFor(dir, false)).toBeNull();
+  });
+
+  it('is null when there is no mvpfy.yml at all', () => {
+    expect(seedCommandFor(path.join(dir, 'nope'), false)).toBeNull();
+  });
+
+  it('ignores an empty value rather than running nothing', () => {
+    write('seed_command:\n');
+    expect(seedCommandFor(dir, false)).toBeNull();
+  });
+
+  it('stops at a comment, so a trailing note is not part of the command', () => {
+    write('seed_command: npm run seed # idempotent\n');
+    expect(seedCommandFor(dir, false)).toBe('npm run seed');
   });
 });

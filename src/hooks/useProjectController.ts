@@ -121,6 +121,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
   /** Run setup again on a project that already has generated files. */
   rebootstrap(): Promise<boolean>;
+  /** Run the project's recorded seed command. */
+  seed(): Promise<boolean>;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */
@@ -370,7 +372,8 @@ export function useProjectController(
     latestRun,
     appLogsRun,
     appUnresponsive,
-    stoppedServices
+    stoppedServices,
+    appHealthy
   );
   const planActions = usePlanActions(ctx);
   const agentActions = useAgentActions(ctx);

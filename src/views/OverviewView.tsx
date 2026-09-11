@@ -36,6 +36,7 @@ function envState(c: ProjectController): EnvState {
       };
     }
     if (k === 'docker-down') return { kind: 'working', label: 'Stopping…' };
+    if (k === 'seed') return { kind: 'working', label: 'Adding your demo login and sample data…' };
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
     if (k === 'instruct') return { kind: 'working', label: 'Making your change…' };
     if (k === 'sync') return { kind: 'working', label: 'Syncing repositories…' };

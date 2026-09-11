@@ -291,6 +291,7 @@ const RUN_LABELS: Record<string, string> = {
   'docker-down': 'Stopping the environment',
   'ide-up': 'Starting the editor',
   'ide-down': 'Stopping the editor',
+  seed: 'Adding the demo login and sample data',
   triage: 'Diagnosing a failure',
   instruct: 'Making a change',
   sync: 'Syncing repositories',

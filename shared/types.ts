@@ -308,6 +308,11 @@ export interface MvpfyApi {
   dockerCompose(runId: string, repoPath: string, action: ComposeAction): Promise<void>;
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
   /**
+   * Run the project's recorded seed command. Resolves false when it records
+   * none, which is normal for a product that needs no seeding.
+   */
+  seed(runId: string, workspacePath: string): Promise<boolean>;
+  /**
    * What each service of the stack is actually doing. `docker compose up -d`
    * succeeds once containers have started, so this is the only way to tell an
    * app that is still booting from one that started and died.

@@ -131,7 +131,8 @@ export type RunKind =
   | 'sync'
   | 'plan-spec'
   | 'plan-story'
-  | 'raise-pr';
+  | 'raise-pr'
+  | 'seed';
 
 export interface RunHandle {
   runId: string;
@@ -566,6 +567,21 @@ export async function startRaisePrRun(
     body
   );
   return { runId, kind: 'raise-pr', projectId: project.id, planSlug };
+}
+
+/**
+ * Seed the project, once its app is answering.
+ *
+ * Not after `up` returns: that happens as soon as containers have started, and
+ * a seed fired then would reach a database still coming up — the same race
+ * that makes an app look unresponsive on a first start.
+ *
+ * Null when the project records no seed command, which is not a failure.
+ */
+export async function startSeedRun(project: Project): Promise<RunHandle | null> {
+  const runId = makeRunId('seed');
+  const started = await window.mvpfy.seed(runId, project.localPath);
+  return started ? { runId, kind: 'seed', projectId: project.id } : null;
 }
 
 export async function startIdeRun(

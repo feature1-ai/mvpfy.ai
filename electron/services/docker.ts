@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ComposeAction, ServiceState } from '../../shared/types';
 import { IS_WIN, shellQuote, spawnShellSync } from './shell';
@@ -130,6 +131,32 @@ export function composeStatus(workspacePath: string, linked: boolean): ServiceSt
   });
   if (result.status !== 0) return [];
   return parseComposePs(result.stdout ?? '');
+}
+
+/**
+ * The one line mvpfy runs to seed a project, as recorded in its mvpfy.yml.
+ *
+ * Read here rather than passed in: the renderer says "seed this workspace" and
+ * the command comes from the file on disk, the same way every other command is
+ * built in the main process rather than handed to it.
+ *
+ * Null when the key is absent — a product that needs no seeding is normal, not
+ * a failure.
+ */
+export function seedCommandFor(workspacePath: string, linked: boolean): string | null {
+  const file = path.join(workspacePath, linked ? '.mvpfy' : '', 'mvpfy.yml');
+  let text: string;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  const match = text.match(/^\s*seed_command:\s*(?:["']([^"']+)["']|([^\n#]+))/m);
+  const command = (match?.[1] ?? match?.[2] ?? '').trim();
+  if (!command) return null;
+  // Newlines would turn one recorded line into several commands; a recorded
+  // seed is one line by contract, so anything else is not it.
+  return command.includes('\n') ? null : command;
 }
 
 export function composeCommand(action: ComposeAction, linked = false): string {

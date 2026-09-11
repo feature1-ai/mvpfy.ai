@@ -129,10 +129,14 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
       green: true,
     },
     unresponsive: {
-      title: 'The app is not responding',
-      bodyText: stoppedNames
-        ? `${stoppedNames} stopped instead of staying up, so nothing is listening on localhost:${project.basePort}.`
-        : `Everything started, but nothing has answered on localhost:${project.basePort}. The app may be failing as it boots.`,
+      title: c.recoveryExhausted ? 'The app is still not responding' : 'The app is not responding',
+      bodyText: c.recoveryExhausted
+        ? `mvpfy restarted it three times and asked ${
+            stoppedNames ? `about ${stoppedNames}` : 'the agent to look'
+          }, and it is still silent. Nothing else it can try on its own will change that — the logs below are the next place to look.`
+        : stoppedNames
+          ? `${stoppedNames} stopped instead of staying up, so nothing is listening on localhost:${project.basePort}.`
+          : `Everything started, but nothing has answered on localhost:${project.basePort}. The app may be failing as it boots.`,
       red: true,
     },
     stopped: {

@@ -50,6 +50,22 @@ export default function AgentView({ c, agent }: Props) {
         </button>
       </div>
 
+      {/* Asking about a broken environment starts from the same evidence the
+          Diagnose button has, so say that rather than leave it to be guessed. */}
+      {(c.appUnresponsive || c.canDiagnose) && !running && (
+        <div className="mb-5 rounded-lg border border-warn-border bg-warn-bg px-4 py-3 text-[13px] text-warn-text">
+          Your environment is not working at the moment. You can ask about it here — {label} is
+          given the failure log and what the containers are doing — or use{' '}
+          <button
+            onClick={() => void c.diagnose()}
+            className="font-medium underline hover:no-underline"
+          >
+            Diagnose &amp; fix
+          </button>{' '}
+          on the Overview, which goes straight to it.
+        </div>
+      )}
+
       {c.actionError && (
         <div className="mb-5 rounded-lg border border-danger/30 bg-red-50 px-4 py-2.5 text-[13px] text-danger">
           {c.actionError}

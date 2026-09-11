@@ -30,6 +30,8 @@ export interface ProjectActions {
   rebootstrap(): Promise<boolean>;
   /** Run the project's recorded seed command. */
   seed(): Promise<boolean>;
+  /** Restarting and diagnosing have both been tried; this needs a person. */
+  recoveryExhausted: boolean;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */
@@ -156,29 +158,6 @@ export function useProjectActions(
       runsApi.track(handle);
     });
 
-  /**
-   * Recreate the containers once before an unresponsive app counts as failed.
-   *
-   * The commonest reason an app does not answer on a first start is not a bad
-   * configuration at all — the app container comes up before the database is
-   * accepting connections, dies, and `up -d` still exits zero because they did
-   * start. Recreating them fixes exactly that, costs no agent run and needs no
-   * diagnosis, so it is worth trying before asking anyone to read a log.
-   *
-   * Once per start: a second attempt would be a loop, and whatever is wrong by
-   * then is not a race.
-   */
-  const retriedStart = useRef<string | null>(null);
-  const lastStart = projectRuns.filter((r) => r.handle.kind === 'docker-up').pop();
-  const lastStartId = lastStart && !lastStart.running ? lastStart.handle.runId : null;
-  useEffect(() => {
-    if (!unresponsive || !lastStartId) return;
-    if (retriedStart.current === lastStartId) return;
-    retriedStart.current = lastStartId;
-    queueMicrotask(() => void docker('restart'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unresponsive, lastStartId]);
-
   // Setup runs itself end to end: the task list flows into the work, and the
   // work flows into starting the app — each step once per run, even if
   // several renders observe the same completion. The PM's own gate is the
@@ -241,6 +220,58 @@ export function useProjectActions(
       );
       runsApi.track(handle);
     });
+
+  /**
+   * Getting an unresponsive app back, cheapest first, and with an end.
+   *
+   * The commonest reason an app is silent on a start is a race — it comes up
+   * before the database is accepting connections, dies, and `up -d` still
+   * exits zero because they did both start. A restart fixes exactly that, for
+   * nothing.
+   *
+   * But a restart IS another start, so counting attempts per start run never
+   * ends: each retry resets its own guard and the app cycles between stopping
+   * and starting forever. The count belongs to the episode — which lasts until
+   * the app answers — not to a run.
+   *
+   * Three restarts, then one diagnosis, then stop. Whatever survives that is
+   * not a race, and not something another attempt will change.
+   */
+  const MAX_RESTARTS = 3;
+  const recovery = useRef({ restarts: 0, diagnosed: false });
+  const [recoveryExhausted, setRecoveryExhausted] = useState(false);
+
+  // A working app ends the episode: the next failure starts from zero.
+  useEffect(() => {
+    if (!appHealthy) return;
+    recovery.current = { restarts: 0, diagnosed: false };
+    if (recoveryExhausted) queueMicrotask(() => setRecoveryExhausted(false));
+  }, [appHealthy, recoveryExhausted]);
+
+  const actedOnStart = useRef<string | null>(null);
+  const lastStart = projectRuns.filter((r) => r.handle.kind === 'docker-up').pop();
+  const lastStartId = lastStart && !lastStart.running ? lastStart.handle.runId : null;
+  useEffect(() => {
+    if (!unresponsive || !lastStartId) return;
+    if (actedOnStart.current === lastStartId) return;
+    actedOnStart.current = lastStartId;
+    const state = recovery.current;
+    if (state.restarts < MAX_RESTARTS) {
+      state.restarts += 1;
+      queueMicrotask(() => void docker('restart'));
+      return;
+    }
+    if (!state.diagnosed) {
+      state.diagnosed = true;
+      // The free fixes are spent; this is where the agent earns its run. It
+      // writes a fix and stops — retrying is the PM's, because starting again
+      // automatically would begin the whole cycle over.
+      queueMicrotask(() => void diagnose());
+      return;
+    }
+    queueMicrotask(() => setRecoveryExhausted(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unresponsive, lastStartId]);
 
   const retryFix = () =>
     guarded(async () => {
@@ -315,6 +346,7 @@ export function useProjectActions(
     docker,
     rebootstrap,
     seed,
+    recoveryExhausted,
     diagnose,
     retryFix,
     dismissTriage,

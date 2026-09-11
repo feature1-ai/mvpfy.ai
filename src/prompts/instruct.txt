@@ -5,6 +5,8 @@ Workspace: {repoPath}
 
 {contractNote}
 
+{troubleNote}
+
 The product manager asked:
 ---
 {instruction}

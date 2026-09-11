@@ -21,7 +21,11 @@ export interface AgentActions {
   setTargetRepoDir(dir: string): void;
 }
 
-export function useAgentActions(ctx: ControllerContext): AgentActions {
+export function useAgentActions(
+  ctx: ControllerContext,
+  /** What is wrong with the environment, so asking about it starts informed. */
+  trouble: string
+): AgentActions {
   const { project, state, runsApi, pf, refreshFiles, guarded } = ctx;
   const [stories, setStories] = useState<UserStory[]>([]);
   const [storiesError, setStoriesError] = useState<string | null>(null);
@@ -35,7 +39,7 @@ export function useAgentActions(ctx: ControllerContext): AgentActions {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
       await window.mvpfy.writeRepoFile(project.localPath, pf(CHANGE_FILE), '');
-      const handle = await startInstructRun(project, state.settings, text);
+      const handle = await startInstructRun(project, state.settings, text, trouble);
       runsApi.track(handle);
     });
 

@@ -526,7 +526,9 @@ export async function startTriageRun(
 export async function startInstructRun(
   project: Project,
   settings: Settings,
-  instruction: string
+  instruction: string,
+  /** What is wrong with the environment, when something is. */
+  trouble = ''
 ): Promise<RunHandle> {
   const runId = makeRunId('instruct');
   await window.mvpfy.runAgent({
@@ -534,6 +536,7 @@ export async function startInstructRun(
     repoPath: project.localPath,
     promptText: fillTemplate(instructTemplate, {
       contractNote: WORKSPACE_CONTRACT,
+      troubleNote: trouble,
       repoPath: project.localPath,
       instruction,
       workspaceNote: workspaceNoteFor(project),

@@ -22,6 +22,7 @@ import { DemoCredential, parseDemoCredentials } from '../lib/credentials';
 import { parseAppPort } from '../lib/ports';
 import { UserStory } from '../lib/feature1Mcp';
 import { ENV_FILE_CANDIDATES } from '../lib/envFile';
+import { troubleReport } from '../lib/trouble';
 import { StoryLane } from '../lib/plan';
 import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
@@ -123,6 +124,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   rebootstrap(): Promise<boolean>;
   /** Run the project's recorded seed command. */
   seed(): Promise<boolean>;
+  /** Restarting and diagnosing have both been tried; this needs a person. */
+  recoveryExhausted: boolean;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */
@@ -366,6 +369,14 @@ export function useProjectController(
   };
   const feature1Login = useFeature1Login(state, updateState);
   const feature1Sync = useFeature1Sync(state);
+  // Composed here because this is where the failed run, the container states
+  // and the health verdict all already are.
+  const trouble = troubleReport({
+    failedLog: lastFailure && lastEnvRun?.log.trim() ? lastEnvRun.log.slice(-4000) : null,
+    unresponsive: appUnresponsive,
+    stoppedServices,
+  });
+
   const projectActions = useProjectActions(
     ctx,
     lastFailure,
@@ -376,7 +387,7 @@ export function useProjectController(
     appHealthy
   );
   const planActions = usePlanActions(ctx);
-  const agentActions = useAgentActions(ctx);
+  const agentActions = useAgentActions(ctx, trouble);
   const bootstrapFlow = useBootstrapFlow(ctx, appHealthy);
   const readinessActions = useReadinessActions(ctx);
   const launchActions = useLaunchActions(ctx, readinessActions.readinessVerdict);

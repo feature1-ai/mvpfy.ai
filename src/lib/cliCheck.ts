@@ -101,19 +101,22 @@ export function allClisPresent(statuses: CliStatus[]): boolean {
   return statuses.length > 0 && statuses.every((s) => s.found);
 }
 
-/**
- * Verify the tools a run depends on are installed AND signed in before
- * spawning it, so the PM gets one clear message instead of a cryptic
- * mid-run agent failure. Returns null when everything is ready.
- */
 /** True when this CLI matters given the selected default agent. */
 export function cliRequired(name: CliName, defaultAgent: 'claude' | 'codex'): boolean {
   const optionalFor = CLI_HELP[name].optionalFor;
   return optionalFor === undefined || optionalFor === defaultAgent;
 }
 
+/**
+ * Check the tools an action needs are installed AND signed in, before it is
+ * started — one clear message beats a run that fails several steps in.
+ *
+ * `agent` may be null for work that runs no agent at all: raising a pull
+ * request is git and gh, and refusing it because Claude is signed out would
+ * be asking for something it does not use.
+ */
 export async function preflightAuth(
-  agent: 'claude' | 'codex',
+  agent: 'claude' | 'codex' | null,
   needGh: boolean
 ): Promise<string | null> {
   const statuses = await checkClis();
@@ -129,7 +132,7 @@ export async function preflightAuth(
       );
     }
   };
-  check(agent);
+  if (agent) check(agent);
   if (needGh) check('gh');
   return problems.length > 0 ? problems.join('. ') : null;
 }

@@ -267,6 +267,11 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     guarded(async () => {
       const active = activePlan;
       if (!active?.plan) return;
+      // Pushing and opening a pull request are git and gh, and nothing else.
+      // Without a GitHub sign-in the push fails and the run exits non-zero,
+      // which read as the button doing nothing at all.
+      const authProblem = await preflightAuth(null, true);
+      if (authProblem) throw new Error(authProblem);
       const feature = active.plan.spec.feature || active.slug || 'feature';
       const stories = active.plan.stories.map((st) => `- ${st.code} ${st.title}`).join('\n');
       const handle = await startRaisePrRun(

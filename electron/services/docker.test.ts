@@ -160,3 +160,21 @@ describe('seedCommandFor', () => {
     expect(seedCommandFor(dir, false)).toBe('npm run seed');
   });
 });
+
+describe('composeCommand rebuild', () => {
+  it('builds from scratch and recreates, for a stack whose images were deleted', () => {
+    const rebuild = composeCommand('rebuild');
+    expect(rebuild).toContain('build --no-cache');
+    expect(rebuild).toContain('--force-recreate');
+    // Down first, so nothing is left from the old containers.
+    expect(rebuild.indexOf(' down ')).toBeLessThan(rebuild.indexOf('build --no-cache'));
+  });
+
+  it('still refuses to delete volumes — this rebuilds the setup, not the data', () => {
+    expect(composeCommand('rebuild')).not.toContain('--volumes');
+  });
+
+  it('checks the daemon first, like every other action that touches containers', () => {
+    expect(composeCommand('rebuild').startsWith('docker info')).toBe(true);
+  });
+});

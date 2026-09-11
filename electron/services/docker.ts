@@ -183,6 +183,12 @@ export function composeCommand(action: ComposeAction, linked = false): string {
   // of its result — that is `;` in a shell and `&` in cmd.
   const alsoRun = IS_WIN ? '&' : ';';
   const forceDown = `${base} kill ${alsoRun} ${down}`;
+  // Rebuild: images from scratch and containers recreated, using the files
+  // that are already there. For a stack whose images were deleted, or one
+  // whose containers no longer match what the compose file says. Volumes are
+  // untouched, as everywhere else — this rebuilds the setup, not the data.
+  const rebuild =
+    `${down} && ${base} build --no-cache && ` + `${base} up -d --force-recreate --remove-orphans`;
   const compose =
     action === 'up'
       ? up
@@ -190,7 +196,9 @@ export function composeCommand(action: ComposeAction, linked = false): string {
         ? down
         : action === 'force-down'
           ? forceDown
-          : `${down} && ${up}`;
+          : action === 'rebuild'
+            ? rebuild
+            : `${down} && ${up}`;
   return `${ENSURE_DAEMON} && ${compose}`;
 }
 

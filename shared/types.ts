@@ -71,7 +71,7 @@ export function configDirFor(mode: Project['mode']): string {
  * that will not stop politely: it SIGKILLs rather than waiting out the
  * shutdown grace period.
  */
-export type ComposeAction = 'up' | 'down' | 'restart' | 'force-down' | 'logs';
+export type ComposeAction = 'up' | 'down' | 'restart' | 'rebuild' | 'force-down' | 'logs';
 
 export interface TenantConfig {
   slug: string;

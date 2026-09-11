@@ -20,6 +20,7 @@ import {
 } from '../../shared/types';
 import { DemoCredential, parseDemoCredentials } from '../lib/credentials';
 import { parseAppPort } from '../lib/ports';
+import { parsePublishedPort } from '../lib/publishedPort';
 import { UserStory } from '../lib/feature1Mcp';
 import { ENV_FILE_CANDIDATES } from '../lib/envFile';
 import { troubleReport } from '../lib/trouble';
@@ -101,6 +102,13 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   summaryContent: string | null;
   /** True when the last environment run failed and can be diagnosed. */
   canDiagnose: boolean;
+  /** The project records a seed command, so seeding is something mvpfy can do. */
+  canSeed: boolean;
+  /**
+   * The port mvpfy watches and the port the stack publishes have come apart —
+   * the app may be running perfectly somewhere mvpfy is not looking.
+   */
+  portMismatch: { watching: number; publishing: number } | null;
   /** The app has been silent long enough that something is wrong. */
   appUnresponsive: boolean;
   /** Services docker says are not running, when the app has gone quiet. */
@@ -451,6 +459,14 @@ export function useProjectController(
     // A container that starts and dies exits zero, so an unresponsive app is
     // a failure with no failed run behind it. Diagnose has to be reachable
     // there too — it was switched off in exactly the case that needs it.
+    portMismatch: (() => {
+      const publishing = parsePublishedPort(
+        contentOf(files, pf('docker-compose.mvpfy.yml')),
+        contentOf(files, pf('.env')) ?? contentOf(files, pf('.env.mvpfy.example'))
+      );
+      return publishing && publishing !== appPort ? { watching: appPort, publishing } : null;
+    })(),
+    canSeed: /^\s*seed_command:\s*\S/m.test(mvpfyYmlContent ?? ''),
     canDiagnose: lastFailure !== null || appUnresponsive,
     appUnresponsive,
     stoppedServices,

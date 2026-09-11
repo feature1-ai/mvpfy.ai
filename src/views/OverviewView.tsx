@@ -169,6 +169,21 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
         </div>
       </div>
 
+      {/* Deterministic and worth saying loudly: the app may be running
+          perfectly somewhere mvpfy is not looking, which otherwise reads as
+          an app that never started. */}
+      {c.portMismatch && (
+        <div className="mb-5 rounded-lg border border-warn-border bg-warn-bg px-4 py-3 text-[13px] text-warn-text">
+          <strong className="font-medium">Your app is published on a different port.</strong> The
+          run configuration publishes{' '}
+          <span className="font-mono">localhost:{c.portMismatch.publishing}</span>, but mvpfy is
+          watching <span className="font-mono">localhost:{c.portMismatch.watching}</span> because
+          that is what mvpfy.yml records. Your app may be running fine at the first one. Rebuild
+          &amp; seed puts them back in step, or change <span className="font-mono">host_port</span>{' '}
+          in mvpfy.yml to {c.portMismatch.publishing}.
+        </div>
+      )}
+
       {c.actionError && (
         <div className="mb-5 rounded-lg border border-danger/30 bg-red-50 px-4 py-2.5 text-[13px] text-danger">
           {c.actionError}
@@ -224,6 +239,20 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     >
                       Restart
                     </button>
+                    {/* For a stack whose images or containers were deleted:
+                        build everything again from the files already here, and
+                        seed it, without asking an agent to rewrite anything. */}
+                    <button
+                      onClick={() => void c.docker('rebuild')}
+                      className="btn-secondary h-[34px] px-3.5"
+                      title={
+                        c.canSeed
+                          ? 'Build the images again from the run configuration already here, recreate the containers, and seed. Your database and your code are left alone.'
+                          : 'Build the images again from the run configuration already here and recreate the containers. This project records no seed command, so nothing is seeded — Re-run setup would add one.'
+                      }
+                    >
+                      {c.canSeed ? 'Rebuild & seed' : 'Rebuild'}
+                    </button>
                     <button
                       onClick={() => void c.docker('down')}
                       className="btn-secondary h-[34px] px-3.5"
@@ -269,6 +298,15 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     className="btn-primary h-[34px] px-3.5"
                   >
                     Reviewed — start environment
+                  </button>
+                )}
+                {env.kind === 'stopped' && (
+                  <button
+                    onClick={() => void c.docker('rebuild')}
+                    className="btn-secondary mr-2 h-[34px] px-3.5"
+                    title="Build the images again from the run configuration already here — for a stack whose images or containers were deleted"
+                  >
+                    {c.canSeed ? 'Rebuild & seed' : 'Rebuild'}
                   </button>
                 )}
                 {env.kind === 'stopped' && (

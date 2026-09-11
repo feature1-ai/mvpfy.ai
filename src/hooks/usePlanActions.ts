@@ -150,19 +150,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
             : s
         ),
       });
-      // The commit just made is on the branch, but the workspace was detached
-      // at the tip as it stood — so a story arrives in Testing against code the
-      // running app does not have. Follow the branch, or the PM tests the round
-      // before this one and cannot tell.
-      if ((project.testingSlug ?? null) === slug) {
-        void window.mvpfy.checkoutFeature(
-          project.localPath,
-          project.repos.map((r) => r.dir),
-          `mvpfy/${slug || 'feature'}`
-        );
-      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storyRuns, plans, writePlan]);
 
   // Every pull request the raise printed — a multi-repo feature opens one per
@@ -220,6 +208,11 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
    */
   const testFeature = (slug: string | null) =>
     guarded(async () => {
+      if (slug !== null && anyStoryRunning) {
+        throw new Error(
+          'A story of this feature is being implemented — its code is still changing. Test it once that finishes.'
+        );
+      }
       const branch = slug === null ? null : `mvpfy/${slug || 'feature'}`;
       const res = await window.mvpfy.checkoutFeature(
         project.localPath,
@@ -446,6 +439,23 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       // Ship lands a PR at Testing, so the agent AND gh must be signed in.
       const authProblem = await preflightAuth(state.settings.defaultAgent, true);
       if (authProblem) throw new Error(authProblem);
+      // Implementing moves the branch, and the workspace is detached at a
+      // commit — it would silently fall behind and keep claiming to be this
+      // feature. So testing stops here and is picked up again afterwards,
+      // when there is a settled commit to pick up.
+      if ((project.testingSlug ?? null) === slug) {
+        await window.mvpfy.checkoutFeature(
+          project.localPath,
+          project.repos.map((r) => r.dir),
+          null
+        );
+        updateState((prev) => ({
+          ...prev,
+          projects: prev.projects.map((p) =>
+            p.id === project.id ? { ...p, testingSlug: null } : p
+          ),
+        }));
+      }
       if (story.lane === 'todo') {
         await writePlan(slug, {
           ...plan,

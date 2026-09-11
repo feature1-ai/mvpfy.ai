@@ -595,20 +595,26 @@ function ImplementFeatureButton({
  */
 function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) {
   const live = c.project.testingSlug === slug;
-  // Behind its own branch: the app is running this feature, but an earlier
-  // round of it. Saying "Running this feature" there would be a lie of the
-  // exact kind that gets a story accepted on work nobody saw.
-  const stale = live && c.testingStale;
+  // A feature being implemented has a branch that is still moving, so there is
+  // nothing settled to check out yet. Implementing also ends any test in
+  // progress, which is what keeps the checkout from quietly falling behind.
+  const implementing = c.anyStoryRunning;
+  // Behind its own branch: only reachable now if the repository was moved by
+  // hand, but saying "Running this feature" when it is not remains the lie
+  // that gets a story accepted on work nobody saw.
+  const stale = live && c.testingStale && !implementing;
   return (
     <button
-      onClick={() => void c.testFeature(stale ? slug : live ? null : slug)}
-      disabled={c.busy}
+      onClick={() => void c.testFeature(live && !stale ? null : slug)}
+      disabled={c.busy || implementing}
       title={
-        stale
-          ? 'A story has landed since this was checked out — bring the app up to the latest commit'
-          : live
-            ? 'Put the workspace back on its default branch'
-            : 'Check this feature out in the workspace, so the running app is this feature'
+        implementing
+          ? 'A story is being implemented — its code is still changing. Test it once that finishes.'
+          : stale
+            ? 'The workspace has moved off this feature — put it back on the latest commit'
+            : live
+              ? 'Put the workspace back on its default branch'
+              : 'Check this feature out in the workspace, so the running app is this feature'
       }
       className={`h-8 rounded-md px-3 text-[13px] disabled:opacity-50 ${
         stale
@@ -618,11 +624,13 @@ function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) 
             : 'btn-secondary'
       }`}
     >
-      {stale
-        ? 'Running an older version — update'
-        : live
-          ? '● Running this feature'
-          : 'Test this feature'}
+      {implementing
+        ? 'Test when this finishes'
+        : stale
+          ? 'Not on this feature — check out'
+          : live
+            ? '● Running this feature'
+            : 'Test this feature'}
     </button>
   );
 }

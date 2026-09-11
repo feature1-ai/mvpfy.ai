@@ -324,6 +324,8 @@ export interface MvpfyApi {
   /** How each required tool would be installed on this machine (macOS only). */
   /** Add an MCP server to Claude Code itself, at user scope. */
   registerMcpServer(runId: string, name: string, url: string): Promise<void>;
+  /** Open the user's own terminal in a project, for talking to the agent directly. */
+  openTerminal(workspacePath: string): Promise<void>;
   installPlans(): Promise<InstallPlan[]>;
   /** Install one required tool, streaming its output like any other run. */
   installTool(runId: string, tool: string): Promise<void>;

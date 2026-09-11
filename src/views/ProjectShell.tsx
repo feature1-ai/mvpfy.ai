@@ -3,11 +3,12 @@ import type { ReactNode } from 'react';
 import { MvpfyState, Project } from '../../shared/types';
 import { UpdateState, useProjectController } from '../hooks/useProjectController';
 import { RunsApi } from '../lib/useRuns';
+import AgentView from './AgentView';
 import LogPanel from '../components/LogPanel';
 import OverviewView from './OverviewView';
 import PlanView from './PlanView';
 
-export type ProjectTab = 'overview' | 'plan' | 'app' | 'code' | 'logs';
+export type ProjectTab = 'overview' | 'plan' | 'agent' | 'app' | 'code' | 'logs';
 
 interface Props {
   project: Project;
@@ -52,6 +53,7 @@ export default function ProjectShell({
   const tabs: Array<{ id: ProjectTab; label: string; hint?: string }> = [
     { id: 'overview', label: 'Overview' },
     { id: 'plan', label: 'Plan' },
+    { id: 'agent', label: 'Agent' },
     { id: 'app', label: 'App', hint: `:${project.basePort}` },
     { id: 'code', label: 'Code' },
     { id: 'logs', label: 'Logs' },
@@ -132,6 +134,10 @@ export default function ProjectShell({
 
         <Pane active={tab === 'plan'} scroll>
           <PlanView c={c} onOpenTab={(t) => onTabChange(t)} />
+        </Pane>
+
+        <Pane active={tab === 'agent'} scroll>
+          <AgentView c={c} agent={state.settings.defaultAgent} />
         </Pane>
 
         <Pane active={tab === 'app'}>

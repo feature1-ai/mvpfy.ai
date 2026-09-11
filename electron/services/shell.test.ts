@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cdTo,
   IS_WIN,
+  openTerminalCommand,
   killProcessTree,
   parseRegistryPath,
   shellQuote,
@@ -138,5 +139,29 @@ describe('killProcessTree', () => {
     killProcessTree(child);
     await exited;
     expect(child.killed || child.exitCode !== null || child.signalCode !== null).toBe(true);
+  });
+});
+
+describe('openTerminalCommand', () => {
+  it('opens in the project directory, quoted', () => {
+    const command = openTerminalCommand('/Users/pm/my project');
+    expect(command).toContain('my project');
+    // A path with a space must survive as one argument, not two.
+    expect(command).not.toMatch(/[^'"]\/Users\/pm\/my project/);
+  });
+
+  it.runIf(IS_WIN)('uses cmd, and /d so another drive is followed', () => {
+    expect(openTerminalCommand('D:\\work\\shop')).toContain('cd /d');
+  });
+
+  it.runIf(process.platform === 'darwin')('drives Terminal.app through osascript', () => {
+    const command = openTerminalCommand('/Users/pm/shop');
+    expect(command).toContain('osascript');
+    expect(command).toContain('do script');
+  });
+
+  it.runIf(process.platform === 'linux')('tries several terminals, falling through', () => {
+    // No single terminal exists on Linux, so the first that does wins.
+    expect(openTerminalCommand('/home/pm/shop')).toContain('||');
   });
 });

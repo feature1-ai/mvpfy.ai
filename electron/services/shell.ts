@@ -57,6 +57,35 @@ export function shellQuote(value: string): string {
 }
 
 /**
+ * Open the user's own terminal in a directory, so they can talk to their agent
+ * with their own setup — their shell, their history, their sign-in.
+ *
+ * Linux has no one terminal, so several are tried in turn; the first that
+ * exists wins and the rest are never reached.
+ */
+export function openTerminalCommand(cwd: string): string {
+  const dir = shellQuote(cwd);
+  if (IS_WIN) return `start "" cmd /k cd /d ${dir}`;
+  if (process.platform === 'darwin') {
+    // Two layers: Terminal runs this as a shell command, so the path is quoted
+    // for the shell first; that string then lives inside an AppleScript
+    // literal, so it is escaped for AppleScript second. Quoting only the outer
+    // one leaves a project folder with a space failing to cd.
+    const inner = `cd ${shellQuote(cwd)}`;
+    const applescript = `tell application "Terminal" to do script "${inner
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')}"`;
+    return `osascript -e 'tell application "Terminal" to activate' -e ${shellQuote(applescript)}`;
+  }
+  return (
+    `x-terminal-emulator --working-directory=${dir} || ` +
+    `gnome-terminal --working-directory=${dir} || ` +
+    `konsole --workdir ${dir} || ` +
+    `xterm -e "cd ${cwd}; $SHELL"`
+  );
+}
+
+/**
  * Stop a spawned command and everything it started.
  *
  * Every command runs through a shell, so the process we hold is cmd.exe or

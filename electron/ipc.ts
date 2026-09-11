@@ -28,6 +28,7 @@ import {
   writeRepoFile,
 } from './services/projects';
 import { startRun, stopRun } from './services/runs';
+import { openTerminalCommand, spawnShell } from './services/shell';
 import { keychainGet, keychainSet } from './services/secrets';
 import { readState, writeState } from './services/store';
 import { checkForUpdates, installUpdate } from './services/updates';
@@ -184,6 +185,14 @@ export function registerIpc(): void {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') throw new Error('Only https MCP servers can be registered');
     startRun(runId, mcpAddCommand(name, url), TMP_DIR);
+  });
+  ipcMain.handle('open-terminal', (_ev, workspacePath: string) => {
+    const resolved = path.resolve(workspacePath);
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('Terminals are restricted to managed and linked project directories');
+    }
+    // Detached and unwatched: it is the user's shell now, not a run of ours.
+    spawnShell(openTerminalCommand(resolved), { cwd: resolved, detached: true }).unref();
   });
   ipcMain.handle('install-plans', () => installPlans());
   ipcMain.handle('install-tool', (_ev, runId: string, tool: string) =>

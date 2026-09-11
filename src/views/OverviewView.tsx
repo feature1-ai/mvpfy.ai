@@ -8,7 +8,7 @@ import EnvVarsCard from './EnvVarsCard';
 interface Props {
   c: ProjectController;
   mvpfyYml: string | null;
-  onOpenTab: (tab: 'plan' | 'app' | 'code' | 'logs') => void;
+  onOpenTab: (tab: 'plan' | 'agent' | 'app' | 'code' | 'logs') => void;
 }
 
 type EnvState =

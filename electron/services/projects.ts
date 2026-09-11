@@ -336,6 +336,16 @@ function defaultBranchOf(dir: string): string {
   return name || 'main';
 }
 
+/** True when this repository has the branch at all. */
+function hasBranch(dir: string, branch: string): boolean {
+  return (
+    spawnShellSync(`git -C ${shellQuote(dir)} rev-parse --verify ${shellQuote(branch)}`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    }).status === 0
+  );
+}
+
 /** Commits `branch` has that `base` does not, or -1 when the range is unknown. */
 function commitsAhead(dir: string, base: string, branch: string): number {
   const count = (range: string) =>
@@ -349,6 +359,10 @@ function commitsAhead(dir: string, base: string, branch: string): number {
     const res = count(range);
     if (res.status === 0) return Number(res.stdout.trim()) || 0;
   }
+  // Neither range resolved, so the question is unanswered rather than answered
+  // no. Say "unknown" and let the caller try anyway: excluding a repository on
+  // a failed git command is how a pull request silently never gets raised, and
+  // GitHub refusing it says far more than mvpfy quietly deciding not to ask.
   return -1;
 }
 
@@ -464,8 +478,14 @@ export function raisePrCommand(
     if (!isAllowedWorkspace(dir)) {
       throw new Error('Pull requests are restricted to managed and linked project directories');
     }
+    // No such branch here is a real no — the feature never reached this
+    // repository, and it correctly stays on its trunk.
+    if (!hasBranch(dir, branch)) continue;
     const base = defaultBranchOf(dir);
-    if (commitsAhead(dir, base, branch) > 0) targets.push({ dir, base });
+    // But -1 is "could not tell", not "nothing there". Attempting and having
+    // GitHub refuse says far more than mvpfy quietly deciding not to ask, which
+    // is how a pull request silently never gets raised at all.
+    if (commitsAhead(dir, base, branch) !== 0) targets.push({ dir, base });
   }
   if (targets.length === 0) {
     // Say what was looked at, not just that nothing was found: the usual

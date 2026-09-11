@@ -34,7 +34,7 @@ export function spawnShell(command: string, opts: Parameters<typeof spawn>[2]): 
 
 export function spawnShellSync(
   command: string,
-  opts: { encoding: 'utf8'; timeout: number; env?: NodeJS.ProcessEnv }
+  opts: { encoding: 'utf8'; timeout: number; env?: NodeJS.ProcessEnv; cwd?: string }
 ) {
   return IS_WIN
     ? spawnSync(WIN_SHELL(), winShellArgs(command), { ...opts, windowsVerbatimArguments: true })

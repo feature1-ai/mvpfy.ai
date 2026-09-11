@@ -4,7 +4,7 @@ import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../
 import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { runAgent } from './services/agents';
 import { agentModels, cliCheck, loginCommand, mcpAddCommand } from './services/cli';
-import { composeCommand, ideCommand, ideStatus } from './services/docker';
+import { composeCommand, composeStatus, ideCommand, ideStatus } from './services/docker';
 import { installCommand, installPlans } from './services/install';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
@@ -77,6 +77,14 @@ export function registerIpc(): void {
       startRun(runId, ideCommand(resolved, action, port), resolved);
     }
   );
+  ipcMain.handle('compose-status', (_ev, workspacePath: string) => {
+    const resolved = path.resolve(workspacePath);
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('docker compose is restricted to managed and linked project directories');
+    }
+    const linked = isLinkedPath(resolved) && !isManagedPath(resolved);
+    return composeStatus(resolved, linked);
+  });
   ipcMain.handle('ide-status', (_ev, workspacePath: string) => {
     const resolved = path.resolve(workspacePath);
     if (!isAllowedWorkspace(resolved)) {

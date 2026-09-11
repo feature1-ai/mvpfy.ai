@@ -16,6 +16,7 @@ type EnvState =
   | { kind: 'review' }
   | { kind: 'working'; label: string }
   | { kind: 'starting' }
+  | { kind: 'unresponsive' }
   | { kind: 'running' }
   | { kind: 'stopped' }
   | { kind: 'error' };
@@ -41,7 +42,10 @@ function envState(c: ProjectController): EnvState {
     case 'queued':
       return { kind: 'working', label: 'Setting up the environment…' };
     case 'running':
-      return c.appHealthy ? { kind: 'running' } : { kind: 'starting' };
+      if (c.appHealthy) return { kind: 'running' };
+      // Containers started and the app never answered. `up -d` exits zero once
+      // they START, so nothing failed — which is why this needs saying.
+      return c.appUnresponsive ? { kind: 'unresponsive' } : { kind: 'starting' };
     case 'needs-review':
       return { kind: 'review' };
     case 'stopped':
@@ -67,6 +71,9 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   }, [project.repos, c.busy]);
 
   const env = envState(c);
+  const stoppedNames = c.stoppedServices
+    .map((sv) => `${sv.service}${sv.exitCode ? ` (exit ${sv.exitCode})` : ''}`)
+    .join(', ');
   const testingFeature = project.testingSlug
     ? (c.plans.find((f) => f.slug === project.testingSlug)?.plan?.spec.feature ??
       project.testingSlug)
@@ -112,6 +119,13 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
       title: 'App is up',
       bodyText: 'The environment is running. Changes you make in the editor reload automatically.',
       green: true,
+    },
+    unresponsive: {
+      title: 'The app is not responding',
+      bodyText: stoppedNames
+        ? `${stoppedNames} stopped instead of staying up, so nothing is listening on localhost:${project.basePort}.`
+        : `Everything started, but nothing has answered on localhost:${project.basePort}. The app may be failing as it boots.`,
+      red: true,
     },
     stopped: {
       title: 'Environment stopped',
@@ -179,7 +193,9 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     is the only difference — so the controls that act on them
                     belong in both. Waiting for an app that never answers is
                     exactly when someone needs a way out. */}
-                {(env.kind === 'running' || env.kind === 'starting') && (
+                {(env.kind === 'running' ||
+                  env.kind === 'starting' ||
+                  env.kind === 'unresponsive') && (
                   <>
                     {env.kind === 'running' && (
                       <button
@@ -260,7 +276,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     View logs
                   </button>
                 )}
-                {env.kind === 'error' && (
+                {(env.kind === 'error' || env.kind === 'unresponsive') && (
                   <>
                     <button
                       onClick={() => onOpenTab('logs')}

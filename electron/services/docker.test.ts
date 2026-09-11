@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composeCommand, ideCommand, ideContainerName } from './docker';
+import { composeCommand, ideCommand, ideContainerName, parseComposePs } from './docker';
 import { IS_WIN } from './shell';
 
 describe('composeCommand', () => {
@@ -78,5 +78,40 @@ describe('composeCommand force-down', () => {
 
   it('is still not allowed to delete volumes', () => {
     expect(composeCommand('force-down')).not.toContain('--volumes');
+  });
+});
+
+describe('parseComposePs', () => {
+  const row = (service: string, state: string, exit = 0) =>
+    JSON.stringify({ Name: `proj-${service}-1`, Service: service, State: state, ExitCode: exit });
+
+  it('reads one object per line, which is what newer compose emits', () => {
+    expect(parseComposePs([row('web', 'running'), row('db', 'exited', 1)].join('\n'))).toEqual([
+      { service: 'web', state: 'running', exitCode: 0 },
+      { service: 'db', state: 'exited', exitCode: 1 },
+    ]);
+  });
+
+  it('reads a JSON array, which is what older compose emits', () => {
+    const out = parseComposePs(`[${row('web', 'running')},${row('db', 'restarting')}]`);
+    expect(out.map((r) => r.service)).toEqual(['web', 'db']);
+    expect(out[1].state).toBe('restarting');
+  });
+
+  it('keeps the rows it can read when one line is torn', () => {
+    expect(parseComposePs([row('web', 'running'), '{"Service":"db"'].join('\n'))).toEqual([
+      { service: 'web', state: 'running', exitCode: 0 },
+    ]);
+  });
+
+  it('says nothing rather than guessing when the output is unreadable', () => {
+    expect(parseComposePs('')).toEqual([]);
+    expect(parseComposePs('no such service')).toEqual([]);
+  });
+
+  it('falls back to the container name when a row has no service', () => {
+    expect(parseComposePs(JSON.stringify({ Name: 'lonely', State: 'exited' }))[0].service).toBe(
+      'lonely'
+    );
   });
 });

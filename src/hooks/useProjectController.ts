@@ -13,6 +13,7 @@ import {
   LAUNCH_FILE,
   READINESS_FILE,
   RepoFile,
+  ServiceState,
   configDirFor,
   planFileFor,
   specFileFor,
@@ -99,6 +100,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   summaryContent: string | null;
   /** True when the last environment run failed and can be diagnosed. */
   canDiagnose: boolean;
+  /** The app has been silent long enough that something is wrong. */
+  appUnresponsive: boolean;
+  /** Services docker says are not running, when the app has gone quiet. */
+  stoppedServices: ServiceState[];
   viewerFiles: RepoFile[];
   activeFile: string | null;
   activeFileContent: string;
@@ -289,7 +294,26 @@ export function useProjectController(
 
   // Poll a local port until it answers HTTP so the PM can see when the app
   // (or IDE) is actually ready, not just when its process started.
-  useHealthPoll(project.status === 'running' ? appPort : null, setAppHealthy, appHealthy);
+  const appUnresponsive = useHealthPoll(
+    project.status === 'running' ? appPort : null,
+    setAppHealthy,
+    appHealthy
+  );
+
+  // What the containers are actually doing, asked for only once the app has
+  // gone quiet for long enough to be worth explaining.
+  const [stoppedServices, setStoppedServices] = useState<ServiceState[]>([]);
+  useEffect(() => {
+    if (!appUnresponsive) return;
+    let cancelled = false;
+    void window.mvpfy.composeStatus(project.localPath).then((services) => {
+      if (cancelled) return;
+      setStoppedServices(services.filter((sv) => sv.state !== 'running'));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [appUnresponsive, project.localPath, runningCount]);
   // Derived from the LAST editor attempt, not from any failed one, so a
   // successful retry clears it without anything having to remember.
   const lastIdeRun = projectRuns.filter((r) => r.handle.kind === 'ide-up' && !r.running).pop();
@@ -338,7 +362,14 @@ export function useProjectController(
   };
   const feature1Login = useFeature1Login(state, updateState);
   const feature1Sync = useFeature1Sync(state);
-  const projectActions = useProjectActions(ctx, lastFailure, latestRun, appLogsRun);
+  const projectActions = useProjectActions(
+    ctx,
+    lastFailure,
+    latestRun,
+    appLogsRun,
+    appUnresponsive,
+    stoppedServices
+  );
   const planActions = usePlanActions(ctx);
   const agentActions = useAgentActions(ctx);
   const bootstrapFlow = useBootstrapFlow(ctx, appHealthy);
@@ -401,7 +432,12 @@ export function useProjectController(
       return null;
     })(),
     envExample: contentOf(files, pf('.env.mvpfy.example')),
-    canDiagnose: lastFailure !== null,
+    // A container that starts and dies exits zero, so an unresponsive app is
+    // a failure with no failed run behind it. Diagnose has to be reachable
+    // there too — it was switched off in exactly the case that needs it.
+    canDiagnose: lastFailure !== null || appUnresponsive,
+    appUnresponsive,
+    stoppedServices,
     viewerFiles: files.filter((f) => f.exists && !hiddenFromViewer(f.relativePath)),
     activeFile,
     activeFileContent: files.find((f) => f.relativePath === activeFile)?.content ?? '',
@@ -416,11 +452,23 @@ export function useProjectController(
 }
 
 /** Poll http://localhost:<port> until it responds; reset when port is null. */
+/**
+ * Poll until the app answers, and give up saying "waiting" eventually.
+ *
+ * An app that never comes up polled forever and read as "Waiting for the app
+ * to respond…" indefinitely, which is indistinguishable from one still
+ * booting. Returns true once it has waited long enough that something is
+ * wrong — generous, because a first build can be slow.
+ */
 function useHealthPoll(
   port: number | null,
   setHealthy: (v: boolean) => void,
   healthy: boolean
-): void {
+): boolean {
+  // Keyed by the attempt it belongs to, so a new port or a recovery resets the
+  // count without an effect that writes state.
+  const [misses, setMisses] = useState({ key: '', n: 0 });
+  const key = `${port}:${healthy}`;
   useEffect(() => {
     if (!port) {
       setHealthy(false);
@@ -429,7 +477,9 @@ function useHealthPoll(
     let cancelled = false;
     const check = async () => {
       const res = await window.mvpfy.probeUrl(`http://localhost:${port}`);
-      if (!cancelled && res.reachable) setHealthy(true);
+      if (cancelled) return;
+      if (res.reachable) setHealthy(true);
+      else setMisses((m) => (m.key === key ? { key, n: m.n + 1 } : { key, n: 1 }));
     };
     void check();
     const timer = setInterval(() => {
@@ -441,4 +491,7 @@ function useHealthPoll(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [port, healthy]);
+  // ~90 seconds of silence. A container that died is already dead by then, and
+  // an app that is merely slow has usually answered.
+  return !healthy && misses.key === key && misses.n >= 45;
 }

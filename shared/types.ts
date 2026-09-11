@@ -265,6 +265,13 @@ export function specFileFor(slug: string): string {
   return slug ? `mvpfy-spec.${slug}.md` : SPEC_FILE;
 }
 
+/** One service of a project's stack, as docker reports it. */
+export interface ServiceState {
+  service: string;
+  state: string;
+  exitCode: number | null;
+}
+
 export interface UpdateStatus {
   /**
    * 'none' and 'unsupported' only ever answer a check the user asked for —
@@ -300,6 +307,12 @@ export interface MvpfyApi {
   stopRun(runId: string): Promise<void>;
   dockerCompose(runId: string, repoPath: string, action: ComposeAction): Promise<void>;
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;
+  /**
+   * What each service of the stack is actually doing. `docker compose up -d`
+   * succeeds once containers have started, so this is the only way to tell an
+   * app that is still booting from one that started and died.
+   */
+  composeStatus(workspacePath: string): Promise<ServiceState[]>;
   /** Live IDE-container state from docker (stored idePort can go stale). */
   ideStatus(workspacePath: string): Promise<{ running: boolean; port: number | null }>;
   cliLogin(runId: string, tool: string): Promise<void>;

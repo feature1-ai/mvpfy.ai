@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { ComposeAction } from '../../shared/types';
+import { ComposeAction, ServiceState } from '../../shared/types';
 import { IS_WIN, shellQuote, spawnShellSync } from './shell';
 
 /** Docker specifics: local-context pinning, daemon checks, command builders. */
@@ -70,6 +70,66 @@ export function ideStatus(workspacePath: string): { running: boolean; port: numb
   if (!line) return { running: false, port: null };
   const m = line.match(/:(\d+)->8080\/tcp/);
   return { running: true, port: m ? Number(m[1]) : null };
+}
+
+/**
+ * Parse `docker compose ps --format json`, which is a JSON array in some
+ * versions of compose and one object per line in others. Anything it cannot
+ * read yields nothing, and the caller falls back to saying less.
+ */
+export function parseComposePs(stdout: string): ServiceState[] {
+  const text = (stdout ?? '').trim();
+  if (!text) return [];
+  const rows: unknown[] = [];
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (Array.isArray(parsed)) rows.push(...parsed);
+    else rows.push(parsed);
+  } catch {
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('{')) continue;
+      try {
+        rows.push(JSON.parse(trimmed));
+      } catch {
+        // A partial line; the rest of the output is still usable.
+      }
+    }
+  }
+  return rows
+    .filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === 'object')
+    .map((r) => ({
+      service: String(r.Service ?? r.Name ?? '').trim(),
+      state: String(r.State ?? '')
+        .trim()
+        .toLowerCase(),
+      exitCode: Number.isFinite(Number(r.ExitCode)) ? Number(r.ExitCode) : null,
+    }))
+    .filter((r) => r.service);
+}
+
+/**
+ * What the stack is actually doing.
+ *
+ * `docker compose up -d` reports success once containers have STARTED, so a
+ * container that starts and immediately dies still exits zero. Asking docker
+ * afterwards is the only way to tell an app that is still booting from one
+ * that is never coming.
+ */
+export function composeStatus(workspacePath: string, linked: boolean): ServiceState[] {
+  const base = linked
+    ? 'docker compose -f .mvpfy/docker-compose.mvpfy.yml --project-directory .'
+    : 'docker compose -f docker-compose.mvpfy.yml';
+  // cwd rather than chdir: the compose file path is relative, and changing the
+  // main process's own directory would race every other command it runs.
+  const result = spawnShellSync(`${base} ps -a --format json`, {
+    encoding: 'utf8',
+    timeout: 15_000,
+    env: spawnEnv(),
+    cwd: workspacePath,
+  });
+  if (result.status !== 0) return [];
+  return parseComposePs(result.stdout ?? '');
 }
 
 export function composeCommand(action: ComposeAction, linked = false): string {

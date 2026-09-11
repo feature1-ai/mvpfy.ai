@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ANSWERS_FILE, ComposeAction, QUESTIONS_FILE, TRIAGE_FILE } from '../../shared/types';
+import {
+  ANSWERS_FILE,
+  ComposeAction,
+  QUESTIONS_FILE,
+  ServiceState,
+  TRIAGE_FILE,
+} from '../../shared/types';
 import {
   startAppLogsRun,
   startBootstrapPlanRun,
@@ -44,7 +50,10 @@ export function useProjectActions(
   ctx: ControllerContext,
   lastFailure: 'bootstrap' | 'docker-up' | null,
   latestRun: RunState | null,
-  appLogsRun: RunState | null
+  appLogsRun: RunState | null,
+  /** The app started but never answered — a failure with no failed run. */
+  unresponsive: boolean,
+  stoppedServices: ServiceState[]
 ): ProjectActions {
   const { project, state, updateState, runsApi, projectRuns, pf, files, refreshFiles, guarded } =
     ctx;
@@ -146,19 +155,36 @@ export function useProjectActions(
     guarded(async () => {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
-      const failed = lastFailure ?? 'bootstrap';
+      // An app that started and died leaves no failed run: `up -d` exits zero
+      // once containers start. The starting run's own log is then the evidence,
+      // and the container states say which service went.
+      const failed = lastFailure ?? (unresponsive ? 'docker-up' : 'bootstrap');
       const failedRun = Object.values(runsApi.runs)
         .filter((r) => r.handle.projectId === project.id && r.handle.kind === failed)
         .pop();
+      const stopped = stoppedServices
+        .map((sv) => `${sv.service}: ${sv.state}${sv.exitCode ? ` (exit ${sv.exitCode})` : ''}`)
+        .join('\n');
+      const containerNote = stopped
+        ? `\n\nThese services are not running:\n${stopped}\nRead their container logs to find out why.`
+        : unresponsive
+          ? '\n\nEvery container is running, but nothing answers on the app port. The app is ' +
+            'likely failing during startup, or listening on a different port than the compose ' +
+            'file publishes.'
+          : '';
       const logTail =
-        failedRun && failedRun.log.trim()
+        (failedRun && failedRun.log.trim()
           ? failedRun.log.slice(-4000)
           : '(log unavailable — the app was restarted after the failure or the run was ' +
-            'interrupted; inspect the workspace to infer what happened)';
+            'interrupted; inspect the workspace to infer what happened)') + containerNote;
       const handle = await startTriageRun(
         project,
         state.settings,
-        failed === 'docker-up' ? 'starting the environment (docker compose up)' : 'bootstrap',
+        failed === 'docker-up'
+          ? unresponsive
+            ? 'starting the environment — the containers started but the app never answered'
+            : 'starting the environment (docker compose up)'
+          : 'bootstrap',
         logTail
       );
       runsApi.track(handle);

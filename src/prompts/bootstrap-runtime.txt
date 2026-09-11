@@ -76,9 +76,10 @@ Follow these steps:
 
 6. Generate these files in the WORKSPACE ROOT:
    • mvpfy.yml — app name, main service, host port, list of all services, health-check URL.
-     If the app has authentication, seed a working demo account and record it in a
-     `demo_login:` block (url, email/username, password, and how to get the OTP if login
-     needs one — e.g. "read the code at the mailhog URL"). Add a `demo_credentials:` list
+     If the app has authentication, arrange for a demo account (see the seeding rule in
+     Rules below) and record it in a `demo_login:` block (url, email/username, password,
+     and how to get the OTP if login needs one — e.g. "read the code at the mailhog URL").
+     The values here must be the ones the seed actually uses. Add a `demo_credentials:` list
      for any extra logins (admin dashboards, secondary roles). These must be local-only
      demo values, never real secrets — the app displays them to the product manager.
    • Dockerfile — inside any repo that has none (one per repo that needs it)
@@ -135,6 +136,17 @@ Rules:
 • Say plainly in mvpfy-run.md which changes appear on their own and which need a restart —
   new dependencies, changed env vars and database migrations always need one.
 • Use a named Docker volume for each database so data persists between restarts.
+• Seed the demo account as part of the stack STARTING UP — an init script, an entrypoint
+  step, or its own compose service — never as a command you run once while setting things
+  up. mvpfy runs nothing after `docker compose up`, so a one-off seed exists only in the
+  database volume that happened to be there at the time: delete that volume, or the images,
+  and the product manager is shown a login that opens nothing.
+  Take its email and password from the env file — add them there and to
+  .env.mvpfy.example as MVPFY_DEMO_EMAIL and MVPFY_DEMO_PASSWORD — and have the seed read
+  them from there, so the env, mvpfy.yml and the account itself cannot drift apart. Make it
+  idempotent: create the account when it is absent, leave it untouched when it is already
+  there, so it survives every restart and rebuild. Seed any sample data the product manager
+  needs to see the product working the same way, and never overwrite data that is there.
 • Initialize fresh databases from the committed schema file when the framework keeps one
   (Rails db/schema.rb or structure.sql → `rails db:schema:load`, Django, Prisma, …), NOT by
   replaying the full migration history — old migration chains are often broken when run from

@@ -85,8 +85,9 @@ const REGENERATE_NOTE =
   'of mvpfy: do not reuse them just because they exist and appear to work. Rewrite ' +
   'docker-compose.mvpfy.yml, any Dockerfile you generated, and mvpfy.yml to what you would ' +
   'write today, backing each up to .bak first. Keep what is still working: the same host ' +
-  'ports, the same service names where you can, the same demo credentials, and the existing ' +
-  'env file and its values. NEVER delete or recreate a database volume — the product manager ' +
+  'ports, the same service names where you can, the same demo credentials — carry those ' +
+  'values across into the env and the seed so the login already on screen keeps working — ' +
+  'and the existing env file and its values. NEVER delete or recreate a database volume — the product manager ' +
   'has data in it. Their app code is not yours to change.';
 
 /**

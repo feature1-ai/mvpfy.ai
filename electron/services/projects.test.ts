@@ -61,7 +61,7 @@ describe('raisePrCommand', () => {
     // GitHub rejects an empty PR outright, so this must fail here, clearly,
     // rather than as a 422 halfway through a run.
     expect(() => raisePrCommand([dir], 'mvpfy/invoice-export', 'Invoice export', 'body')).toThrow(
-      /No repository has commits on mvpfy\/invoice-export/i
+      /Nothing to raise: mvpfy\/invoice-export has no commits in api/i
     );
   });
 

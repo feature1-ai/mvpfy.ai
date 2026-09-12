@@ -5,6 +5,7 @@ import {
   InstallPlan,
   MvpfyState,
   RELEASES_URL,
+  macInstallerUrl,
   UpdateStatus,
 } from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
@@ -415,10 +416,14 @@ export default function SettingsView({
             </button>
           ) : update?.kind === 'available' ? (
             <button
-              onClick={() => void window.mvpfy.openExternal(RELEASES_URL)}
+              onClick={() =>
+                void window.mvpfy.openExternal(
+                  update.version ? macInstallerUrl(update.version) : RELEASES_URL
+                )
+              }
               className="btn-primary h-[30px] shrink-0 px-3 text-[12.5px]"
             >
-              Download ↗
+              Download {update.version ?? ''} ↗
             </button>
           ) : (
             <button

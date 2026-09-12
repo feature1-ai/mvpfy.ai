@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { CliName, CliStatus, REQUIRED_CLIS } from '../../shared/types';
+import { CliName, CliStatus, REQUIRED_CLIS, macInstallerUrl } from '../../shared/types';
 import { CLI_HELP, installHintFor, preflightAuth } from './cliCheck';
 
 describe('installHintFor', () => {
@@ -66,5 +66,13 @@ describe('preflightAuth', () => {
   it('reports a tool that is not installed at all', async () => {
     stub([cli('gh', false, null)]);
     expect(await preflightAuth(null, true)).toMatch(/GitHub CLI was not found/);
+  });
+});
+
+describe('macInstallerUrl', () => {
+  it('points at the exact installer for that version, not a page of eleven files', () => {
+    expect(macInstallerUrl('1.0.0-beta.15')).toBe(
+      'https://github.com/feature1-ai/mvpfy.ai/releases/download/v1.0.0-beta.15/mvpfy-by-feature1-1.0.0-beta.15.dmg'
+    );
   });
 });

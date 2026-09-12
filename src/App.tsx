@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CliStatus, MvpfyState, Project, RELEASES_URL, UpdateStatus } from '../shared/types';
+import {
+  CliStatus,
+  MvpfyState,
+  Project,
+  RELEASES_URL,
+  UpdateStatus,
+  macInstallerUrl,
+} from '../shared/types';
 import { checkClis } from './lib/cliCheck';
 import { loadState, saveState } from './lib/state';
 import { RunState, useRuns } from './lib/useRuns';
@@ -159,7 +166,11 @@ export default function App() {
             </button>
           ) : (
             <button
-              onClick={() => void window.mvpfy.openExternal(RELEASES_URL)}
+              onClick={() =>
+                void window.mvpfy.openExternal(
+                  updateStatus.version ? macInstallerUrl(updateStatus.version) : RELEASES_URL
+                )
+              }
               className="btn-primary h-[30px] px-3 text-xs"
             >
               Download ↗

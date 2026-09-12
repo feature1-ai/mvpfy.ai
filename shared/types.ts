@@ -287,6 +287,21 @@ export interface UpdateStatus {
 /** Where users can always fetch the newest build by hand. */
 export const RELEASES_URL = 'https://github.com/feature1-ai/mvpfy.ai/releases/latest';
 
+/**
+ * Direct link to a version's macOS installer.
+ *
+ * Windows and Linux update themselves; macOS cannot install an update it
+ * cannot verify, and these builds are unsigned. Sending someone to a releases
+ * page to find the right file among eleven is the worst of both — this at
+ * least starts the download of the one they want.
+ */
+export function macInstallerUrl(version: string): string {
+  return (
+    'https://github.com/feature1-ai/mvpfy.ai/releases/download/' +
+    `v${version}/mvpfy-by-feature1-${version}.dmg`
+  );
+}
+
 /** API surface exposed to the renderer through the preload contextBridge. */
 export interface MvpfyApi {
   /** The running build's version, for support and update checks. */

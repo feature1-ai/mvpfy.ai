@@ -169,6 +169,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   markFeatureTested(): Promise<boolean>;
   /** Push the feature branch and open a PR in each repo that changed. */
   raisePr(): Promise<boolean>;
+  /** Wire gh in as git's credential helper, then raise again. */
+  repairGitAuth(): Promise<boolean>;
   /** Put the running app on this feature's code, or back on the trunk. */
   testFeature(slug: string | null): Promise<boolean>;
   /** The workspace is on this feature but behind its latest commit. */

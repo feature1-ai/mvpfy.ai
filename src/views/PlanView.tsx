@@ -13,6 +13,7 @@ import {
   uncoveredItems,
 } from '../lib/plan';
 import { Feature1Feature } from '../lib/feature1Mcp';
+import { explainRaiseFailure } from '../lib/raiseFailure';
 import Feature1LoginPrompt from './Feature1LoginPrompt';
 import ReadinessPanel from './ReadinessPanel';
 
@@ -650,15 +651,38 @@ function FailedRaise({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
   // tail rather than scrolled off by it.
   const lines = raise.log.trim().split('\n').filter(Boolean);
   const output = (lines.length > 13 ? [lines[0], '…', ...lines.slice(-12)] : lines).join('\n');
+  const explained = explainRaiseFailure(raise.log);
   return (
     <section className="card mb-5 overflow-hidden border-danger/30">
       <div className="flex items-center gap-3 border-b border-line px-5 py-3">
         <span className="section-label text-danger">The pull request was not raised</span>
-        <span className="text-[11.5px] text-muted">git and gh said this</span>
       </div>
-      <pre className="max-h-[220px] overflow-auto px-5 py-3 font-mono text-[11.5px] leading-relaxed text-body">
-        {output || '(the run produced no output)'}
-      </pre>
+      {/* The plain-language reading first: git explains itself to engineers,
+          and the same failure said plainly is the difference between a dead
+          end and a next step. Its own words stay below, for when they help. */}
+      {explained && (
+        <div className="border-b border-line-subtle px-5 py-4">
+          <p className="text-[13.5px] font-medium">{explained.title}</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-body">{explained.fix}</p>
+          {explained.repairable && (
+            <button
+              onClick={() => void c.repairGitAuth().then((ok) => ok && c.raisePr())}
+              disabled={c.busy}
+              className="btn-primary mt-3 h-[34px] px-3.5 text-[13px] disabled:opacity-50"
+            >
+              Connect git to GitHub and try again
+            </button>
+          )}
+        </div>
+      )}
+      <div className="px-5 py-3">
+        <p className="mb-1.5 text-[11.5px] text-muted">
+          {explained ? 'What git and gh said' : 'git and gh said this'}
+        </p>
+        <pre className="max-h-[200px] overflow-auto font-mono text-[11.5px] leading-relaxed text-body">
+          {output || '(the run produced no output)'}
+        </pre>
+      </div>
     </section>
   );
 }

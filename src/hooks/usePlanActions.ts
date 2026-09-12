@@ -4,6 +4,7 @@ import {
   startPlanSpecRun,
   startPlanStoryRun,
   startPullFeatureRun,
+  startGitAuthRun,
   startRaisePrRun,
 } from '../lib/agentRunner';
 import { mcpBaseUrl } from '../lib/feature1Mcp';
@@ -49,6 +50,8 @@ export interface PlanActions {
   markFeatureTested(): Promise<boolean>;
   /** Push the feature branch and open a PR in each repo that changed. */
   raisePr(): Promise<boolean>;
+  /** Wire gh in as git's credential helper, then raise again. */
+  repairGitAuth(): Promise<boolean>;
   /** Put the running app on this feature's code, or back on the trunk. */
   testFeature(slug: string | null): Promise<boolean>;
   /** The workspace is on this feature but behind its latest commit. */
@@ -259,6 +262,17 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testingKey, project.repos]);
   const testingStale = staleCheck.key === testingKey && staleCheck.stale;
+
+  /**
+   * Being signed in to gh is not the same as git being able to use it, and the
+   * gap between them is the commonest reason a push fails. Wiring it up is one
+   * command, so mvpfy runs it rather than printing it.
+   */
+  const repairGitAuth = () =>
+    guarded(async () => {
+      const handle = await startGitAuthRun(project);
+      runsApi.track(handle);
+    });
 
   const markFeatureTested = () =>
     guarded(async () => {
@@ -590,6 +604,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     refineSpec,
     markFeatureTested,
     raisePr,
+    repairGitAuth,
     testFeature,
     testingStale,
     approvePlan,

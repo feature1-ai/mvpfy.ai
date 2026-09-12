@@ -35,6 +35,10 @@ const LOGIN_COMMANDS: Record<string, { command: string; mode: 'in-app' | 'termin
     mode: 'in-app',
   },
   codex: { command: 'codex login', mode: 'in-app' },
+  // Being signed in to gh does not give git credentials: this is the step
+  // that wires gh in as git's credential helper, and a sign-in done by hand
+  // outside mvpfy often skips it.
+  'git-auth': { command: 'gh auth setup-git', mode: 'in-app' },
   claude: { command: 'claude auth login', mode: 'terminal' },
 };
 

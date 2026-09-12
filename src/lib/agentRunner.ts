@@ -132,7 +132,8 @@ export type RunKind =
   | 'plan-spec'
   | 'plan-story'
   | 'raise-pr'
-  | 'seed';
+  | 'seed'
+  | 'git-auth';
 
 export interface RunHandle {
   runId: string;
@@ -585,6 +586,13 @@ export async function startSeedRun(project: Project): Promise<RunHandle | null> 
   const runId = makeRunId('seed');
   const started = await window.mvpfy.seed(runId, project.localPath);
   return started ? { runId, kind: 'seed', projectId: project.id } : null;
+}
+
+/** Wire gh in as git's credential helper — the fix for a push git cannot authenticate. */
+export async function startGitAuthRun(project: Project): Promise<RunHandle> {
+  const runId = makeRunId('git-auth');
+  await window.mvpfy.cliLogin(runId, 'git-auth');
+  return { runId, kind: 'git-auth', projectId: project.id };
 }
 
 export async function startIdeRun(

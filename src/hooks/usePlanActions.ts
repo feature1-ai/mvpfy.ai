@@ -159,7 +159,11 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   const processedPrRuns = useRef(new Set<string>());
   useEffect(() => {
     for (const run of prRuns) {
-      if (run.running || run.exitCode !== 0) continue;
+      // Not `exitCode !== 0`: the repos are chained, so one failing fails the
+      // run while the pull requests already opened before it are real. Reading
+      // the log either way keeps those rather than throwing them away with the
+      // failure — and the panel below still explains what did not happen.
+      if (run.running) continue;
       if (processedPrRuns.current.has(run.handle.runId)) continue;
       const slug = run.handle.planSlug ?? '';
       const plan = plans.find((p) => p.slug === slug)?.plan;

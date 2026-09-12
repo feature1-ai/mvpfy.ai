@@ -497,6 +497,10 @@ export default function PlanView({ c, onOpenTab }: Props) {
         </div>
       )}
 
+      {/* git and gh say why in several lines, not one. A truncated line here
+          is the difference between a report and a screenshot of a dead end. */}
+      <FailedRaise c={c} plan={plan} />
+
       {/* Spec (the agreed PRD, collapsible) */}
       {specOpen && specCard}
 
@@ -635,6 +639,30 @@ function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) 
   );
 }
 
+/** Why raising the pull request failed, in git's own words. */
+function FailedRaise({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
+  const raise = c.runHistory.filter((r) => r.handle.kind === 'raise-pr').pop();
+  if ((plan.prUrls?.length ?? 0) > 0 || !raise || raise.running || raise.exitCode === 0) {
+    return null;
+  }
+  // The command is echoed as the log's first line and is half the answer —
+  // which repository, which branch, which base — so it is kept alongside the
+  // tail rather than scrolled off by it.
+  const lines = raise.log.trim().split('\n').filter(Boolean);
+  const output = (lines.length > 13 ? [lines[0], '…', ...lines.slice(-12)] : lines).join('\n');
+  return (
+    <section className="card mb-5 overflow-hidden border-danger/30">
+      <div className="flex items-center gap-3 border-b border-line px-5 py-3">
+        <span className="section-label text-danger">The pull request was not raised</span>
+        <span className="text-[11.5px] text-muted">git and gh said this</span>
+      </div>
+      <pre className="max-h-[220px] overflow-auto px-5 py-3 font-mono text-[11.5px] leading-relaxed text-body">
+        {output || '(the run produced no output)'}
+      </pre>
+    </section>
+  );
+}
+
 /**
  * Getting the finished feature out: the builder's gate over the whole set,
  * then its pull requests. Stories are still accepted one at a time — this is
@@ -651,18 +679,13 @@ function FeatureShipControls({ c, plan }: { c: ProjectController; plan: ProjectP
   }
   if (prUrls.length === 0 && raise && raise.exitCode !== 0) {
     return (
-      <div className="flex max-w-[420px] flex-col items-end gap-1">
-        <button
-          onClick={() => void c.raisePr()}
-          disabled={c.busy}
-          className="btn-secondary h-8 px-3.5 disabled:opacity-50"
-        >
-          Raising the pull request failed — try again
-        </button>
-        <span className="max-w-full truncate text-right font-mono text-[10.5px] text-danger">
-          {raise.log.trim().split('\n').filter(Boolean).pop()}
-        </span>
-      </div>
+      <button
+        onClick={() => void c.raisePr()}
+        disabled={c.busy}
+        className="h-8 rounded-md bg-danger px-3.5 text-[13px] font-medium text-white disabled:opacity-50"
+      >
+        Raising failed — try again
+      </button>
     );
   }
   if (prUrls.length > 0) {

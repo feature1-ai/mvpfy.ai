@@ -30,6 +30,10 @@ Do this in order:
      steps use. There is no feature code in the answer; do not invent one.
    • If the tool reports the feature already exists, use the existing one rather than
      creating a second.
+   • Then read it back: mcp__feature1__get_feature(feature_id="<the Feature ID>"). If the
+     answer carries a "Code" line, that human-readable code is what people call this
+     feature, and it is what to record in step 5. A feature that has no code yet is not
+     an error — keep the UUID for that case and carry on.
 
 4. Create the stories, in one call, in the plan's own order:
    • mcp__feature1__create_user_stories_batch(project_id="<project id>",
@@ -45,7 +49,9 @@ Do this in order:
        {"description": "<the criterion, verbatim>"}. Do not reword or drop any.
 
 5. Record the link back in {planFile}, so mvpfy and Feature1 agree about what this is:
-   • Set "feature1FeatureRef" to the Feature ID from step 3.
+   • Set "feature1FeatureRef" to the feature's Code if step 3 read one back, and to the
+     Feature ID otherwise. Either resolves the feature later; the code is what a person
+     recognises, so prefer it when there is one.
    • The batch answers with a list of what it created and a separate list of what
      failed, so the created list does NOT line up with the stories you sent the moment
      one of them fails. Match each created entry to its plan story BY TITLE, not by
@@ -55,7 +61,7 @@ Do this in order:
    • Change nothing else in the file — not the lanes, not the acceptance criteria, not
      the estimates. Work already done here keeps its state.
 
-6. Print, as the last line, exactly: PUSHED <Feature ID>
+6. Print, as the last line, exactly: PUSHED <the code or id you recorded>
 
 Rules:
 • Do not modify any other file — other mvpfy-plan.* / mvpfy-spec.* files belong to other

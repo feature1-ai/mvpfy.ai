@@ -483,6 +483,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <Feature1Push c={c} plan={plan} />
           <ImplementFeatureButton c={c} plan={plan} slug={active.slug} />
           <TestFeatureButton c={c} slug={active.slug} />
           <FeatureShipControls c={c} plan={plan} />
@@ -501,6 +502,13 @@ export default function PlanView({ c, onOpenTab }: Props) {
       {/* git and gh say why in several lines, not one. A truncated line here
           is the difference between a report and a screenshot of a dead end. */}
       <FailedRaise c={c} plan={plan} />
+
+      {/* The other half of the same question: whether the pull request happened
+          is the point of the button, so success is stated as plainly as failure. */}
+      <RaisedPullRequests c={c} plan={plan} />
+
+      {/* Whose turn it is, when every story is accepted but the feature is not. */}
+      <AwaitingAcceptance c={c} plan={plan} />
 
       {/* Spec (the agreed PRD, collapsible) */}
       {specOpen && specCard}
@@ -698,6 +706,104 @@ function FailedRaise({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
 }
 
 /**
+ * Filing a locally-planned feature in Feature1, and the link once it is there.
+ * A feature that was pulled from Feature1 already has a record there, so this
+ * offers nothing — pushing it again would split its history in two.
+ */
+function Feature1Push({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
+  if (!c.tenantConnected) return null;
+  if (plan.feature1FeatureRef) {
+    return (
+      <span
+        title="This feature is in Feature1 — its stories and acceptance criteria are linked"
+        className="font-mono text-[11.5px] text-muted"
+      >
+        Feature1 · {plan.feature1FeatureRef}
+      </span>
+    );
+  }
+  if (plan.stories.length === 0) return null;
+  return (
+    <button
+      onClick={() => void c.pushFeature()}
+      disabled={c.busy || c.pushingFeature}
+      title="Create this feature in Feature1 with its PRD, user stories and acceptance criteria"
+      className="btn-secondary h-8 px-3.5 disabled:opacity-50"
+    >
+      {c.pushingFeature ? 'Pushing to Feature1…' : 'Push to Feature1'}
+    </button>
+  );
+}
+
+/**
+ * The pull requests that were raised. A raise that worked used to leave a
+ * truncated URL in the header and nothing else — the same silence as one that
+ * failed, at the moment the answer matters most.
+ */
+function RaisedPullRequests({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
+  const urls = plan.prUrls ?? [];
+  if (urls.length === 0) return null;
+  return (
+    <section className="card mb-5 overflow-hidden border-go/30">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-go" />
+        <span className="section-label text-go">
+          {urls.length === 1 ? 'Pull request raised' : `${urls.length} pull requests raised`}
+        </span>
+      </div>
+      <div className="px-5 py-3">
+        <p className="mb-2 text-[12px] text-muted">
+          The branch is on GitHub and is waiting for review. Open one to see the changes.
+        </p>
+        <div className="flex flex-col items-start gap-1">
+          {urls.map((url) => (
+            <button
+              key={url}
+              onClick={() => c.openExternal(url)}
+              className="max-w-full truncate font-mono text-[11.5px] text-go hover:underline"
+            >
+              {url.replace('https://', '')}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Every story accepted, and the feature still in Testing. That is correct —
+ * accepting the stories is not the same as accepting what they add up to —
+ * but the board said nothing about whose turn it was, so it read as stuck.
+ */
+function AwaitingAcceptance({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
+  const allDone = plan.stories.length > 0 && plan.stories.every((s) => s.lane === 'done');
+  if (!allDone || plan.tested === true || (plan.prUrls?.length ?? 0) > 0) return null;
+  return (
+    <section className="card mb-5 overflow-hidden border-warn-border">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="section-label text-warn-text">This feature is waiting for you</span>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <p className="text-[13px] text-body">
+          All {plan.stories.length} stories are accepted, so the feature stays in Testing until you
+          accept the feature itself. Try it end to end first — accepting moves it to Done.
+        </p>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => void c.markFeatureTested()}
+            disabled={c.busy}
+            className="btn-secondary h-8 px-3.5 disabled:opacity-50"
+          >
+            Accept feature
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
  * Getting the finished feature out: the builder's gate over the whole set,
  * then its pull requests. Stories are still accepted one at a time — this is
  * the second gate, over what they add up to.
@@ -725,19 +831,14 @@ function FeatureShipControls({ c, plan }: { c: ProjectController; plan: ProjectP
       </button>
     );
   }
+  // The links live in the panel below, which has room for all of them. Here,
+  // where the button was, what belongs is the answer to what the button did.
   if (prUrls.length > 0) {
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        {prUrls.map((url) => (
-          <button
-            key={url}
-            onClick={() => c.openExternal(url)}
-            className="max-w-[240px] truncate font-mono text-[11.5px] text-go hover:underline"
-          >
-            {url.replace('https://', '')}
-          </button>
-        ))}
-      </div>
+      <span className="flex items-center gap-1.5 text-[13px] font-medium text-go">
+        <span className="h-1.5 w-1.5 rounded-full bg-go" />
+        {prUrls.length === 1 ? 'Pull request raised' : `${prUrls.length} pull requests raised`}
+      </span>
     );
   }
 

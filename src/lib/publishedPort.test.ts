@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseEnvFile, parsePublishedPort, resolveEnvRefs } from './publishedPort';
+import {
+  parseEnvFile,
+  parsePublishedPort,
+  parsePublishedPorts,
+  resolveEnvRefs,
+} from './publishedPort';
 
 const compose = (ports: string) =>
   `services:\n  app:\n    build: .\n    ports:\n      - "${ports}"\n    volumes:\n      - .:/app\n`;
@@ -49,5 +54,52 @@ describe('parseEnvFile', () => {
 describe('resolveEnvRefs', () => {
   it('leaves an unknown variable with no fallback empty rather than literal', () => {
     expect(resolveEnvRefs('${NOPE}:3000', {})).toBe(':3000');
+  });
+});
+
+describe('parsePublishedPorts', () => {
+  const stack = [
+    'services:',
+    '  db:',
+    '    image: postgres:16',
+    '    ports:',
+    '      - "5432:5432"',
+    '    volumes:',
+    '      - ./data:/var/lib/postgresql/data',
+    '  web:',
+    '    build: .',
+    '    ports:',
+    '      - "${HOST_PORT:-4106}:4105"',
+    '    depends_on:',
+    '      - db',
+  ].join('\n');
+
+  it('reads every service that publishes, not just the first one', () => {
+    // The database sorts first in most generated stacks, so taking the first
+    // number in the file compared the app port against postgres and warned
+    // about a drift that was never there — every time, for ever.
+    expect(parsePublishedPorts(stack, null)).toEqual([5432, 4106]);
+  });
+
+  it('ignores list items that are not ports', () => {
+    // volumes: and depends_on: are lists too; only ports: entries count.
+    expect(parsePublishedPorts(stack, null)).not.toContain(0);
+    expect(parsePublishedPorts('services:\n  a:\n    depends_on:\n      - 8080\n', null)).toEqual(
+      []
+    );
+  });
+
+  it('takes the env file over the fallback, as compose does', () => {
+    expect(parsePublishedPorts(stack, 'HOST_PORT=9200')).toEqual([5432, 9200]);
+  });
+
+  it('skips a bare container port, which publishes nothing fixed', () => {
+    expect(parsePublishedPorts('services:\n  a:\n    ports:\n      - "8080"\n', null)).toEqual([]);
+  });
+
+  it('reads the host port out of an address-qualified entry', () => {
+    expect(
+      parsePublishedPorts('services:\n  a:\n    ports:\n      - "127.0.0.1:8080:80"\n', null)
+    ).toEqual([8080]);
   });
 });

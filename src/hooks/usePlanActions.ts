@@ -4,6 +4,7 @@ import {
   startPlanSpecRun,
   startPlanStoryRun,
   startPullFeatureRun,
+  startPushFeatureRun,
   startGitAuthRun,
   startRaisePrRun,
 } from '../lib/agentRunner';
@@ -46,6 +47,10 @@ export interface PlanActions {
   generateSpec(description: string): Promise<boolean>;
   /** Pull a Feature1 feature in as a native plan (agent reads it over MCP). */
   pullFeature(featureRef: string): Promise<boolean>;
+  /** File a feature planned here in Feature1 — its PRD, stories and ACs. */
+  pushFeature(): Promise<boolean>;
+  /** True while the active feature is being filed in Feature1. */
+  pushingFeature: boolean;
   refineSpec(instruction: string): Promise<boolean>;
   /** The builder accepts the finished feature — the gate before its PR. */
   markFeatureTested(): Promise<boolean>;
@@ -430,6 +435,32 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       setSelectedPlanSlug(slug);
     });
 
+  // The inverse of pullFeature: a feature planned here is filed in Feature1.
+  // Only for a feature that came from here — one that was pulled already has a
+  // Feature1 record, and creating a second would split its history in two.
+  const pushFeature = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active?.plan) throw new Error('Open a feature first.');
+      if (active.plan.feature1FeatureRef) {
+        throw new Error('This feature is already in Feature1.');
+      }
+      if (active.plan.stories.length === 0) {
+        throw new Error('Approve the plan and generate its stories before pushing it up.');
+      }
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const mcp = await feature1Mcp();
+      const handle = await startPushFeatureRun(
+        project,
+        state.settings,
+        active.slug,
+        mcp,
+        sessionFor(active.slug, false)
+      );
+      runsApi.track(handle);
+    });
+
   const refineSpec = (instruction: string) =>
     guarded(async () => {
       const text = instruction.trim();
@@ -613,6 +644,10 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     planBlocked,
     generateSpec,
     pullFeature,
+    pushFeature,
+    pushingFeature: projectRuns.some(
+      (r) => r.handle.kind === 'push-feature' && r.running && r.handle.planSlug === activePlan?.slug
+    ),
     refineSpec,
     markFeatureTested,
     raisePr,

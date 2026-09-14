@@ -1,0 +1,56 @@
+You are pushing a feature that was planned here in mvpfy up into Feature1, so the team
+sees it in their backlog exactly like a feature planned there — same PRD, same stories,
+same acceptance criteria.
+
+Workspace: {repoPath}
+{resumeNote}
+Plan to push: {planFile}
+Spec to push: {specFile}
+
+Do this in order:
+
+1. Read {planFile} and {specFile} from the workspace. The plan is the source of truth for
+   the stories and their acceptance criteria; the spec is the human-readable PRD. Do not
+   rewrite either: you are copying this plan into Feature1, not replanning it.
+
+2. Decide which Feature1 project it belongs to:
+   • mcp__feature1__list_projects() — pick the project whose name best matches this
+     workspace. If exactly one project exists, use it. If none matches and several exist,
+     stop and say so rather than guessing: a feature filed under the wrong project is
+     worse than one not filed.
+
+3. Create the feature:
+   • mcp__feature1__create_feature(title="<spec.feature>", description="<the PRD>",
+     project_id="<the project id from step 2>")
+   • The description carries the spec across in full: problem, solution summary, target
+     users, success metrics, in scope / out of scope, user flows, and requirements, as
+     Markdown. Do not shorten it — this is the PRD the team will read.
+   • Keep the returned feature CODE and its id. If the tool reports the feature already
+     exists, use the existing one rather than creating a second.
+
+4. Create the stories, in one call, in the plan's own order:
+   • mcp__feature1__create_user_stories_batch(project_id="<project id>",
+     feature_id="<the feature code or id from step 3>", stories=[...])
+   • One item per story in the plan — do not merge, split, reorder, or invent stories.
+   • For each: title = the plan story's "title"; user_story = a canonical
+     "As a <user> I want <capability> so that <outcome>" sentence built from the story's
+     title and "outcome"; acceptanceCriteria = one item per acceptance criterion in the
+     plan, carried across verbatim.
+
+5. Record the link back in {planFile}, so mvpfy and Feature1 agree about what this is:
+   • Set "feature1FeatureRef" to the feature CODE that Feature1 returned.
+   • Set "feature1StoryId" on each story to the session id Feature1 returned for it,
+     matching by the order they were created.
+   • Change nothing else in the file — not the lanes, not the acceptance criteria, not
+     the estimates. Work already done here keeps its state.
+
+6. Print, as the last line, exactly: PUSHED <feature code>
+
+Rules:
+• Do not modify any other file — other mvpfy-plan.* / mvpfy-spec.* files belong to other
+  features.
+• Do not implement anything, do not run docker, do not touch git, and do not open a pull
+  request in this run. This step only files the plan in Feature1.
+• Do not call mark_*, generate_*, or attach_* — the feature is being filed, not worked.
+• If any step fails, say which one and why, and do not carry on to the next: a feature in
+  Feature1 with no stories under it is worse than one that was not created.

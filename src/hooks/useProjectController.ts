@@ -20,7 +20,7 @@ import {
 } from '../../shared/types';
 import { DemoCredential, parseDemoCredentials } from '../lib/credentials';
 import { parseAppPort } from '../lib/ports';
-import { parsePublishedPort } from '../lib/publishedPort';
+import { parsePublishedPorts } from '../lib/publishedPort';
 import { UserStory } from '../lib/feature1Mcp';
 import { ENV_FILE_CANDIDATES } from '../lib/envFile';
 import { troubleReport } from '../lib/trouble';
@@ -164,6 +164,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   /** Resolves true when the run actually started (false on a guard error). */
   generateSpec(description: string): Promise<boolean>;
   pullFeature(featureRef: string): Promise<boolean>;
+  /** File a feature planned here in Feature1 — its PRD, stories and ACs. */
+  pushFeature(): Promise<boolean>;
+  /** True while the active feature is being filed in Feature1. */
+  pushingFeature: boolean;
   refineSpec(instruction: string): Promise<boolean>;
   /** The builder accepts the finished feature — the gate before its PR. */
   markFeatureTested(): Promise<boolean>;
@@ -462,12 +466,16 @@ export function useProjectController(
     // A container that starts and dies exits zero, so an unresponsive app is
     // a failure with no failed run behind it. Diagnose has to be reachable
     // there too — it was switched off in exactly the case that needs it.
+    // Only a real drift, not merely a different first entry: a stack publishes
+    // several ports, and the app being among them is the whole question. Any
+    // other service publishing something else is normal and must not warn.
     portMismatch: (() => {
-      const publishing = parsePublishedPort(
+      const published = parsePublishedPorts(
         contentOf(files, pf('docker-compose.mvpfy.yml')),
         contentOf(files, pf('.env')) ?? contentOf(files, pf('.env.mvpfy.example'))
       );
-      return publishing && publishing !== appPort ? { watching: appPort, publishing } : null;
+      if (published.length === 0 || published.includes(appPort)) return null;
+      return { watching: appPort, publishing: published[0] };
     })(),
     canSeed: /^\s*seed_command:\s*\S/m.test(mvpfyYmlContent ?? ''),
     canDiagnose: lastFailure !== null || appUnresponsive,

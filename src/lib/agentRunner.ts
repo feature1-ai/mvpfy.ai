@@ -11,6 +11,7 @@ import shipChangeTemplate from '../prompts/ship-change.txt?raw';
 import planSpecTemplate from '../prompts/plan-spec.txt?raw';
 import planImplementTemplate from '../prompts/plan-implement.txt?raw';
 import pullFeatureTemplate from '../prompts/pull-feature.txt?raw';
+import pushFeatureTemplate from '../prompts/push-feature.txt?raw';
 import {
   AgentKind,
   BOOTSTRAP_FILE,
@@ -133,6 +134,7 @@ export type RunKind =
   | 'plan-spec'
   | 'plan-story'
   | 'raise-pr'
+  | 'push-feature'
   | 'seed'
   | 'git-auth';
 
@@ -410,6 +412,37 @@ export async function startPullFeatureRun(
   // Reuse the plan-spec kind so the board treats this like a spec being
   // generated for the slug (the FeaturePlan.generating state keys off it).
   return { runId, kind: 'plan-spec', projectId: project.id, planSlug };
+}
+
+/**
+ * The inverse of a pull: a feature planned here is filed in Feature1, PRD and
+ * stories and acceptance criteria intact, and the plan records the code it was
+ * given. An agent run rather than direct tool calls, because the plan has to be
+ * turned into Feature1's own shape — a PRD as Markdown, stories in canonical
+ * "As a … I want … so that …" form — and that is judgement, not a mapping.
+ */
+export async function startPushFeatureRun(
+  project: Project,
+  settings: Settings,
+  planSlug: string,
+  mcp: RunAgentMcp,
+  session?: RunSession
+): Promise<RunHandle> {
+  const runId = makeRunId('pushfeature');
+  const cfg = configDirFor(project.mode);
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(pushFeatureTemplate, {
+      resumeNote: resumeNoteFor(session),
+      repoPath: project.localPath,
+      planFile: cfg + planFileFor(planSlug),
+      specFile: cfg + specFileFor(planSlug),
+    }),
+    ...agentFor(settings),
+    mcp,
+  });
+  return { runId, kind: 'push-feature', projectId: project.id, planSlug };
 }
 
 /**

@@ -30,26 +30,57 @@ export function parseEnvFile(text: string | null | undefined): Record<string, st
 }
 
 /**
- * The first host port the compose file publishes, once its variables are
- * resolved. Null when the file names none, which is not a failure — a stack
- * can publish nothing and still be wrong in other ways.
+ * Every host port the compose file publishes, once its variables are resolved.
+ *
+ * Only entries under a `ports:` key count. Scanning every list item in the file
+ * matched the first number anywhere — in a stack of several services that is
+ * usually the database, not the app, so the two ports never agreed and the
+ * mismatch warning stayed up forever however often the stack was rebuilt.
+ */
+export function parsePublishedPorts(
+  composeYml: string | null | undefined,
+  envText: string | null | undefined
+): number[] {
+  if (!composeYml) return [];
+  const env = parseEnvFile(envText);
+  const ports: number[] = [];
+  let blockIndent: number | null = null;
+  for (const line of composeYml.split('\n')) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    const indent = line.length - line.trimStart().length;
+    if (/^\s*ports:\s*$/.test(line)) {
+      blockIndent = indent;
+      continue;
+    }
+    if (blockIndent === null) continue;
+    const entry = line.match(/^\s*-\s*["']?([^"'\s]+)["']?\s*$/);
+    // Any other key at or above the ports: key's own indentation closes it.
+    if (!entry) {
+      if (indent <= blockIndent) blockIndent = null;
+      continue;
+    }
+    // Resolve first, then split: `${HOST_PORT:-4106}` contains a colon of its
+    // own, so splitting the raw string cuts it in the wrong place.
+    const resolved = resolveEnvRefs(entry[1], env);
+    const parts = resolved.split(':');
+    // "8080" publishes nothing to the host — docker picks a random port. Only
+    // "host:container" pins one, so a bare entry is not a host port at all.
+    if (parts.length < 2) continue;
+    // "127.0.0.1:8080:80" — the host port is the part before the container's.
+    const port = Number(parts[parts.length - 2]);
+    if (Number.isInteger(port) && port > 0 && port < 65536) ports.push(port);
+  }
+  return [...new Set(ports)];
+}
+
+/**
+ * The first host port the compose file publishes. Null when the file names
+ * none, which is not a failure — a stack can publish nothing and still be
+ * wrong in other ways.
  */
 export function parsePublishedPort(
   composeYml: string | null | undefined,
   envText: string | null | undefined
 ): number | null {
-  if (!composeYml) return null;
-  const env = parseEnvFile(envText);
-  for (const line of composeYml.split('\n')) {
-    // A ports entry, in either the "host:container" or bare-host form.
-    const entry = line.match(/^\s*-\s*["']?([^"'\s]+)["']?\s*$/);
-    if (!entry) continue;
-    const resolved = resolveEnvRefs(entry[1], env);
-    // Resolve first, then split: `${HOST_PORT:-4106}` contains a colon of its
-    // own, so splitting the raw string cuts it in the wrong place.
-    const host = resolved.split(':')[0];
-    const port = Number(host);
-    if (Number.isInteger(port) && port > 0 && port < 65536) return port;
-  }
-  return null;
+  return parsePublishedPorts(composeYml, envText)[0] ?? null;
 }

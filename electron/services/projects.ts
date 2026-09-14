@@ -458,6 +458,11 @@ export async function checkoutFeature(
   }
 }
 
+/** A title is one line by definition; a stray newline would split the command. */
+function oneLine(value: string): string {
+  return value.replace(/\s*[\r\n]+\s*/g, ' ').trim();
+}
+
 /**
  * Push a feature branch and open its pull requests.
  *
@@ -465,12 +470,18 @@ export async function checkoutFeature(
  * the branch is uniform across every repository but the pull requests are not.
  * Which repositories changed is decided here by counting commits, never by
  * asking the agent what it thinks it touched.
+ *
+ * `bodyFile` is a path, not the text. A pull request body is many lines, and a
+ * multi-line argument cannot survive cmd.exe: a quoted string there ends at
+ * the newline, so everything past the first line is read as fresh commands and
+ * the whole chain collapses — which is why raising worked on macOS and failed
+ * on Windows. `--body-file` keeps the text off the command line entirely.
  */
 export function raisePrCommand(
   dirs: string[],
   branch: string,
   title: string,
-  body: string
+  bodyFile: string
 ): string {
   const targets: Array<{ dir: string; base: string }> = [];
   for (const d of dirs) {
@@ -506,7 +517,7 @@ export function raisePrCommand(
       return (
         `echo ${heading} && ${cdTo(dir)} && git push -u origin ${shellQuote(branch)} && ` +
         `(gh pr create --base ${shellQuote(base)} --head ${shellQuote(branch)} ` +
-        `--title ${shellQuote(title)} --body ${shellQuote(body)} || ` +
+        `--title ${shellQuote(oneLine(title))} --body-file ${shellQuote(bodyFile)} || ` +
         `gh pr view ${shellQuote(branch)} --json url -q .url)`
       );
     })

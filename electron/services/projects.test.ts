@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../paths';
@@ -69,6 +72,39 @@ describe('raisePrCommand', () => {
     expect(() => raisePrCommand(['/etc'], 'mvpfy/x', 't', 'b')).toThrow(
       /restricted to managed and linked/
     );
+  });
+
+  it('keeps the whole command on one line, whatever the body and title say', () => {
+    // A pull request body is many lines. Put one on the command line and
+    // cmd.exe ends the quoted string at the newline and runs the rest of the
+    // body as commands, so the push succeeds and the pull request never
+    // happens — Windows only, which is how it survived so long.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-pr-'));
+    setLinkedRoots([root]);
+    const git = (args: string) =>
+      execFileSync('git', args.split(' '), { cwd: root, stdio: 'ignore' });
+    git('init -b main');
+    git('config user.email pm@example.com');
+    git('config user.name PM');
+    fs.writeFileSync(path.join(root, 'a.txt'), 'one');
+    git('add -A');
+    git('commit -m first');
+    git('checkout -b mvpfy/paging');
+    fs.writeFileSync(path.join(root, 'a.txt'), 'two');
+    git('add -A');
+    git('commit -m second');
+
+    const cmd = raisePrCommand(
+      [root],
+      'mvpfy/paging',
+      'Page the list\nserver side',
+      path.join(root, 'body.md')
+    );
+    expect(cmd).not.toMatch(/[\r\n]/);
+    // The text itself is never an argument; only the path to it is.
+    expect(cmd).toContain('--body-file');
+    expect(cmd).toContain(shellQuote('Page the list server side'));
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });
 

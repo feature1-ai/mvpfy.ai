@@ -1,8 +1,9 @@
 import { app, dialog, ipcMain, shell } from 'electron';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
-import { isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
-import { runAgent } from './services/agents';
+import { ensureDirs, isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
+import { removeQuietly, runAgent } from './services/agents';
 import { agentModels, cliCheck, loginCommand, mcpAddCommand } from './services/cli';
 import {
   composeCommand,
@@ -142,7 +143,15 @@ export function registerIpc(): void {
       if (!isAllowedWorkspace(resolved)) {
         throw new Error('Pull requests are restricted to managed and linked project directories');
       }
-      startRun(runId, raisePrCommand(dirs, branch, title, body), resolved);
+      // The body goes to disk rather than onto the command line: it is many
+      // lines, and a newline inside a quoted argument ends the command on
+      // cmd.exe. Built first — a raise with nothing to push throws here, and
+      // then no file has been written to clean up.
+      ensureDirs();
+      const bodyFile = path.join(TMP_DIR, `pr-body-${runId}.md`);
+      const command = raisePrCommand(dirs, branch, title, bodyFile);
+      fs.writeFileSync(bodyFile, body, 'utf8');
+      startRun(runId, command, resolved, () => removeQuietly([bodyFile]));
     }
   );
   ipcMain.handle(

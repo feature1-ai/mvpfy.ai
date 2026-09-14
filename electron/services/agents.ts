@@ -86,7 +86,7 @@ export function sweepRunArtifacts(maxAgeMs = 60 * 60_000, dir: string = TMP_DIR)
   }
 }
 
-function removeQuietly(targets: string[]): void {
+export function removeQuietly(targets: string[]): void {
   for (const target of targets) {
     try {
       fs.rmSync(target, { recursive: true, force: true });

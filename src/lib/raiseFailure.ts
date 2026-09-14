@@ -79,3 +79,15 @@ export function explainRaiseFailure(log: string | null | undefined): RaiseFailur
   }
   return null;
 }
+
+/**
+ * Strip credentials out of a log before it is written to disk.
+ *
+ * A remote can carry a token in its URL (`https://x-access-token:ghp_…@github.com/…`),
+ * and git prints that URL back in its errors. The raise log is stored in the
+ * plan file, which lives in the repository workspace — so anything left in it
+ * is one `git add` away from being published.
+ */
+export function redactSecrets(log: string): string {
+  return log.replace(/(\w+:\/\/)[^\s/@]+(?::[^\s/@]*)?@/g, '$1***@');
+}

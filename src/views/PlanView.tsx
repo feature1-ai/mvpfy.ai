@@ -642,8 +642,11 @@ function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) 
 
 /** Why raising the pull request failed, in git's own words. */
 function FailedRaise({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
-  const raise = c.runHistory.filter((r) => r.handle.kind === 'raise-pr').pop();
-  if ((plan.prUrls?.length ?? 0) > 0 || !raise || raise.running || raise.exitCode === 0) {
+  const raise =
+    c.runHistory
+      .filter((r) => r.handle.kind === 'raise-pr' && r.handle.planSlug === c.activePlan?.slug)
+      .pop() ?? (plan.lastRaise ? { ...plan.lastRaise, running: false } : undefined);
+  if (!raise || raise.running || raise.exitCode === 0) {
     return null;
   }
   // The command is echoed as the log's first line and is half the answer —
@@ -655,7 +658,11 @@ function FailedRaise({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
   return (
     <section className="card mb-5 overflow-hidden border-danger/30">
       <div className="flex items-center gap-3 border-b border-line px-5 py-3">
-        <span className="section-label text-danger">The pull request was not raised</span>
+        <span className="section-label text-danger">
+          {plan.prUrls?.length
+            ? 'Some pull requests could not be raised'
+            : 'The pull request was not raised'}
+        </span>
       </div>
       {/* The plain-language reading first: git explains itself to engineers,
           and the same failure said plainly is the difference between a dead
@@ -676,6 +683,9 @@ function FailedRaise({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
         </div>
       )}
       <div className="px-5 py-3">
+        <button onClick={() => void c.raisePr()} disabled={c.busy} className="btn-secondary mb-3">
+          Retry raising pull requests
+        </button>
         <p className="mb-1.5 text-[11.5px] text-muted">
           {explained ? 'What git and gh said' : 'git and gh said this'}
         </p>
@@ -697,7 +707,10 @@ function FeatureShipControls({ c, plan }: { c: ProjectController; plan: ProjectP
   // The raise is a run like any other, and a run that failed said so only in
   // the Logs tab. Whether the pull request happened is the whole point of the
   // button, so its outcome belongs next to it.
-  const raise = c.runHistory.filter((r) => r.handle.kind === 'raise-pr').pop();
+  const raise =
+    c.runHistory
+      .filter((r) => r.handle.kind === 'raise-pr' && r.handle.planSlug === c.activePlan?.slug)
+      .pop() ?? (plan.lastRaise ? { ...plan.lastRaise, running: false } : undefined);
   if (raise?.running) {
     return <span className="text-[13px] text-muted">Raising the pull request…</span>;
   }

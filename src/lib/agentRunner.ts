@@ -1,4 +1,5 @@
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
+import type { RunsApi } from './useRuns';
 import bootstrapPlanTemplate from '../prompts/bootstrap-plan.txt?raw';
 import readinessTemplate from '../prompts/launch-readiness.txt?raw';
 import readinessFixTemplate from '../prompts/readiness-fix.txt?raw';
@@ -559,18 +560,26 @@ export async function startRaisePrRun(
   planSlug: string,
   branch: string,
   title: string,
-  body: string
+  body: string,
+  runs: Pick<RunsApi, 'track' | 'fail'>
 ): Promise<RunHandle> {
   const runId = makeRunId('raise-pr');
-  await window.mvpfy.raisePullRequests(
-    runId,
-    project.localPath,
-    project.repos.map((r) => r.dir),
-    branch,
-    title,
-    body
-  );
-  return { runId, kind: 'raise-pr', projectId: project.id, planSlug };
+  const handle: RunHandle = { runId, kind: 'raise-pr', projectId: project.id, planSlug };
+  runs.track(handle);
+  try {
+    await window.mvpfy.raisePullRequests(
+      runId,
+      project.localPath,
+      project.repos.map((r) => r.dir),
+      branch,
+      title,
+      body
+    );
+  } catch (error) {
+    runs.fail(runId, error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+  return handle;
 }
 
 /**
@@ -589,10 +598,31 @@ export async function startSeedRun(project: Project): Promise<RunHandle | null> 
 }
 
 /** Wire gh in as git's credential helper — the fix for a push git cannot authenticate. */
-export async function startGitAuthRun(project: Project): Promise<RunHandle> {
+export async function startGitAuthRun(
+  project: Project,
+  track: (handle: RunHandle) => void
+): Promise<RunHandle> {
   const runId = makeRunId('git-auth');
-  await window.mvpfy.cliLogin(runId, 'git-auth');
-  return { runId, kind: 'git-auth', projectId: project.id };
+  const handle: RunHandle = { runId, kind: 'git-auth', projectId: project.id };
+  // Listen and track before invoking IPC: a fast process may exit before the
+  // invocation returns. The retry must wait for completion, not just launch.
+  let finish!: (code: number | null) => void;
+  const completed = new Promise<number | null>((resolve) => {
+    finish = resolve;
+  });
+  const off = window.mvpfy.onRunExit((event) => {
+    if (event.runId === runId) finish(event.code);
+  });
+  try {
+    track(handle);
+    await window.mvpfy.cliLogin(runId, 'git-auth');
+    const code = await completed;
+    if (code !== 0)
+      throw new Error('GitHub credential setup failed. Check the Logs tab before retrying.');
+    return handle;
+  } finally {
+    off();
+  }
 }
 
 export async function startIdeRun(

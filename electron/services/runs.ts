@@ -58,15 +58,24 @@ export function startRun(
   child.stderr?.on('data', (data: Buffer) => {
     sink.output({ runId, stream: 'stderr', chunk: data.toString('utf8') });
   });
-  child.on('error', (err) => {
-    sink.output({ runId, stream: 'stderr', chunk: `spawn error: ${err.message}\n` });
-    cleanup();
-  });
-  child.on('close', (code) => {
+  // Every way a run can end has to emit an exit, exactly once. A shell that
+  // cannot be spawned used to report the error and stop there, so anything
+  // awaiting the run waited for an event that was never coming — and a caller
+  // that blocks on completion leaves the run marked as still going, which
+  // disables the whole project until the app is restarted.
+  let exited = false;
+  const finish = (code: number | null) => {
+    if (exited) return;
+    exited = true;
     activeRuns.delete(runId);
     cleanup();
     sink.exit({ runId, code });
+  };
+  child.on('error', (err) => {
+    sink.output({ runId, stream: 'stderr', chunk: `spawn error: ${err.message}\n` });
+    finish(null);
   });
+  child.on('close', (code) => finish(code));
 }
 
 export function stopRun(runId: string): void {

@@ -215,6 +215,7 @@ export function useProjectController(
   const [ideHealthy, setIdeHealthy] = useState(false);
 
   const projectRuns = Object.values(runsApi.runs).filter((r) => r.handle.projectId === project.id);
+  const history = runsApi.history.filter((r) => r.handle.projectId === project.id);
   // The follow-mode app-logs stream never counts as activity: it runs for
   // as long as the tab wants it and must not block buttons or the strip.
   const latestRun = projectRuns.filter((r) => r.handle.kind !== 'app-logs').pop() ?? null;
@@ -438,8 +439,8 @@ export function useProjectController(
     ideError,
     busy,
     latestRun,
-    runHistory: projectRuns.filter((r) => r.handle.kind !== 'app-logs'),
-    appLogsRun,
+    runHistory: history.filter((r) => r.handle.kind !== 'app-logs'),
+    appLogsRun: appLogsRun ?? history.filter((r) => r.handle.kind === 'app-logs').pop() ?? null,
     lastShipPrUrl: lastShipRun?.prUrl ?? null,
     actionError,
     hasMvpfyYml,

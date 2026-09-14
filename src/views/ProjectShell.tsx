@@ -42,7 +42,10 @@ export default function ProjectShell({
   // put it — a log being read should not be swapped out underneath them.
   const [pickedRunId, setPickedRunId] = useState<string | null>(null);
   const shownRun =
-    (pickedRunId && c.runHistory.find((r) => r.handle.runId === pickedRunId)) || c.latestRun;
+    (pickedRunId && c.runHistory.find((r) => r.handle.runId === pickedRunId)) ||
+    c.latestRun ||
+    c.runHistory[c.runHistory.length - 1] ||
+    null;
   useEffect(() => {
     if (tab === 'logs' && project.status === 'running' && !appLogsActive) {
       void c.startAppLogs();
@@ -227,6 +230,39 @@ export default function ProjectShell({
           <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 px-6 pb-16 pt-6">
             <div>
               <div className="mb-2 flex items-center gap-3">
+                <span className="section-label">Activity history</span>
+                <span className="text-[11px] text-faint">
+                  Recent completed runs stay available when the app is stopped.
+                </span>
+                {/* Every run is kept for the session. Showing only the newest
+                    meant the log explaining a failure disappeared the moment
+                    anything else ran — which is exactly when it is wanted. */}
+                {c.runHistory.length > 0 && (
+                  <select
+                    aria-label="Choose a run from history"
+                    value={shownRun?.handle.runId ?? ''}
+                    onChange={(e) => setPickedRunId(e.target.value)}
+                    className="ml-auto h-7 max-w-[280px] rounded-md border border-line bg-surface px-2 text-xs"
+                  >
+                    {[...c.runHistory].reverse().map((run, i) => (
+                      <option key={run.handle.runId} value={run.handle.runId}>
+                        {i === 0 ? 'Latest — ' : ''}
+                        {RUN_LABELS[run.handle.kind] ?? run.handle.kind}
+                        {run.startedAt ? ` · ${new Date(run.startedAt).toLocaleString()}` : ''}
+                        {run.running
+                          ? ' · running'
+                          : run.exitCode === 0
+                            ? ' · completed'
+                            : ' · failed'}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <LogPanel run={shownRun} onStop={c.stopRun} heightClass="h-[400px]" />
+            </div>
+            <div>
+              <div className="mb-2 flex items-center gap-3">
                 <span className="section-label">App logs</span>
                 <span className="text-[11px] text-faint">
                   live output from the running containers
@@ -255,33 +291,6 @@ export default function ProjectShell({
                 </div>
               )}
             </div>
-            <div>
-              <div className="mb-2 flex items-center gap-3">
-                <span className="section-label">Activity</span>
-                <span className="text-[11px] text-faint">
-                  agent runs, bootstraps, and environment commands
-                </span>
-                {/* Every run is kept for the session. Showing only the newest
-                    meant the log explaining a failure disappeared the moment
-                    anything else ran — which is exactly when it is wanted. */}
-                {c.runHistory.length > 1 && (
-                  <select
-                    value={shownRun?.handle.runId ?? ''}
-                    onChange={(e) => setPickedRunId(e.target.value)}
-                    className="ml-auto h-7 max-w-[280px] rounded-md border border-line bg-surface px-2 text-xs"
-                  >
-                    {[...c.runHistory].reverse().map((run, i) => (
-                      <option key={run.handle.runId} value={run.handle.runId}>
-                        {i === 0 ? 'Latest — ' : ''}
-                        {RUN_LABELS[run.handle.kind] ?? run.handle.kind}
-                        {run.running ? ' · running' : run.exitCode === 0 ? '' : ' · failed'}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <LogPanel run={shownRun} onStop={c.stopRun} />
-            </div>
           </div>
         </Pane>
       </div>
@@ -307,6 +316,8 @@ const RUN_LABELS: Record<string, string> = {
   'plan-spec': 'Writing a product spec',
   'plan-story': 'Implementing a story',
   ship: 'Shipping a pull request',
+  'raise-pr': 'Raising pull requests',
+  'git-auth': 'Connecting git to GitHub',
 };
 
 function Pane({

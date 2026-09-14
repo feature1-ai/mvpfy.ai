@@ -41,7 +41,7 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
               )}
             </>
           ) : (
-            'No run yet'
+            'No saved runs yet'
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -67,7 +67,12 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
         ref={scrollRef}
         className="flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-slate-200"
       >
-        {display || 'Agent output will stream here.'}
+        {display ||
+          (run?.running
+            ? 'Waiting for output…'
+            : run
+              ? 'This run produced no readable output. Select Raw to inspect the original events.'
+              : 'Completed runs will appear here. No task needs to be running to read saved logs.')}
       </pre>
     </div>
   );

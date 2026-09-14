@@ -1,11 +1,137 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildShipFeaturePrompt,
   extractPrUrl,
   startInstructRun,
   startReadinessFixRun,
   startTriageRun,
+  startGitAuthRun,
+  startRaisePrRun,
 } from './agentRunner';
+import type { Project, RunExitEvent } from '../../shared/types';
+
+describe('PR run registration', () => {
+  it('registers before IPC starts emitting output and never reinitializes afterward', async () => {
+    const track = vi.fn();
+    const fail = vi.fn();
+    vi.stubGlobal('window', {
+      mvpfy: {
+        raisePullRequests: async (runId: string) => {
+          expect(track).toHaveBeenCalledWith(
+            expect.objectContaining({ runId, planSlug: 'feature' })
+          );
+        },
+      },
+    });
+    try {
+      await startRaisePrRun(
+        { id: 'p', localPath: '/repo', repos: [] } as unknown as Project,
+        'feature',
+        'mvpfy/feature',
+        'Feature',
+        'Body',
+        { track, fail }
+      );
+      expect(track).toHaveBeenCalledOnce();
+      expect(fail).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('records a command preparation error as a failed run', async () => {
+    const track = vi.fn();
+    const fail = vi.fn();
+    vi.stubGlobal('window', {
+      mvpfy: {
+        raisePullRequests: async () => {
+          throw new Error('Nothing to raise');
+        },
+      },
+    });
+    try {
+      await expect(
+        startRaisePrRun(
+          { id: 'p', localPath: '/repo', repos: [] } as unknown as Project,
+          'feature',
+          'mvpfy/feature',
+          'Feature',
+          'Body',
+          { track, fail }
+        )
+      ).rejects.toThrow('Nothing to raise');
+      expect(fail).toHaveBeenCalledWith(track.mock.calls[0][0].runId, 'Nothing to raise');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('credential repair before PR retry', () => {
+  for (const code of [0, 1, null]) {
+    it(`waits for exit ${code} and only permits a retry on success`, async () => {
+      let listener!: (event: RunExitEvent) => void;
+      let runId = '';
+      const off = vi.fn();
+      const track = vi.fn();
+      vi.stubGlobal('window', {
+        mvpfy: {
+          onRunExit: (fn: typeof listener) => {
+            listener = fn;
+            return off;
+          },
+          cliLogin: async (id: string) => {
+            runId = id;
+            expect(track).toHaveBeenCalled();
+          },
+        },
+      });
+      try {
+        let settled = false;
+        const run = startGitAuthRun({ id: 'project' } as Project, track);
+        const result = run.then(
+          () => {
+            settled = true;
+            return 'ok';
+          },
+          () => {
+            settled = true;
+            return 'failed';
+          }
+        );
+        await Promise.resolve();
+        listener({ runId: 'unrelated', code: 0 });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        listener({ runId, code });
+        expect(await result).toBe(code === 0 ? 'ok' : 'failed');
+        expect(off).toHaveBeenCalledOnce();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  }
+
+  it('cleans up its listener when starting the repair fails', async () => {
+    const off = vi.fn();
+    vi.stubGlobal('window', {
+      mvpfy: {
+        onRunExit: () => off,
+        cliLogin: async () => {
+          throw new Error('Could not launch');
+        },
+      },
+    });
+    try {
+      await expect(startGitAuthRun({ id: 'project' } as Project, vi.fn())).rejects.toThrow(
+        'Could not launch'
+      );
+      expect(off).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe('extractPrUrl', () => {
   it('finds a GitHub PR URL', () => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { extractPrUrl, RunHandle } from './agentRunner';
+import { loadRunHistory, mergeHistory, saveRunHistory } from './runHistory';
 
 export interface RunState {
   handle: RunHandle;
@@ -7,11 +8,15 @@ export interface RunState {
   running: boolean;
   exitCode: number | null;
   prUrl: string | null;
+  startedAt?: string;
 }
 
 export interface RunsApi {
   runs: Record<string, RunState>;
+  /** Display history, including completed runs from previous sessions. */
+  history: RunState[];
   track(handle: RunHandle): void;
+  fail(runId: string, message: string): void;
   stop(runId: string): void;
   latestForProject(projectId: string): RunState | null;
 }
@@ -19,6 +24,18 @@ export interface RunsApi {
 /** Tracks streamed output and exit status for every spawned run. */
 export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
   const [runs, setRuns] = useState<Record<string, RunState>>({});
+  const [saved] = useState(loadRunHistory);
+  const history = mergeHistory(saved, Object.values(runs));
+  const savedSignature = useRef('');
+  useEffect(() => {
+    const signature = Object.values(runs)
+      .filter((run) => !run.running)
+      .map((run) => `${run.handle.runId}:${run.exitCode}:${run.log.length}`)
+      .join('|');
+    if (signature === savedSignature.current) return;
+    savedSignature.current = signature;
+    saveRunHistory(mergeHistory(saved, Object.values(runs)));
+  }, [runs, saved]);
   const finishedCb = useRef(onRunFinished);
   useEffect(() => {
     finishedCb.current = onRunFinished;
@@ -59,12 +76,30 @@ export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
   const track = useCallback((handle: RunHandle) => {
     setRuns((prev) => ({
       ...prev,
-      [handle.runId]: { handle, log: '', running: true, exitCode: null, prUrl: null },
+      [handle.runId]: {
+        handle,
+        log: '',
+        running: true,
+        exitCode: null,
+        prUrl: null,
+        startedAt: new Date().toISOString(),
+      },
     }));
   }, []);
 
   const stop = useCallback((runId: string) => {
     void window.mvpfy.stopRun(runId);
+  }, []);
+
+  const fail = useCallback((runId: string, message: string) => {
+    setRuns((prev) => {
+      const run = prev[runId];
+      if (!run) return prev;
+      return {
+        ...prev,
+        [runId]: { ...run, running: false, exitCode: 1, log: run.log + message + '\n' },
+      };
+    });
   }, []);
 
   const latestForProject = useCallback(
@@ -75,5 +110,5 @@ export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
     [runs]
   );
 
-  return { runs, track, stop, latestForProject };
+  return { runs, history, track, fail, stop, latestForProject };
 }

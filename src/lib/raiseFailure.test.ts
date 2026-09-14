@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { explainRaiseFailure } from './raiseFailure';
+import { explainRaiseFailure, redactSecrets } from './raiseFailure';
 
 describe('explainRaiseFailure', () => {
   it('spots git having no credentials, which gh being signed in does not fix', () => {
@@ -49,5 +49,20 @@ describe('explainRaiseFailure', () => {
     expect(explainRaiseFailure('some unfamiliar failure')).toBeNull();
     expect(explainRaiseFailure('')).toBeNull();
     expect(explainRaiseFailure(null)).toBeNull();
+  });
+});
+
+describe('redactSecrets', () => {
+  it('removes a token git printed back inside a remote URL', () => {
+    const out = redactSecrets(
+      "remote: fatal: repository 'https://x-access-token:ghp_abc123@github.com/acme/app.git/' not found"
+    );
+    expect(out).not.toContain('ghp_abc123');
+    expect(out).toContain('https://***@github.com/acme/app.git/');
+  });
+
+  it('leaves an ordinary URL and the rest of the log alone', () => {
+    const log = 'https://github.com/acme/app/pull/12 opened\nuser@example.com';
+    expect(redactSecrets(log)).toBe(log);
   });
 });

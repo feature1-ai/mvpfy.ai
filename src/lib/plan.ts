@@ -98,6 +98,8 @@ export interface ProjectPlan {
   tested?: boolean;
   /** Pull requests raised for this feature: one per repository that changed. */
   prUrls?: string[];
+  /** Latest PR result, retained when the app restarts. */
+  lastRaise?: { log: string; exitCode: number | null };
   /** 'feature1' when this plan was pulled rather than written here. */
   source?: 'feature1';
   /**
@@ -265,6 +267,13 @@ export function parsePlan(content: string | null | undefined): ProjectPlan | nul
   const approved = raw.approved === true || stories.some((s) => s.lane !== 'todo' || s.prUrl);
   const featureRef = String(raw.feature1FeatureRef ?? '').trim();
   const prUrls = normalizeStrings(raw.prUrls);
+  const last = raw.lastRaise as ProjectPlan['lastRaise'];
+  const lastRaise =
+    last &&
+    typeof last.log === 'string' &&
+    (last.exitCode === null || Number.isInteger(last.exitCode))
+      ? { log: last.log.slice(-12000), exitCode: last.exitCode }
+      : undefined;
   return {
     version: 1,
     generatedAt: String(raw.generatedAt ?? ''),
@@ -273,6 +282,7 @@ export function parsePlan(content: string | null | undefined): ProjectPlan | nul
     approved,
     ...(raw.tested === true ? { tested: true } : {}),
     ...(prUrls.length > 0 ? { prUrls } : {}),
+    ...(lastRaise ? { lastRaise } : {}),
     ...(raw.source === 'feature1' ? { source: 'feature1' as const } : {}),
     ...(featureRef ? { feature1FeatureRef: featureRef } : {}),
   };

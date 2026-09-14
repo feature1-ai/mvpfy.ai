@@ -1,4 +1,23 @@
 import { describe, expect, it } from 'vitest';
+
+describe('saved PR diagnostics', () => {
+  it('keeps failure details and successful PR links across reloads', () => {
+    const plan = parsePlan(rawPlan)!;
+    plan.prUrls = ['https://github.com/example/app/pull/12'];
+    plan.lastRaise = { log: 'remote: Repository not found.', exitCode: 1 };
+    const reloaded = parsePlan(serializePlan(plan))!;
+    expect(reloaded.lastRaise).toEqual(plan.lastRaise);
+    expect(reloaded.prUrls).toEqual(plan.prUrls);
+  });
+
+  it('limits retained output and ignores invalid result shapes', () => {
+    const raw = JSON.parse(rawPlan);
+    raw.lastRaise = { log: 'x'.repeat(20000), exitCode: null };
+    expect(parsePlan(JSON.stringify(raw))?.lastRaise?.log).toHaveLength(12000);
+    raw.lastRaise = { log: 123, exitCode: 'failed' };
+    expect(parsePlan(JSON.stringify(raw))?.lastRaise).toBeUndefined();
+  });
+});
 import {
   canMove,
   featureLane,

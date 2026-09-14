@@ -9,6 +9,7 @@ import {
 } from '../lib/agentRunner';
 import { mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
+import { redactSecrets } from '../lib/raiseFailure';
 import {
   canMove,
   parsePlan,
@@ -172,8 +173,20 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       const plan = plans.find((p) => p.slug === slug)?.plan;
       if (!plan) continue;
       processedPrRuns.current.add(run.handle.runId);
+      // A run that never reached the shell — a failed sign-in preflight, say —
+      // has no command echo and no push output. Storing its message as the last
+      // raise would replace a real attempt's log with something that never ran,
+      // and the panel would then explain the wrong failure after a reload. The
+      // message is already on screen; it just does not outlive the session.
+      if (!run.log.startsWith('$ ')) continue;
       const urls = [...new Set(run.log.match(/https:\/\/\S*\/pull\/\d+/g) ?? [])];
-      if (urls.length > 0) void writePlan(slug, { ...plan, prUrls: urls });
+      void writePlan(slug, {
+        ...plan,
+        prUrls: [...new Set([...(plan.prUrls ?? []), ...urls])],
+        lastRaise: { log: redactSecrets(run.log.slice(-12000)), exitCode: run.exitCode },
+      });
+      // A failed or cancelled push must keep its checkout and unpushed work.
+      if (run.exitCode !== 0) continue;
       // Testing this feature is over, so the workspace goes back to its trunk.
       // Done here rather than through the action so the effect does not depend
       // on something declared below it.
@@ -270,8 +283,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
    */
   const repairGitAuth = () =>
     guarded(async () => {
-      const handle = await startGitAuthRun(project);
-      runsApi.track(handle);
+      await startGitAuthRun(project, runsApi.track);
     });
 
   const markFeatureTested = () =>
@@ -292,14 +304,14 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       if (authProblem) throw new Error(authProblem);
       const feature = active.plan.spec.feature || active.slug || 'feature';
       const stories = active.plan.stories.map((st) => `- ${st.code} ${st.title}`).join('\n');
-      const handle = await startRaisePrRun(
+      await startRaisePrRun(
         project,
         active.slug,
         `mvpfy/${active.slug || 'feature'}`,
         feature,
-        `${active.plan.spec.overview.summary}\n\n## Stories\n${stories}\n\n— planned and implemented with mvpfy`
+        `${active.plan.spec.overview.summary}\n\n## Stories\n${stories}\n\n— planned and implemented with mvpfy`,
+        runsApi
       );
-      runsApi.track(handle);
     });
 
   /**

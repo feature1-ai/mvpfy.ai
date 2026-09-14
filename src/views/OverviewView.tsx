@@ -65,6 +65,49 @@ function envState(c: ProjectController): EnvState {
   }
 }
 
+/**
+ * Starting the environment, and building it again from the files already here.
+ *
+ * One definition each, because there were two of each: the same action written
+ * out per env state, which is how the two Rebuild buttons ended up carrying
+ * different tooltips for the same click. Every other surface that wants to
+ * start the app points at these rather than adding a third.
+ */
+function StartButton({ c, label }: { c: ProjectController; label: string }) {
+  return (
+    <button
+      onClick={() => void c.docker('up')}
+      disabled={!c.hasMvpfyYml}
+      // Nothing can start without the generated run configuration, and a
+      // button that is simply dim explains none of that.
+      title={
+        c.hasMvpfyYml
+          ? 'Start the containers for this project'
+          : 'This project has no mvpfy.yml yet — run setup first'
+      }
+      className="btn-primary h-[34px] px-3.5 disabled:opacity-50"
+    >
+      {label}
+    </button>
+  );
+}
+
+function RebuildButton({ c, className = '' }: { c: ProjectController; className?: string }) {
+  return (
+    <button
+      onClick={() => void c.docker('rebuild')}
+      className={`btn-secondary h-[34px] px-3.5 ${className}`}
+      title={
+        c.canSeed
+          ? 'Build the images again from the run configuration already here, recreate the containers, and seed. Your database and your code are left alone. For a stack whose images or containers were deleted.'
+          : 'Build the images again from the run configuration already here and recreate the containers. This project records no seed command, so nothing is seeded — Re-run setup would add one.'
+      }
+    >
+      {c.canSeed ? 'Rebuild & seed' : 'Rebuild'}
+    </button>
+  );
+}
+
 export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   const { project } = c;
   const [branches, setBranches] = useState<Record<string, string>>({});
@@ -239,20 +282,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     >
                       Restart
                     </button>
-                    {/* For a stack whose images or containers were deleted:
-                        build everything again from the files already here, and
-                        seed it, without asking an agent to rewrite anything. */}
-                    <button
-                      onClick={() => void c.docker('rebuild')}
-                      className="btn-secondary h-[34px] px-3.5"
-                      title={
-                        c.canSeed
-                          ? 'Build the images again from the run configuration already here, recreate the containers, and seed. Your database and your code are left alone.'
-                          : 'Build the images again from the run configuration already here and recreate the containers. This project records no seed command, so nothing is seeded — Re-run setup would add one.'
-                      }
-                    >
-                      {c.canSeed ? 'Rebuild & seed' : 'Rebuild'}
-                    </button>
+                    <RebuildButton c={c} />
                     <button
                       onClick={() => void c.docker('down')}
                       className="btn-secondary h-[34px] px-3.5"
@@ -293,31 +323,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                   </button>
                 )}
                 {env.kind === 'review' && (
-                  <button
-                    onClick={() => void c.docker('up')}
-                    className="btn-primary h-[34px] px-3.5"
-                  >
-                    Reviewed — start environment
-                  </button>
+                  <StartButton c={c} label="Reviewed — start environment" />
                 )}
-                {env.kind === 'stopped' && (
-                  <button
-                    onClick={() => void c.docker('rebuild')}
-                    className="btn-secondary mr-2 h-[34px] px-3.5"
-                    title="Build the images again from the run configuration already here — for a stack whose images or containers were deleted"
-                  >
-                    {c.canSeed ? 'Rebuild & seed' : 'Rebuild'}
-                  </button>
-                )}
-                {env.kind === 'stopped' && (
-                  <button
-                    onClick={() => void c.docker('up')}
-                    disabled={!c.hasMvpfyYml}
-                    className="btn-primary h-[34px] px-3.5 disabled:opacity-50"
-                  >
-                    Start environment
-                  </button>
-                )}
+                {env.kind === 'stopped' && <RebuildButton c={c} className="mr-2" />}
+                {env.kind === 'stopped' && <StartButton c={c} label="Start environment" />}
                 {(env.kind === 'working' || env.kind === 'starting') && (
                   <button
                     onClick={() => onOpenTab('logs')}

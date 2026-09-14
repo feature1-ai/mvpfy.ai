@@ -76,23 +76,21 @@ export default function BootstrapFlowCard({ c }: Props) {
               {task.detail && (
                 <p className="mt-0.5 text-[12.5px] leading-normal text-body">{task.detail}</p>
               )}
-              {/* Everything the PM needs to actually do the testing, right on
-                  the card that asks them to: the link and the login. */}
-              {task.id === RUNNING_TASK_ID && task.lane === 'testing' && (
-                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                  <button
-                    onClick={() => c.openExternal(c.appUrl)}
-                    className="h-[30px] rounded-md bg-go px-3 text-xs font-medium text-white hover:bg-go-hover"
-                  >
-                    Open localhost:{c.project.basePort} ↗
-                  </button>
-                  {(c.demoCredentials[0]?.fields ?? []).map((f) => (
-                    <span key={f.key} className="text-[12px] text-muted">
-                      {f.key} <span className="font-mono text-ink">{f.value}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
+              {/* The login to test with, which is on this card and nowhere
+                  else. Opening the app is not here: the controls above the
+                  card do that, in every state, and two buttons for one action
+                  on one screen is how a PM ends up wondering which is which. */}
+              {task.id === RUNNING_TASK_ID &&
+                task.lane === 'testing' &&
+                (c.demoCredentials[0]?.fields ?? []).length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                    {(c.demoCredentials[0]?.fields ?? []).map((f) => (
+                      <span key={f.key} className="text-[12px] text-muted">
+                        {f.key} <span className="font-mono text-ink">{f.value}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
             </div>
             {task.id === RUNNING_TASK_ID && task.lane === 'testing' && (
               <button
@@ -100,17 +98,6 @@ export default function BootstrapFlowCard({ c }: Props) {
                 className="btn-primary h-[30px] shrink-0 px-3 text-xs"
               >
                 Yes — I can use it
-              </button>
-            )}
-            {/* The setup is finished but nothing is up yet: starting it is the
-                one action this card is waiting on. */}
-            {task.id === RUNNING_TASK_ID && task.lane === 'todo' && c.hasMvpfyYml && (
-              <button
-                onClick={() => void c.docker('up')}
-                disabled={c.busy}
-                className="btn-primary h-[30px] shrink-0 px-3 text-xs disabled:opacity-50"
-              >
-                Start it
               </button>
             )}
             {task.id === RUNNING_TASK_ID && task.lane === 'done' && (

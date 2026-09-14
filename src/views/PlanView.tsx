@@ -1151,9 +1151,12 @@ function StoryCard({
           {/* The app watches the source, so most of a story shows up on its
               own — but a new dependency, env var or migration needs the stack
               rebuilt, and approving unseen work is the failure that matters. */}
+          {/* The Plan tab's only environment control, and deliberately kept:
+              it is the one place where not seeing a change is the question
+              being asked. Same action and same words as Restart in Overview. */}
           <button
             onClick={() => void c.docker('restart')}
-            title="Rebuild and restart the environment, for changes a running app cannot pick up on its own"
+            title="Stop and start the environment — applies env and config changes"
             className="mt-1.5 w-full text-left text-[10.5px] text-muted hover:text-body"
           >
             Not seeing the change? Restart the app

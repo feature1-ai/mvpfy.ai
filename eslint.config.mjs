@@ -28,5 +28,10 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // Release tooling: plain Node scripts, not renderer or Electron code.
+    files: ['packaging/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
   prettier
 );

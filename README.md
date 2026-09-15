@@ -31,7 +31,7 @@ reviewed diff at a time. mvpfy is **product-first**:
   reads a diff — the PR is the engineers' review artifact.
 - AI IDEs assume a working dev environment. mvpfy **manufactures one**: it dockerizes the
   repo, finds a free port, fills in missing services with open-source stand-ins, and hands
-  the PM a URL and demo login so they can *see* the product.
+  the PM a URL and demo login so they can _see_ the product.
 - The system of record is the **plan**: a minimal PRD and user stories on a board
   (To do → Coding → Testing → Done). Each story carries acceptance criteria, exits Coding
   as a pull request, and only a human who has tested it can move it to Done.
@@ -52,19 +52,19 @@ the product that already exists.
 ## Requirements
 
 The app checks for these CLIs on first launch (Settings → Required tools). **On macOS mvpfy
-can install them for you** — each missing tool gets an *Install* button that runs the command
+can install them for you** — each missing tool gets an _Install_ button that runs the command
 below and streams the output. Anything needing your password (Homebrew) or opening Apple's own
 installer (`xcode-select`) is handed to Terminal.app instead, because an app shouldn't pretend
 it can answer a sudo prompt from a pipe. The command is always shown before it runs.
 
-| Tool | Install | Runs |
-| --- | --- | --- |
-| `git` | `xcode-select --install` | in Terminal (Apple's installer window) |
-| Homebrew | [`install.sh`](https://brew.sh) | in Terminal (asks for your Mac password) |
-| `gh` | `brew install gh` (then Sign in) | in mvpfy |
-| `docker` | `brew install --cask docker-desktop` | in mvpfy |
-| `claude` | `curl -fsSL https://claude.ai/install.sh \| bash` | in mvpfy (no Homebrew or Node) |
-| `codex` | `npm install -g @openai/codex` | in mvpfy |
+| Tool     | Install                                           | Runs                                     |
+| -------- | ------------------------------------------------- | ---------------------------------------- |
+| `git`    | `xcode-select --install`                          | in Terminal (Apple's installer window)   |
+| Homebrew | [`install.sh`](https://brew.sh)                   | in Terminal (asks for your Mac password) |
+| `gh`     | `brew install gh` (then Sign in)                  | in mvpfy                                 |
+| `docker` | `brew install --cask docker-desktop`              | in mvpfy                                 |
+| `claude` | `curl -fsSL https://claude.ai/install.sh \| bash` | in mvpfy (no Homebrew or Node)           |
+| `codex`  | `npm install -g @openai/codex`                    | in mvpfy                                 |
 
 Every command is the tool's own official install line. On Linux and Windows the commands are
 shown but not run for you.
@@ -107,22 +107,22 @@ npm run package    # package the macOS app into release/
    stacks), or add a **local repository** by path / the Browse… button. Everything is cloned
    into `~/.mvpfy/projects/<slug>`; local repos keep their original `origin` remote so the
    PR flow still targets the real remote. A local folder can instead be used **in place**
-   (no copy): check *Use this folder in place* and mvpfy works directly in your working
+   (no copy): check _Use this folder in place_ and mvpfy works directly in your working
    copy, keeping everything it generates inside a `.mvpfy/` subfolder — removing the
    project later removes only that subfolder and the containers, never your code.
 2. **Bootstrap environment** — this starts **automatically** the moment you add the project
    (adding it is the consent); if it can't start — your agent CLI isn't signed in, say — the
-   project falls back to a manual *Bootstrap environment* button.
+   project falls back to a manual _Bootstrap environment_ button.
    It runs in two phases. First, in ~30 seconds, the agent reads your repos and writes a
    **task list in plain language** — "your app expects a payments service that isn't in this
    code, so I'll serve realistic fake responses" — which shows on the Overview as cards you
    can follow while the work happens. **Who may close a card matters**: the agent can only
-   ever say *working*; mvpfy marks a task **done** when it can see the files that task
-   promised, and a claim it can't confirm shows as *unconfirmed* rather than green. The last
+   ever say _working_; mvpfy marks a task **done** when it can see the files that task
+   promised, and a claim it can't confirm shows as _unconfirmed_ rather than green. The last
    card — your app actually up, with a working demo login — is **yours**: mvpfy moves it to
-   *ready to test* and only you mark it done, exactly like a user story.
-   The goal of this step is that you can *see the app running
-   locally*. mvpfy finds a free port and asks your default agent to make the repo fully
+   _ready to test_ and only you mark it done, exactly like a user story.
+   The goal of this step is that you can _see the app running
+   locally_. mvpfy finds a free port and asks your default agent to make the repo fully
    runnable: it generates `mvpfy.yml`, a `Dockerfile` (if missing),
    `docker-compose.mvpfy.yml`, and `.env.mvpfy.example`, and fills any gaps with open-source
    stand-ins — official images for missing infrastructure (postgres, redis, minio, mailhog,
@@ -131,9 +131,9 @@ npm run package    # package the macOS app into release/
    repo URL), it writes its questions to `mvpfy-questions.md`; the app shows them, you type
    answers, and bootstrap re-runs with your answers.
    When the work finishes mvpfy **starts the app itself** (`docker compose -f
-   docker-compose.mvpfy.yml up -d`) — unless the agent left you questions, in which case it
+docker-compose.mvpfy.yml up -d`) — unless the agent left you questions, in which case it
    stops and shows them instead of running a half-configured stack. The app then polls the
-   port and the last card turns *ready to test* once the app actually responds. Everything
+   port and the last card turns _ready to test_ once the app actually responds. Everything
    the agent generated stays on the Overview for you to read, and you can stop or restart
    the environment at any time.
 3. **Ask mvpfy to change something** — describe any change in plain language:
@@ -150,7 +150,7 @@ npm run package    # package the macOS app into release/
    many features as you like — each gets its own board, and you can plan the next feature
    while another one's stories are still being implemented.
 5. **Execute the stories** — each feature's stories live on its own board: **To do →
-   Coding → Testing → Done**. Click *Implement* and the agent moves the story to Coding,
+   Coding → Testing → Done**. Click _Implement_ and the agent moves the story to Coding,
    implements every acceptance criterion with tests on its own branch, and opens a pull
    request — the story arrives in Testing with the PR attached. **You** test it in the
    live app and drag it to Done, or send it back with feedback in plain language and the
@@ -166,23 +166,23 @@ npm run package    # package the macOS app into release/
    plus your code and reports, in plain language, what would go wrong on launch day —
    graded, worst first: **blockers** (real people lose money, lose data, or get into
    something they shouldn't), **risks**, and notes. Alongside launch safety it answers a
-   second question — *can I keep building on this?* — covering **how the code is organised**
+   second question — _can I keep building on this?_ — covering **how the code is organised**
    (business rules living inside a screen, one enormous file, the same logic copy-pasted) and
    **your data model** (an Order passed around as an untyped blob shaped differently in three
    places). Those two can never be blockers however bad they look, and mvpfy downgrades one
    that claims to be: badly organised code doesn't lose a customer's money on launch day, and
    keeping "blocker" for real danger is what makes the word mean anything. A structural
-   problem that *does* endanger users — no validation, so input reaches the database
-   unchecked — belongs in *who can get in* or *your data*, where it blocks properly.
+   problem that _does_ endanger users — no validation, so input reaches the database
+   unchecked — belongs in _who can get in_ or _your data_, where it blocks properly.
 
    Those findings answer a second question, so the report reads them as one: **holds up after
-   launch** — *solid*, *workable* or *fragile*, from the open structure, data-model and
+   launch** — _solid_, _workable_ or _fragile_, from the open structure, data-model and
    operations findings together. It is the honest answer to "should I feel good about this?",
    and it is **advisory only**: it never gates a launch, because the moment it did it would be
    a blocker under another name. Every finding points at the file that
    proves it. The verdict is computed by mvpfy from the findings, never claimed by the
-   agent, and the only way past a blocker is to fix it or explicitly *launch with this
-   anyway* — which keeps it on the list, marked as your decision, because accepting a risk
+   agent, and the only way past a blocker is to fix it or explicitly _launch with this
+   anyway_ — which keeps it on the list, marked as your decision, because accepting a risk
    doesn't make it safe.
 
    Each finding also says **who can close it**. Where the whole fix lives in your code —
@@ -191,7 +191,7 @@ npm run package    # package the macOS app into release/
    change that closes it, and then **mvpfy re-runs the readiness check** to see whether the
    finding is actually gone. That re-check is the verdict, not the agent's own report; the fix
    prompt is forbidden from touching the report at all. Findings needing something only you
-   can get — a real payment account, a managed database, a domain — are marked *needs you*
+   can get — a real payment account, a managed database, a domain — are marked _needs you_
    rather than offered a button that couldn't finish the job.
 
 7. **Going live** — once nothing dangerous is left, the same feature works out what hosting
@@ -206,9 +206,9 @@ npm run package    # package the macOS app into release/
    than metered usage — the bill is knowable before you commit, which is the thing that
    protects someone launching their first product. mvpfy steers it to a container service
    (HTTPS and a hostname included, takes the Docker image your repo already builds) and a
-   managed database (automatic daily backups, which *closes* a readiness finding rather than
+   managed database (automatic daily backups, which _closes_ a readiness finding rather than
    moving it), and away from ECS/Fargate/RDS/ALB — a different product with a bill nobody can
-   predict. Provider guidance describes the *shape* of each host's pricing, never the prices
+   predict. Provider guidance describes the _shape_ of each host's pricing, never the prices
    themselves, which go stale; the agent looks the current numbers up.
    Creating the resources for real is the next step; today the plan is a shopping list
    accurate enough to work through by hand.
@@ -278,6 +278,28 @@ The curated prompts live in `src/prompts/`:
 
 Beta binaries are unsigned. On macOS, right-click → Open on first launch (or
 `xattr -dr com.apple.quarantine "/Applications/mvpfy by feature1.app"`).
+
+## Installing
+
+Windows and Linux update themselves in the background. macOS cannot install an update it
+cannot verify, and these builds are unsigned — so on a Mac, Homebrew is the way to stay
+current:
+
+```sh
+brew install --cask --no-quarantine feature1-ai/mvpfy/mvpfy
+brew upgrade --cask mvpfy
+```
+
+`--no-quarantine` is what lets an unsigned app open without the right-click → Open dance.
+It is on the command line rather than inside the cask on purpose: turning off Gatekeeper
+should be something you chose, not something an install did to you. Leave it off and the
+app installs just the same — you clear the flag yourself on first launch.
+
+The tap is our own ([feature1-ai/homebrew-mvpfy](https://github.com/feature1-ai/homebrew-mvpfy)),
+because Homebrew's cask repository takes neither pre-release versions nor projects this
+small. Every release updates it automatically. Windows and Linux are downloads for now —
+they already update in place, and a package manager there would only disagree with the
+app about which version is installed.
 
 ## Notes
 

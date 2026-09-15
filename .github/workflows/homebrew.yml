@@ -1,0 +1,65 @@
+# Keep the Homebrew tap in step with whatever was just released.
+#
+# The cask carries a checksum of the .dmg, so it cannot be written before the
+# release exists — this runs after one is published, downloads the file people
+# will actually download, and commits the cask built from it.
+#
+# Needs HOMEBREW_TAP_TOKEN: a token with contents write on the tap repository.
+# Without it the job fails loudly rather than leaving the tap a version behind
+# without saying so.
+name: Update Homebrew tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish to the tap (e.g. v1.0.0-beta.18)
+        required: true
+
+jobs:
+  cask:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Render the cask from the released dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          node packaging/render-cask.mjs "$TAG" > mvpfy.rb
+          test -s mvpfy.rb
+          grep -q "version \"${TAG#v}\"" mvpfy.rb
+
+      - name: Commit it to the tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not set — the tap would silently stay behind." >&2
+            exit 1
+          fi
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/feature1-ai/homebrew-mvpfy.git" tap
+          mkdir -p tap/Casks
+          cp mvpfy.rb tap/Casks/mvpfy.rb
+          cd tap
+          git config user.name "mvpfy release bot"
+          git config user.email "noreply@feature1.ai"
+          if git diff --quiet; then
+            echo "The tap already has this cask; nothing to do."
+            exit 0
+          fi
+          git add Casks/mvpfy.rb
+          git commit -m "mvpfy ${TAG#v}"
+          git push

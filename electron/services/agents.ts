@@ -134,6 +134,26 @@ export function runAgent(req: RunAgentRequest): void {
   if (!fs.existsSync(repoPath)) {
     throw new Error(`Repo path does not exist: ${repoPath}`);
   }
+  spawnAgentRun(req, repoPath);
+}
+
+/**
+ * An agent run that belongs to no project: installing the tools mvpfy itself
+ * needs, before there is a project to install them for.
+ *
+ * The workspace guard exists to keep agent runs inside directories mvpfy owns
+ * or the user linked, and it still does — this runs in mvpfy's own scratch
+ * directory, with a prompt mvpfy wrote, from a button that does one thing. The
+ * agent is installing software on the machine either way; the working
+ * directory is not what makes that safe or unsafe, and pointing it at somebody
+ * else's project to satisfy a check would be worse than saying so here.
+ */
+export function runToolingAgent(req: RunAgentRequest): void {
+  ensureDirs();
+  spawnAgentRun(req, TMP_DIR);
+}
+
+function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
   ensureDirs();
   const promptFile = path.join(TMP_DIR, `prompt-${req.runId}.txt`);
   fs.writeFileSync(promptFile, req.promptText, 'utf8');

@@ -50,6 +50,8 @@ const api: MvpfyApi = {
   openTerminal: (workspacePath: string) => ipcRenderer.invoke('open-terminal', workspacePath),
   installPlans: () => ipcRenderer.invoke('install-plans'),
   installTool: (runId: string, tool: string) => ipcRenderer.invoke('install-tool', runId, tool),
+  installAll: (runId: string, tools: string[]) => ipcRenderer.invoke('install-all', runId, tools),
+  installToolsAgent: (req: RunAgentRequest) => ipcRenderer.invoke('install-tools-agent', req),
   readRepoFiles: (repoPath: string, relativePaths: string[]) =>
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),
   writeRepoFile: (repoPath: string, relativePath: string, content: string) =>

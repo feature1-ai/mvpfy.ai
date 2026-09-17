@@ -375,6 +375,10 @@ export interface MvpfyApi {
   /** Open the user's own terminal in a project, for talking to the agent directly. */
   openTerminal(workspacePath: string): Promise<void>;
   installPlans(): Promise<InstallPlan[]>;
+  /** Install every missing tool that needs no password, in one run. */
+  installAll(runId: string, tools: string[]): Promise<void>;
+  /** Hand what is still missing to the coding agent to finish. */
+  installToolsAgent(req: RunAgentRequest): Promise<void>;
   /** Install one required tool, streaming its output like any other run. */
   installTool(runId: string, tool: string): Promise<void>;
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;

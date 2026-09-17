@@ -318,6 +318,7 @@ const RUN_LABELS: Record<string, string> = {
   ship: 'Shipping a pull request',
   'raise-pr': 'Raising pull requests',
   'push-feature': 'Pushing the feature to Feature1',
+  'install-tools': 'Installing the required tools',
   'git-auth': 'Connecting git to GitHub',
 };
 

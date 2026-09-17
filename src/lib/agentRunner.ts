@@ -13,6 +13,7 @@ import planSpecTemplate from '../prompts/plan-spec.txt?raw';
 import planImplementTemplate from '../prompts/plan-implement.txt?raw';
 import pullFeatureTemplate from '../prompts/pull-feature.txt?raw';
 import pushFeatureTemplate from '../prompts/push-feature.txt?raw';
+import installToolsTemplate from '../prompts/install-tools.txt?raw';
 import {
   AgentKind,
   BOOTSTRAP_FILE,
@@ -136,6 +137,7 @@ export type RunKind =
   | 'plan-story'
   | 'raise-pr'
   | 'push-feature'
+  | 'install-tools'
   | 'seed'
   | 'git-auth';
 
@@ -369,6 +371,35 @@ async function groundingFor(project: Project, settings: Settings, kind: 'spec' |
   }
   const g = { empty, stack: settings.defaultStack };
   return kind === 'spec' ? specGrounding(g) : implementGrounding(g);
+}
+
+/**
+ * Hand the tools that would not install to the coding agent.
+ *
+ * The one run with no project behind it: this is what happens before there is
+ * a project. It needs an agent CLI to already be installed, which is exactly
+ * what cannot be assumed here — the caller checks first and does not offer it
+ * otherwise, because "ask the agent to install the agent" is not an answer.
+ */
+export async function startInstallToolsRun(
+  settings: Settings,
+  missing: string[],
+  log: string
+): Promise<RunHandle> {
+  const runId = makeRunId('installtools');
+  await window.mvpfy.installToolsAgent({
+    runId,
+    repoPath: '',
+    promptText: fillTemplate(installToolsTemplate, {
+      platform: navigator.userAgent.includes('Windows') ? 'Windows' : 'macOS',
+      missing: missing.join(', '),
+      // The tail: the reason a run failed is at the end of it, and the whole
+      // log of four installers is mostly download progress.
+      log: log.slice(-8000) || '(mvpfy has not run an installer yet)',
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'install-tools', projectId: '' };
 }
 
 export async function startPlanSpecRun(

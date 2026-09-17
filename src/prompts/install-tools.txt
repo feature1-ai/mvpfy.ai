@@ -1,0 +1,45 @@
+mvpfy tried to install the tools it needs on this machine and some of them did not install.
+Get them installed.
+
+Platform: {platform}
+Still missing: {missing}
+
+What mvpfy already ran, and what it said:
+---
+{log}
+---
+
+Do this:
+
+1. Work out why each one failed, from the output above. The usual causes are a package
+   manager that is not installed, a PATH that does not include where the tool landed, a
+   version of the OS the package does not support, and a network or proxy that blocked the
+   download. Read the error rather than assuming.
+
+2. Install each missing tool, using the official method for this platform:
+   • macOS — Homebrew where the tool has a formula, otherwise the vendor's own installer.
+   • Windows — winget where the tool has a package, otherwise the vendor's own installer.
+   Do not add third-party taps, mirrors, or unofficial builds. If the only way to install
+   something is from a source you cannot verify, stop and say so.
+
+3. If a tool is already installed but not on PATH, that is the actual problem — fix the
+   PATH rather than installing it again. Say exactly what you changed and whether the user
+   needs to reopen mvpfy for it to take effect.
+
+4. Verify each one by running it: `git --version`, `gh --version`, `docker --version`,
+   `claude --version`, `codex --version`. A tool is installed when it answers, not when
+   the installer exits zero.
+
+5. Finish with one line per tool, in this exact form, and nothing after it:
+   <tool>: installed | already installed | needs the user: <what they must do>
+
+Hard rules:
+• Never run anything that needs a password or admin rights. You cannot answer that prompt
+  and the run will hang where the user cannot see it. If a tool genuinely needs it — Docker
+  Desktop does — say so under "needs the user" with the exact command for them to run.
+• Do not modify any project, repository, or file belonging to the user's work. This run is
+  about the machine's tooling and nothing else.
+• Do not sign in to anything, and do not touch credentials. Installing is all that is asked
+  here; signing in is the user's own step afterwards.
+• If you cannot install something, say plainly which and why. A clear "this one needs you,
+  here is the command" is worth more than an attempt that half-works.

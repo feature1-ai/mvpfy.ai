@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
 import { ensureDirs, isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
-import { removeQuietly, runAgent } from './services/agents';
+import { removeQuietly, runAgent, runToolingAgent } from './services/agents';
 import { agentModels, cliCheck, loginCommand, mcpAddCommand } from './services/cli';
 import {
   composeCommand,
@@ -12,7 +12,7 @@ import {
   ideStatus,
   seedCommandFor,
 } from './services/docker';
-import { installCommand, installPlans } from './services/install';
+import { installAllCommand, installCommand, installPlans } from './services/install';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
   createBlankProject,
@@ -210,6 +210,12 @@ export function registerIpc(): void {
     spawnShell(openTerminalCommand(resolved), { cwd: resolved, detached: true }).unref();
   });
   ipcMain.handle('install-plans', () => installPlans());
+  ipcMain.handle('install-all', (_ev, runId: string, tools: string[]) =>
+    startRun(runId, installAllCommand(tools), TMP_DIR)
+  );
+  // Installing the tooling has no project behind it — it is what happens
+  // before there is one.
+  ipcMain.handle('install-tools-agent', (_ev, req: RunAgentRequest) => runToolingAgent(req));
   ipcMain.handle('install-tool', (_ev, runId: string, tool: string) =>
     startRun(runId, installCommand(tool), TMP_DIR)
   );

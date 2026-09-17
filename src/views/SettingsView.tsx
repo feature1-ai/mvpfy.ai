@@ -12,6 +12,7 @@ import {
 import { UpdateState } from '../hooks/useProjectController';
 import { CLI_HELP, cliRequired, installHintFor } from '../lib/cliCheck';
 import { useFeature1Login } from '../hooks/useFeature1Login';
+import { startInstallToolsRun } from '../lib/agentRunner';
 
 interface Props {
   version: string;
@@ -71,6 +72,9 @@ export default function SettingsView({
     runId: string;
   } | null>(null);
   const [toolLog, setToolLog] = useState('');
+  // The finished run's output, kept after the run clears so the agent can be
+  // handed what actually failed rather than being asked to guess.
+  const [lastInstallLog, setLastInstallLog] = useState('');
   const [plans, setPlans] = useState<InstallPlan[]>([]);
   const planFor = (tool: string) => plans.find((p) => p.tool === tool) ?? null;
   const brewPlan = planFor('brew');
@@ -99,6 +103,7 @@ export default function SettingsView({
     });
     const offExit = window.mvpfy.onRunExit((ev) => {
       if (ev.runId === toolRun.runId) {
+        if (toolRun.kind === 'install') setLastInstallLog(toolLog);
         setToolRun(null);
         setToolLog('');
         onRefreshClis();
@@ -108,7 +113,7 @@ export default function SettingsView({
       offOut();
       offExit();
     };
-  }, [toolRun, onRefreshClis]);
+  }, [toolRun, toolLog, onRefreshClis]);
 
   function signIn(tool: string) {
     const runId = nextRunId('login', tool);
@@ -124,18 +129,65 @@ export default function SettingsView({
     void window.mvpfy.installTool(runId, tool).catch(() => setToolRun(null));
   }
 
+  // Everything missing that installs without a password, in one run. The ones
+  // that need their own window are listed underneath instead: each has to be
+  // started by the person who can type the password.
+  const missingTools = cliStatuses
+    .filter((c) => !c.found && cliRequired(c.name, state.settings.defaultAgent))
+    .map((c) => c.name as string);
+  const installableNow = missingTools.filter(
+    (t) => planFor(t)?.available && planFor(t)?.mode === 'in-app'
+  );
+  const needOwnWindow = missingTools.filter(
+    (t) => planFor(t)?.available && planFor(t)?.mode === 'terminal'
+  );
+  // Asking the agent to install the agent is not an answer, so this is only
+  // offered once one of them is actually on the machine.
+  const agentPresent = cliStatuses.some(
+    (c) => (c.name === 'claude' || c.name === 'codex') && c.found
+  );
+
+  function installAll() {
+    if (installableNow.length === 0) return;
+    const runId = nextRunId('install', 'all');
+    setLastInstallLog('');
+    setToolLog('');
+    setToolRun({ kind: 'install', tool: 'all', runId });
+    void window.mvpfy.installAll(runId, installableNow).catch(() => setToolRun(null));
+  }
+
+  function askAgentToInstall() {
+    if (missingTools.length === 0 || !agentPresent) return;
+    setToolLog('');
+    void startInstallToolsRun(state.settings, missingTools, lastInstallLog)
+      .then((handle) => setToolRun({ kind: 'install', tool: 'agent', runId: handle.runId }))
+      .catch(() => setToolRun(null));
+  }
+
   return (
     <div className="mx-auto w-full max-w-[660px] px-6 pb-16 pt-9">
       <h1 className="mb-7 text-[22px] font-semibold tracking-[-0.02em]">Settings</h1>
 
       <div className="mb-3 flex items-center justify-between">
         <span className="section-label">Required tools</span>
-        <button
-          onClick={onRefreshClis}
-          className="text-xs text-go hover:text-go-hover hover:underline"
-        >
-          Re-check
-        </button>
+        <div className="flex items-center gap-3">
+          {installableNow.length > 0 && (
+            <button
+              onClick={installAll}
+              disabled={toolRun !== null}
+              title={installableNow.map((t) => planFor(t)?.command).join('\n')}
+              className="btn-primary h-6 px-2.5 text-[11.5px] disabled:opacity-50"
+            >
+              {toolRun?.tool === 'all' ? 'Installing…' : `Install all (${installableNow.length})`}
+            </button>
+          )}
+          <button
+            onClick={onRefreshClis}
+            className="text-xs text-go hover:text-go-hover hover:underline"
+          >
+            Re-check
+          </button>
+        </div>
       </div>
       <section className="card mb-7 flex flex-col gap-3 px-[18px] py-4">
         {cliStatuses.map((cli) => {
@@ -213,6 +265,41 @@ export default function SettingsView({
             </div>
           );
         })}
+        {/* What Install all could not do, and what can still be done about it.
+            Only after an attempt: offering to rescue an install nobody has
+            tried yet is noise. */}
+        {!toolRun && missingTools.length > 0 && lastInstallLog !== '' && (
+          <div className="flex flex-col gap-2 rounded-lg border border-warn-border bg-warn-bg px-3.5 py-3">
+            <span className="text-[12.5px] text-warn-text">
+              Still missing after that: <strong>{missingTools.join(', ')}</strong>.
+            </span>
+            {needOwnWindow.length > 0 && (
+              <span className="text-[11.5px] text-warn-text">
+                {needOwnWindow.map((t) => planFor(t)?.label).join(' and ')} must be installed from
+                its own window — it asks for a password mvpfy cannot answer.
+              </span>
+            )}
+            {agentPresent ? (
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={askAgentToInstall}
+                  className="btn-primary h-6 px-2.5 text-[11.5px]"
+                >
+                  Let the agent sort it out
+                </button>
+                <span className="text-[11.5px] text-warn-text">
+                  It gets the output above and installs what it can. It will not run anything
+                  needing a password — it would hang where you cannot see it.
+                </span>
+              </div>
+            ) : (
+              <span className="text-[11.5px] text-warn-text">
+                Install Claude Code or Codex first and the agent can finish the rest itself.
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Homebrew is not a tool mvpfy uses — it is how three of the others
             get installed, so it only appears while it is the thing in the way. */}
         {brewPlan?.available && (

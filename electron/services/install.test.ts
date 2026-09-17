@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { installCommand, installPlans, terminalCommand } from './install';
+import {
+  installAllCommand,
+  installCommand,
+  installPlans,
+  needsOwnWindow,
+  terminalCommand,
+} from './install';
 
 const onMac = process.platform === 'darwin';
 
@@ -64,5 +70,45 @@ describe.skipIf(!onMac)('installPlans (macOS)', () => {
 
   it('refuses a tool it has no installer for', () => {
     expect(() => installCommand('kubectl')).toThrow(/No installer/);
+  });
+});
+
+describe('installAllCommand', () => {
+  it.runIf(onMac)('keeps going after one tool fails, so one failure is not four', () => {
+    // Chained on success, a machine missing four tools would report the first
+    // failure and leave the other three uninstalled for no reason.
+    const cmd = installAllCommand(['claude']);
+    expect(cmd).toContain('claude.ai/install.sh');
+    expect(cmd).toContain(';');
+    expect(cmd).not.toMatch(/&&/);
+  });
+
+  it.runIf(onMac)('announces each tool, so the log says which one failed', () => {
+    expect(installAllCommand(['claude'])).toMatch(/echo .*installing Claude Code/);
+  });
+
+  it('leaves out anything needing a password, and says so when nothing is left', () => {
+    // Those each need their own window: run in a pipe they hang on a prompt
+    // the user cannot see, which reads as an install that froze.
+    expect(() => installAllCommand(['git'])).toThrow(/without a password/i);
+  });
+
+  it('ignores a tool with no installer on this platform', () => {
+    expect(() => installAllCommand(['nonesuch'])).toThrow(/without a password/i);
+  });
+});
+
+describe('needsOwnWindow', () => {
+  it.runIf(onMac)('names the ones a person has to start themselves', () => {
+    expect(needsOwnWindow(['git']).map((p) => p.tool)).toEqual(['git']);
+    expect(needsOwnWindow(['claude'])).toEqual([]);
+  });
+});
+
+describe('installPlans', () => {
+  it('never invents a source — every command names the vendor or the OS package manager', () => {
+    for (const plan of installPlans()) {
+      expect(plan.command).toMatch(/^(brew|winget|npm|curl|powershell|xcode-select|\/bin\/bash)/);
+    }
   });
 });

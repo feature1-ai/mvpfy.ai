@@ -15,7 +15,9 @@ import {
 import { installCommand, installPlans } from './services/install';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
+  createBlankProject,
   createProject,
+  workspaceIsEmpty,
   deleteProject,
   linkProject,
   readRepoBranches,
@@ -53,6 +55,10 @@ export function registerIpc(): void {
   ipcMain.handle('create-project', (_ev, repoUrls: string[], link?: boolean) =>
     link ? linkProject(repoUrls[0] ?? '') : createProject(repoUrls)
   );
+  ipcMain.handle('create-blank-project', (_ev, name: string, remote: boolean) =>
+    createBlankProject(name, remote)
+  );
+  ipcMain.handle('workspace-empty', (_ev, dirs: string[]) => workspaceIsEmpty(dirs));
   ipcMain.handle('pick-directory', async () => {
     // multiSelections: a project is often several repos side by side, so let
     // the user pick them all in one pass rather than reopening the dialog.

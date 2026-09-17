@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   AgentKind,
   CliStatus,
+  DEFAULT_STACK,
   InstallPlan,
   MvpfyState,
   RELEASES_URL,
@@ -382,6 +383,31 @@ export default function SettingsView({
             }
           />
         </div>
+      </section>
+
+      <div className="section-label mb-3">New products</div>
+      <section className="card flex flex-col gap-2 px-[18px] py-4">
+        <p className="text-[13.5px] font-medium">Built with</p>
+        <p className="text-[12.5px] text-muted">
+          Only used for a project whose repository is still empty. Once there is code, mvpfy reads
+          it and matches what is already there — this is never consulted again.
+        </p>
+        <input
+          value={state.settings.defaultStack}
+          onChange={(e) =>
+            updateState((prev) => ({
+              ...prev,
+              settings: { ...prev.settings, defaultStack: e.target.value },
+            }))
+          }
+          placeholder={DEFAULT_STACK}
+          spellCheck={false}
+          className="h-[34px] rounded-md border border-line bg-surface px-[11px] text-[12.5px] outline-none placeholder:text-faint focus:border-muted"
+        />
+        <p className="text-xs text-muted">
+          Leave it blank to use the default. Change it before the first story is implemented — after
+          that the code decides.
+        </p>
       </section>
 
       <div className="section-label mb-3">Workspace</div>

@@ -1,5 +1,6 @@
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import type { RunsApi } from './useRuns';
+import { implementGrounding, specGrounding } from './grounding';
 import bootstrapPlanTemplate from '../prompts/bootstrap-plan.txt?raw';
 import readinessTemplate from '../prompts/launch-readiness.txt?raw';
 import readinessFixTemplate from '../prompts/readiness-fix.txt?raw';
@@ -350,6 +351,26 @@ export async function startShipChangeRun(project: Project, settings: Settings): 
 }
 
 /** Generate (or refine) the minimal product spec + story plan for one feature. */
+/**
+ * Whether the workspace still has no product in it. Asked per run rather than
+ * cached: a repository that was empty when the feature was planned holds a
+ * product by the time its second story is implemented, and the instruction has
+ * to change with it.
+ *
+ * A failure here reads as "not empty", which is the instruction mvpfy has
+ * always given — so the worst case is the behaviour that shipped for months.
+ */
+async function groundingFor(project: Project, settings: Settings, kind: 'spec' | 'implement') {
+  let empty: boolean;
+  try {
+    empty = await window.mvpfy.workspaceEmpty(project.repos.map((r) => r.dir));
+  } catch {
+    empty = false;
+  }
+  const g = { empty, stack: settings.defaultStack };
+  return kind === 'spec' ? specGrounding(g) : implementGrounding(g);
+}
+
 export async function startPlanSpecRun(
   project: Project,
   settings: Settings,
@@ -362,10 +383,12 @@ export async function startPlanSpecRun(
   const cfg = configDirFor(project.mode);
   const planFile = cfg + planFileFor(planSlug);
   const specFile = cfg + specFileFor(planSlug);
+  const groundingBlock = await groundingFor(project, settings, 'spec');
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(planSpecTemplate, {
+      groundingBlock,
       resumeNote: resumeNoteFor(session),
       repoPath: project.localPath,
       featureDescription,
@@ -400,6 +423,7 @@ export async function startPullFeatureRun(
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(pullFeatureTemplate, {
+      groundingBlock: await groundingFor(project, settings, 'spec'),
       resumeNote: resumeNoteFor(session),
       repoPath: project.localPath,
       featureRef,
@@ -494,6 +518,7 @@ export async function startPlanStoryRun(
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(planImplementTemplate, {
+      groundingBlock: await groundingFor(project, settings, 'implement'),
       resumeNote: resumeNoteFor(session),
       repoPath: project.localPath,
       storyCode,

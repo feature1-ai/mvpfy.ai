@@ -88,7 +88,28 @@ export interface Settings {
    * cannot break when the set of available models changes.
    */
   claudeModel: string;
+  /**
+   * What to build with when a project's workspace is empty.
+   *
+   * mvpfy has always read the product to know how to extend it, which leaves
+   * it with nothing to read on a repository that has no product yet. Rather
+   * than ask a product manager to choose a stack — the sort of question this
+   * app exists to spare them — it picks, and a technical user can change it
+   * here before the first story is implemented. Empty falls back to
+   * DEFAULT_STACK; it never means "let the agent decide", because two projects
+   * from the same person would then diverge for no visible reason.
+   */
+  defaultStack: string;
 }
+
+/**
+ * Deliberately ordinary, and deliberately close to what the bootstrap step
+ * already knows how to run: compose brings it up, a seed script fills it, and
+ * both halves reload in place while a story is being tested.
+ */
+export const DEFAULT_STACK =
+  'React + Vite + TypeScript (Tailwind) on the front end, Node + Express + TypeScript on the ' +
+  'back end, PostgreSQL for data, all wired together with Docker Compose';
 
 export interface MvpfyState {
   tenant: TenantConfig | null;
@@ -103,6 +124,7 @@ export const DEFAULT_STATE: MvpfyState = {
     defaultAgent: 'claude',
     codexModel: 'gpt-5.3-codex',
     claudeModel: '',
+    defaultStack: '',
   },
 };
 
@@ -315,6 +337,17 @@ export interface MvpfyApi {
   keychainSet(entry: string, value: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   createProject(repoUrls: string[], link?: boolean): Promise<CreateProjectResult>;
+  /** True when no repository in the workspace holds a product yet. */
+  workspaceEmpty(dirs: string[]): Promise<boolean>;
+  /**
+   * Start a product with no repository behind it yet. `remoteError` is set when
+   * the workspace was made but GitHub was not — the project still works, and
+   * only raising a pull request needs the remote.
+   */
+  createBlankProject(
+    name: string,
+    remote: boolean
+  ): Promise<CreateProjectResult & { remoteError?: string }>;
   /** Chosen folders, in pick order. Empty when the dialog was cancelled. */
   pickDirectory(): Promise<string[]>;
   deleteProject(workspacePath: string): Promise<{ ok: boolean; error?: string }>;

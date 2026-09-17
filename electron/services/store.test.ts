@@ -37,7 +37,12 @@ describe('state store', () => {
     const state: MvpfyState = {
       tenant: { slug: 'acme', host: 'acme.feature1.ai', tokenKeychainEntry: 'acme-token' },
       projects: [project({ planSlugs: ['dark-mode'], mode: 'managed' })],
-      settings: { defaultAgent: 'codex', codexModel: 'gpt-5.3-codex', claudeModel: 'opus' },
+      settings: {
+        defaultAgent: 'codex',
+        codexModel: 'gpt-5.3-codex',
+        claudeModel: 'opus',
+        defaultStack: '',
+      },
     };
     writeState(state, file);
     expect(readState(file)).toEqual(state);

@@ -192,7 +192,12 @@ describe('the workspace contract', () => {
     lastStoryId: null,
     generatedFiles: [],
   };
-  const settings = { defaultAgent: 'claude' as const, codexModel: 'x', claudeModel: '' };
+  const settings = {
+    defaultAgent: 'claude' as const,
+    codexModel: 'x',
+    claudeModel: '',
+    defaultStack: '',
+  };
 
   const starters: Array<[string, () => Promise<unknown>]> = [
     ['triage', () => startTriageRun(project, settings, 'starting the environment', 'boom')],

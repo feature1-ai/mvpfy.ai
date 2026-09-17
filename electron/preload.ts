@@ -28,6 +28,11 @@ const api: MvpfyApi = {
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   createProject: (repoUrls: string[], link?: boolean) =>
     ipcRenderer.invoke('create-project', repoUrls, link),
+  /** True when no repository in the workspace holds a product yet. */
+  workspaceEmpty: (dirs: string[]) => ipcRenderer.invoke('workspace-empty', dirs),
+  /** Start a product with no repository behind it yet. */
+  createBlankProject: (name: string, remote: boolean) =>
+    ipcRenderer.invoke('create-blank-project', name, remote),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   deleteProject: (workspacePath: string) => ipcRenderer.invoke('delete-project', workspacePath),
   runAgent: (req: RunAgentRequest) => ipcRenderer.invoke('run-agent', req),

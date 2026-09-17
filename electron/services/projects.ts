@@ -74,6 +74,43 @@ async function cloneSource(source: string, dest: string): Promise<{ ok: boolean;
 }
 
 /**
+ * Give a repository with no commits one, so the rest of mvpfy works on it.
+ *
+ * A brand-new repository — the empty one someone just made on GitHub — has an
+ * unborn HEAD, and `git worktree add -b` refuses it outright: "fatal: not a
+ * valid object name: 'HEAD'". Every feature starts by making a worktree, so
+ * nothing at all could be built in a fresh repository, and the failure landed
+ * mid-run with git's words rather than at the point of setting the project up.
+ * One empty commit removes the whole class of problem.
+ *
+ * Untouched when HEAD already resolves, so an existing product never gets an
+ * extra commit on top of its history.
+ */
+export function ensureInitialCommit(dir: string): void {
+  const q = shellQuote(path.resolve(dir));
+  const head = spawnShellSync(`git -C ${q} rev-parse --verify HEAD`, {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  if (head.status === 0) return;
+  // git refuses to commit without an identity, and a machine that has never
+  // configured one is exactly the machine someone is setting mvpfy up on. Only
+  // used when the user has not set their own — never overriding it.
+  const email = spawnShellSync(`git -C ${q} config user.email`, {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  const identity =
+    email.status === 0 && email.stdout.trim()
+      ? ''
+      : `-c ${shellQuote('user.name=mvpfy')} -c ${shellQuote('user.email=noreply@feature1.ai')} `;
+  spawnShellSync(`git -C ${q} ${identity}commit --allow-empty -m ${shellQuote('Initial commit')}`, {
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+}
+
+/**
  * Create a project workspace. A single URL is cloned directly as the workspace
  * root; multiple URLs get a shared workspace folder with one subdirectory per
  * repo, so one compose file at the root can run the whole stack.
@@ -112,6 +149,12 @@ export async function createProject(repoUrls: string[]): Promise<CreateProjectRe
     }
   }
 
+  // A repository that arrived empty cannot hold a worktree, and every feature
+  // begins with one. Done here so the project is usable the moment it exists.
+  for (const r of repos) {
+    if (r.ok) ensureInitialCommit(r.dir);
+  }
+
   const failed = repos.filter((r) => !r.ok);
   if (failed.length > 0) {
     fs.rmSync(workspacePath, { recursive: true, force: true });
@@ -121,6 +164,110 @@ export async function createProject(repoUrls: string[]): Promise<CreateProjectRe
       workspacePath,
       repos,
       error: failed.map((r) => `${r.url}: ${r.error}`).join('\n'),
+    };
+  }
+  return { ok: true, slug, workspacePath, repos };
+}
+
+/**
+ * True when there is no product here yet — every repository in the workspace
+ * tracks nothing but mvpfy's own files.
+ *
+ * The prompts have always told the agent to read the existing product and
+ * match it. On a repository with no product that instruction has no referent,
+ * and an agent asked to match patterns that do not exist invents screens and
+ * then writes a spec about them. Knowing which case we are in is what lets the
+ * prompt say "establish the conventions" instead of "match them".
+ *
+ * Read from git rather than the filesystem: an untracked node_modules is not a
+ * product, and a checkout mid-build is not either.
+ */
+export function workspaceIsEmpty(dirs: string[]): boolean {
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) continue;
+    const listed = spawnShellSync(`git -C ${shellQuote(dir)} ls-files`, {
+      encoding: 'utf8',
+      timeout: 20_000,
+    });
+    if (listed.status !== 0) return false;
+    const real = listed.stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      // mvpfy's own files are not the product: a workspace holding nothing but
+      // a plan and a compose file it generated is still empty.
+      .filter((l) => !/(^|\/)(mvpfy-|mvpfy\.yml|docker-compose\.mvpfy)/.test(l))
+      .filter((l) => !l.startsWith('.mvpfy/'));
+    if (real.length > 0) return false;
+  }
+  return true;
+}
+
+/**
+ * Start a product that does not exist yet.
+ *
+ * Until now a project had to come from somewhere: a repository to clone, or a
+ * folder to link. Someone with an idea and no code had nowhere to begin, which
+ * is the one case this app is most obviously for. This makes the repository
+ * itself — initialised, committed, and ready to hold a worktree — so the first
+ * feature can be planned against an empty workspace rather than a missing one.
+ *
+ * `remote` asks gh to create a private GitHub repository and push to it. It is
+ * separate because it is the only part that leaves this machine, and a project
+ * without it still works: everything but raising a pull request needs no
+ * remote, and the raise explains itself when there is none.
+ */
+export function createBlankProject(
+  name: string,
+  remote: boolean
+): CreateProjectResult & { remoteError?: string } {
+  ensureDirs();
+  const cleaned = name.trim();
+  if (!cleaned) {
+    return { ok: false, slug: '', workspacePath: '', repos: [], error: 'Give the project a name' };
+  }
+  const baseSlug = slugFromRepoUrl(cleaned);
+  let slug = baseSlug;
+  let n = 2;
+  while (fs.existsSync(path.join(PROJECTS_DIR, slug))) slug = `${baseSlug}-${n++}`;
+  const workspacePath = path.join(PROJECTS_DIR, slug);
+  const q = shellQuote(workspacePath);
+
+  fs.mkdirSync(workspacePath, { recursive: true });
+  const init = spawnShellSync(`git -C ${q} init -b main`, { encoding: 'utf8', timeout: 20_000 });
+  if (init.status !== 0) {
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+    return {
+      ok: false,
+      slug,
+      workspacePath,
+      repos: [],
+      error: `Could not create a git repository: ${(init.stderr || init.stdout || '').trim()}`,
+    };
+  }
+  ensureInitialCommit(workspacePath);
+
+  const repos = [{ url: '', dir: workspacePath, ok: true as const }];
+  if (!remote) return { ok: true, slug, workspacePath, repos };
+
+  // --source with --push wires origin and pushes main in one step, so a
+  // half-made project cannot be left with a remote it never reached.
+  const created = spawnShellSync(
+    `gh repo create ${shellQuote(slug)} --private --source ${q} --remote origin --push`,
+    { encoding: 'utf8', timeout: 120_000 }
+  );
+  if (created.status !== 0) {
+    // The project itself is fine — only the remote is missing. Saying so beats
+    // throwing away a working workspace over the one part that can be added
+    // later with a single command.
+    return {
+      ok: true,
+      slug,
+      workspacePath,
+      repos,
+      remoteError:
+        (created.stderr || created.stdout || '').trim() || 'gh could not create the repository',
     };
   }
   return { ok: true, slug, workspacePath, repos };
@@ -166,6 +313,7 @@ export function linkProject(sourcePath: string): CreateProjectResult {
       return fail(`Not a git repository (and no git repositories inside): ${src}`);
     }
   }
+  for (const r of repos) ensureInitialCommit(r.dir);
   return { ok: true, slug: path.basename(src), workspacePath: src, repos };
 }
 

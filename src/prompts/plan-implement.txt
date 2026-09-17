@@ -8,8 +8,7 @@ every acceptance criterion, plus tests, in the appropriate repository within the
 {feature1Block}
 
 Follow this sequence:
-1. Read the story's acceptance criteria and the spec context. Look at how the product
-   already does similar things and match its patterns.
+1. Read the story's acceptance criteria and the spec context. {groundingBlock}
 2. Work in this feature's own checkouts, already on the branch mvpfy/{branchSlug} and already
    holding any earlier story of this feature:
 {worktrees}

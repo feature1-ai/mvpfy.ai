@@ -9,8 +9,7 @@ The product manager wants to plan this feature:
 ---
 {refinementBlock}
 
-First, study the existing product in the workspace (code, routes, UI, README) so the spec
-fits what already exists — reference real screens and flows, never invented ones.
+{groundingBlock}
 
 Then write exactly two files in the workspace root:
 

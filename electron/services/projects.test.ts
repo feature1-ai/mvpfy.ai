@@ -6,9 +6,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../paths';
 import {
   checkoutDefaultCommand,
+  ensureInitialCommit,
   checkoutFeatureCommand,
   featureCheckedOut,
   raisePrCommand,
+  workspaceIsEmpty,
   repoSyncCommand,
   worktreeAddCommand,
   worktreePathFor,
@@ -184,5 +186,131 @@ describe('featureCheckedOut', () => {
   it('is false when no repository has the branch at all', () => {
     // Nothing to be checked out to, so the workspace is certainly not on it.
     expect(featureCheckedOut([path.join(PROJECTS_DIR, 'shop', 'api')], 'mvpfy/nope')).toBe(false);
+  });
+});
+
+describe('ensureInitialCommit', () => {
+  const repo = (): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-init-'));
+    execFileSync('git', ['init', '-b', 'main'], { cwd: dir, stdio: 'ignore' });
+    return dir;
+  };
+
+  it('makes a repository with no commits able to hold a worktree', () => {
+    // `git worktree add -b` fails outright on an unborn HEAD, and every
+    // feature starts by making one — so a brand-new repository could not be
+    // built in at all, and said so mid-run in git's words.
+    const dir = repo();
+    setLinkedRoots([dir]);
+    const wt = (name: string) => path.join(dir, '..', `${path.basename(dir)}-${name}`);
+    expect(() =>
+      execFileSync('git', ['worktree', 'add', wt('a'), '-b', 'mvpfy/x'], {
+        cwd: dir,
+        stdio: 'ignore',
+      })
+    ).toThrow();
+
+    ensureInitialCommit(dir);
+
+    execFileSync('git', ['worktree', 'add', wt('b'), '-b', 'mvpfy/y'], {
+      cwd: dir,
+      stdio: 'ignore',
+    });
+    expect(
+      execFileSync('git', ['rev-list', '--count', 'HEAD'], { cwd: dir }).toString().trim()
+    ).toBe('1');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('commits without a git identity configured, which a new machine has not', () => {
+    // git refuses to commit without a name and an email, and the machine
+    // someone is setting mvpfy up on is exactly the one that has never been
+    // given them. Pointing git at empty config files is how a real fresh
+    // machine looks; the fallback identity is only used when there is none.
+    const dir = repo();
+    const globalCfg = process.env.GIT_CONFIG_GLOBAL;
+    const systemCfg = process.env.GIT_CONFIG_SYSTEM;
+    process.env.GIT_CONFIG_GLOBAL = '/dev/null';
+    process.env.GIT_CONFIG_SYSTEM = '/dev/null';
+    try {
+      ensureInitialCommit(dir);
+      expect(
+        execFileSync('git', ['rev-list', '--count', 'HEAD'], { cwd: dir }).toString().trim()
+      ).toBe('1');
+    } finally {
+      if (globalCfg === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = globalCfg;
+      if (systemCfg === undefined) delete process.env.GIT_CONFIG_SYSTEM;
+      else process.env.GIT_CONFIG_SYSTEM = systemCfg;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('leaves a repository that already has history alone', () => {
+    const dir = repo();
+    const git = (args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    git(['config', 'user.email', 'pm@example.com']);
+    git(['config', 'user.name', 'PM']);
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'one');
+    git(['add', '-A']);
+    git(['commit', '-m', 'first']);
+    const before = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString().trim();
+
+    ensureInitialCommit(dir);
+
+    expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString().trim()).toBe(before);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('workspaceIsEmpty', () => {
+  const repo = (): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-empty-'));
+    execFileSync('git', ['init', '-b', 'main'], { cwd: dir, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'pm@example.com'], { cwd: dir, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.name', 'PM'], { cwd: dir, stdio: 'ignore' });
+    return dir;
+  };
+  const commit = (dir: string, file: string) => {
+    fs.writeFileSync(path.join(dir, file), 'x');
+    execFileSync('git', ['add', '-A'], { cwd: dir, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', file], { cwd: dir, stdio: 'ignore' });
+  };
+
+  it('calls a repository with nothing tracked empty', () => {
+    const dir = repo();
+    setLinkedRoots([dir]);
+    expect(workspaceIsEmpty([dir])).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('does not count mvpfy own files as a product', () => {
+    // A workspace holding only a plan and a compose file mvpfy generated has
+    // no product in it — telling the agent to match its patterns would mean
+    // matching the patterns of a yaml file mvpfy wrote.
+    const dir = repo();
+    setLinkedRoots([dir]);
+    commit(dir, 'mvpfy.yml');
+    commit(dir, 'mvpfy-plan.paging.json');
+    expect(workspaceIsEmpty([dir])).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('is not empty once there is any real code', () => {
+    const dir = repo();
+    setLinkedRoots([dir]);
+    commit(dir, 'index.ts');
+    expect(workspaceIsEmpty([dir])).toBe(false);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('is not empty when any one repository of several holds code', () => {
+    const a = repo();
+    const b = repo();
+    setLinkedRoots([a, b]);
+    commit(b, 'server.ts');
+    expect(workspaceIsEmpty([a, b])).toBe(false);
+    fs.rmSync(a, { recursive: true, force: true });
+    fs.rmSync(b, { recursive: true, force: true });
   });
 });

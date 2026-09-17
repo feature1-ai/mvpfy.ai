@@ -18,8 +18,7 @@ Do this in order:
    Do NOT modify anything in Feature1 (no mark_*, no generate_*, no attach_*). This step is
    read-only: you are only pulling the plan across.
 
-2. Study the existing product in the workspace (code, routes, UI, README) so the spec
-   references real screens and flows, not invented ones.
+2. {groundingBlock}
 
 3. Write exactly two files in the workspace root:
 

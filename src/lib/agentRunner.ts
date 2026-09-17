@@ -480,6 +480,7 @@ export async function startPushFeatureRun(
   project: Project,
   settings: Settings,
   planSlug: string,
+  originalAsk: string,
   mcp: RunAgentMcp,
   session?: RunSession
 ): Promise<RunHandle> {
@@ -489,6 +490,7 @@ export async function startPushFeatureRun(
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(pushFeatureTemplate, {
+      originalAsk: originalAsk.trim() || '(not recorded — this feature predates mvpfy keeping it)',
       resumeNote: resumeNoteFor(session),
       repoPath: project.localPath,
       planFile: cfg + planFileFor(planSlug),

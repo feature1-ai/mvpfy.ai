@@ -402,7 +402,13 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       updateState((prev) => ({
         ...prev,
         projects: prev.projects.map((p) =>
-          p.id === project.id ? { ...p, planSlugs: [...(p.planSlugs ?? []), slug] } : p
+          p.id === project.id
+            ? {
+                ...p,
+                planSlugs: [...(p.planSlugs ?? []), slug],
+                featureAsks: { ...(p.featureAsks ?? {}), [slug]: text },
+              }
+            : p
         ),
       }));
       setSelectedPlanSlug(slug);
@@ -455,6 +461,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         project,
         state.settings,
         active.slug,
+        project.featureAsks?.[active.slug] ?? '',
         mcp,
         sessionFor(active.slug, false)
       );
@@ -476,6 +483,23 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         sessionFor(activePlan.slug, false)
       );
       runsApi.track(handle);
+      // A refinement is part of what was asked for, not a replacement of it:
+      // the description in Feature1 should read like the whole request.
+      const slug = activePlan.slug;
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.id === project.id
+            ? {
+                ...p,
+                featureAsks: {
+                  ...(p.featureAsks ?? {}),
+                  [slug]: [p.featureAsks?.[slug], text].filter(Boolean).join('\n\nThen: '),
+                },
+              }
+            : p
+        ),
+      }));
     });
 
   const approvePlan = () =>

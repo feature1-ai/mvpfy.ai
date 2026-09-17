@@ -54,6 +54,14 @@ export interface Project {
    */
   featureSessions?: Record<string, string>;
   /**
+   * What the product manager actually typed to ask for each feature, by plan
+   * slug. The spec that comes back is the agent's reading of it; this is the
+   * request itself, which is what belongs in a description when the feature is
+   * filed in Feature1. Kept here rather than in the plan file, which the agent
+   * rewrites on every refinement.
+   */
+  featureAsks?: Record<string, string>;
+  /**
    * 'managed' (default): a clone under ~/.mvpfy/projects, fully owned by
    * mvpfy. 'linked': the user's own folder used in place — mvpfy keeps all
    * its files inside a .mvpfy/ subfolder and never deletes the folder.

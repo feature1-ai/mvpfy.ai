@@ -240,3 +240,22 @@ describe('featureLane', () => {
     expect(featureLane(feature([]), false)).toBe('todo');
   });
 });
+
+describe('what the product manager asked for', () => {
+  it('is kept apart from the spec the agent wrote', () => {
+    // The spec is the agent's reading of the request; the request is the one
+    // thing only the person could say, and it is what a backlog needs to show.
+    // Held in mvpfy's own state rather than the plan file, which every
+    // refinement rewrites — so a refinement cannot quietly lose it.
+    const plan = parsePlan(
+      JSON.stringify({
+        version: 1,
+        spec: { feature: 'Paging', overview: { problem: 'Long lists' } },
+        stories: [],
+        featureAsks: { paging: 'let me page through products' },
+      })
+    );
+    expect(plan).not.toBeNull();
+    expect(plan as unknown as Record<string, unknown>).not.toHaveProperty('featureAsks');
+  });
+});

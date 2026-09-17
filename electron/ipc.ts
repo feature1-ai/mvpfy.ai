@@ -4,7 +4,13 @@ import * as path from 'node:path';
 import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
 import { ensureDirs, isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { removeQuietly, runAgent, runToolingAgent } from './services/agents';
-import { agentModels, cliCheck, loginCommand, mcpAddCommand } from './services/cli';
+import {
+  agentModels,
+  cliCheck,
+  loginCommand,
+  mcpAddCommand,
+  signInAllCommand,
+} from './services/cli';
 import {
   composeCommand,
   composeStatus,
@@ -195,6 +201,9 @@ export function registerIpc(): void {
   );
   ipcMain.handle('cli-login', (_ev, runId: string, tool: string) =>
     startRun(runId, loginCommand(tool), TMP_DIR)
+  );
+  ipcMain.handle('sign-in-all', (_ev, runId: string, tools: string[]) =>
+    startRun(runId, signInAllCommand(tools), TMP_DIR)
   );
   ipcMain.handle('mcp-register', (_ev, runId: string, name: string, url: string) => {
     const parsed = new URL(url);

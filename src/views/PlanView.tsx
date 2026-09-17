@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { FeaturePlan, ProjectController } from '../hooks/useProjectController';
+import { needsFeature1SignIn } from '../lib/feature1Auth';
 import {
   LANES,
   LANE_LABELS,
@@ -503,6 +504,10 @@ export default function PlanView({ c, onOpenTab }: Props) {
           is the difference between a report and a screenshot of a dead end. */}
       <FailedRaise c={c} plan={plan} />
 
+      {/* A run that reached Feature1 and was turned away says so only in its
+          own log, and exits zero doing it. */}
+      <Feature1NotSignedIn c={c} />
+
       {/* The other half of the same question: whether the pull request happened
           is the point of the button, so success is stated as plainly as failure. */}
       <RaisedPullRequests c={c} plan={plan} />
@@ -732,6 +737,44 @@ function Feature1Push({ c, plan }: { c: ProjectController; plan: ProjectPlan }) 
     >
       {c.pushingFeature ? 'Pushing to Feature1…' : 'Push to Feature1'}
     </button>
+  );
+}
+
+/**
+ * A run that quietly did nothing because Feature1 was never signed in.
+ *
+ * The MCP server answers an unauthenticated call with an ordinary successful
+ * result — "⚠️ Not authenticated. Use browser_login…" — so the run ends green
+ * and the only trace is a line in the middle of a log nobody opens. What the
+ * person sees is a feature that pulled nothing, for no stated reason.
+ */
+function Feature1NotSignedIn({ c }: { c: ProjectController }) {
+  const run = c.runHistory
+    .filter((r) => needsFeature1SignIn(r.log))
+    .filter((r) => !r.running)
+    .pop();
+  if (!run) return null;
+  return (
+    <section className="card mb-5 overflow-hidden border-warn-border">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="section-label text-warn-text">Feature1 was not signed in</span>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <p className="max-w-[440px] text-[13px] text-body">
+          That run reached Feature1 but was not signed in, so it read nothing and finished anyway.
+          Sign in and run it again — nothing was changed in Feature1, and nothing here was lost.
+        </p>
+        <button
+          onClick={() => void c.feature1Login.connect()}
+          disabled={c.feature1Login.status === 'waiting'}
+          className="btn-secondary h-8 shrink-0 px-3.5 disabled:opacity-50"
+        >
+          {c.feature1Login.status === 'waiting'
+            ? 'Waiting for the browser…'
+            : 'Sign in to Feature1'}
+        </button>
+      </div>
+    </section>
   );
 }
 

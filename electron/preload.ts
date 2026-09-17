@@ -51,6 +51,7 @@ const api: MvpfyApi = {
   installPlans: () => ipcRenderer.invoke('install-plans'),
   installTool: (runId: string, tool: string) => ipcRenderer.invoke('install-tool', runId, tool),
   installAll: (runId: string, tools: string[]) => ipcRenderer.invoke('install-all', runId, tools),
+  signInAll: (runId: string, tools: string[]) => ipcRenderer.invoke('sign-in-all', runId, tools),
   installToolsAgent: (req: RunAgentRequest) => ipcRenderer.invoke('install-tools-agent', req),
   readRepoFiles: (repoPath: string, relativePaths: string[]) =>
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),

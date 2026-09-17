@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { loginCommand, loginOpensTerminal, mcpAddCommand, parseModelsFromHelp } from './cli';
+import {
+  loginCommand,
+  loginOpensTerminal,
+  mcpAddCommand,
+  parseModelsFromHelp,
+  signInAllCommand,
+  signInNeedsOwnWindow,
+} from './cli';
 import { shellQuote } from './shell';
 
 const onMac = process.platform === 'darwin';
@@ -90,5 +97,38 @@ describe('mcpAddCommand', () => {
     expect(removeAt).toBeGreaterThan(-1);
     expect(addAt).toBeGreaterThan(removeAt);
     expect(command.slice(removeAt, addAt)).not.toContain('&&');
+  });
+});
+
+describe('signInAllCommand', () => {
+  it('runs the sign-ins one after another, never in parallel', () => {
+    // Each prints a device code or opens a browser and waits. Two at once puts
+    // two codes in one log with no way to tell which belongs to which.
+    const cmd = signInAllCommand(['gh', 'codex']);
+    expect(cmd.indexOf('gh auth login')).toBeLessThan(cmd.indexOf('codex login'));
+    // The join between the two tools is "then, regardless" — gh's own command
+    // uses && internally to chain setup-git onto its sign-in, which is a
+    // different thing and must survive.
+    const between = cmd.slice(cmd.indexOf('setup-git'), cmd.indexOf('codex login'));
+    expect(between).not.toContain('&&');
+  });
+
+  it('announces each one, so a log of two sign-ins can be read', () => {
+    expect(signInAllCommand(['gh'])).toMatch(/echo .*signing in to gh/);
+  });
+
+  it('still wires git credentials, which gh being signed in does not do', () => {
+    // The failure this whole path exists for: gh reports itself signed in and
+    // the push fails on credentials anyway.
+    expect(signInAllCommand(['gh'])).toContain('gh auth setup-git');
+  });
+
+  it('leaves out a sign-in that needs its own window, and says so', () => {
+    expect(() => signInAllCommand(['claude'])).toThrow(/own window/i);
+    expect(signInNeedsOwnWindow(['claude', 'gh'])).toEqual(['claude']);
+  });
+
+  it('refuses a tool with no sign-in at all', () => {
+    expect(() => signInAllCommand(['docker'])).toThrow(/own window/i);
   });
 });

@@ -377,6 +377,8 @@ export interface MvpfyApi {
   installPlans(): Promise<InstallPlan[]>;
   /** Install every missing tool that needs no password, in one run. */
   installAll(runId: string, tools: string[]): Promise<void>;
+  /** Sign in to several tools, one after another, in one run. */
+  signInAll(runId: string, tools: string[]): Promise<void>;
   /** Hand what is still missing to the coding agent to finish. */
   installToolsAgent(req: RunAgentRequest): Promise<void>;
   /** Install one required tool, streaming its output like any other run. */

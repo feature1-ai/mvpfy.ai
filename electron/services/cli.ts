@@ -47,12 +47,51 @@ export function loginCommand(tool: string): string {
   const entry = LOGIN_COMMANDS[tool];
   if (!entry) throw new Error(`No in-app sign-in for "${tool}"`);
   if (entry.mode === 'terminal') {
-    if (process.platform !== 'darwin') {
+    // Windows was told to go and run this itself, because the only terminal
+    // wrapper was AppleScript. cmd.exe can host an interactive sign-in just as
+    // well; Linux has no one terminal to open, so it still says the command.
+    if (process.platform !== 'darwin' && !IS_WIN) {
       throw new Error(`Run "${entry.command}" in a terminal, then re-check`);
     }
     return terminalCommand(entry.command);
   }
   return entry.command;
+}
+
+/**
+ * Sign in to several tools in one run, one after another.
+ *
+ * Sequential, never parallel: each of these prints a code or opens a browser
+ * and waits for the person to finish. Two at once would interleave two device
+ * codes in the same log, and there is no telling which is which.
+ *
+ * Only the ones that stream in-app. A sign-in that needs its own window has to
+ * be started by the person who will answer it, and there is no sense opening
+ * three windows at once for them to work through in an order nobody stated.
+ *
+ * No agent fallback here, unlike installing. Signing in means a browser, a
+ * password and a second factor; handing that to an agent would mean handing it
+ * credentials, and mvpfy does not ask anyone for those.
+ */
+export function signInAllCommand(tools: string[]): string {
+  const doable = tools.filter((t) => LOGIN_COMMANDS[t]?.mode === 'in-app');
+  if (doable.length === 0) {
+    throw new Error('These sign-ins each need their own window — start them one at a time');
+  }
+  // "then, regardless": one refused sign-in must not skip the rest, and the
+  // person is sitting there watching either way.
+  const andThen = IS_WIN ? ' & ' : ' ; ';
+  return doable
+    .map((t) => {
+      const label = t === 'git-auth' ? 'git credentials' : t;
+      return `echo ${shellQuote(`── signing in to ${label}`)} ${andThen} ${LOGIN_COMMANDS[t].command}`;
+    })
+    .join(andThen);
+}
+
+/** Tools needing a sign-in that mvpfy cannot stream — their own window. */
+export function signInNeedsOwnWindow(tools: string[]): string[] {
+  return tools.filter((t) => LOGIN_COMMANDS[t]?.mode === 'terminal');
 }
 
 /** True when signing this tool in opens Terminal instead of streaming in-app. */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   AgentKind,
+  CliName,
   CliStatus,
   DEFAULT_STACK,
   InstallPlan,
@@ -147,6 +148,29 @@ export default function SettingsView({
     (c) => (c.name === 'claude' || c.name === 'codex') && c.found
   );
 
+  // Installed but not signed in is the other half of not working: gh without
+  // a sign-in fails at the push, mid-run, having looked fine in the checklist.
+  const needsSignIn = cliStatuses
+    .filter(
+      (c) =>
+        c.found &&
+        c.authenticated === false &&
+        CLI_HELP[c.name].inAppLogin &&
+        cliRequired(c.name, state.settings.defaultAgent)
+    )
+    .map((c) => c.name as string);
+  // A sign-in that opens its own window has to be started by the person who
+  // will answer it — three windows at once, in no stated order, is worse.
+  const signInStreams = needsSignIn.filter((t) => !CLI_HELP[t as CliName].loginInTerminal);
+
+  function signInAll() {
+    if (signInStreams.length === 0) return;
+    const runId = nextRunId('login', 'all');
+    setToolLog('');
+    setToolRun({ kind: 'login', tool: 'all', runId });
+    void window.mvpfy.signInAll(runId, signInStreams).catch(() => setToolRun(null));
+  }
+
   function installAll() {
     if (installableNow.length === 0) return;
     const runId = nextRunId('install', 'all');
@@ -171,6 +195,16 @@ export default function SettingsView({
       <div className="mb-3 flex items-center justify-between">
         <span className="section-label">Required tools</span>
         <div className="flex items-center gap-3">
+          {installableNow.length === 0 && signInStreams.length > 1 && (
+            <button
+              onClick={signInAll}
+              disabled={toolRun !== null}
+              title={'Signs in to each in turn — finish one and the next starts'}
+              className="btn-primary h-6 px-2.5 text-[11.5px] disabled:opacity-50"
+            >
+              {toolRun?.tool === 'all' ? 'Signing in…' : `Sign in to all (${signInStreams.length})`}
+            </button>
+          )}
           {installableNow.length > 0 && (
             <button
               onClick={installAll}
@@ -289,7 +323,8 @@ export default function SettingsView({
                 </button>
                 <span className="text-[11.5px] text-warn-text">
                   It gets the output above and installs what it can. It will not run anything
-                  needing a password — it would hang where you cannot see it.
+                  needing a password — it would hang where you cannot see it — and it does not sign
+                  you in to anything: that needs your browser and your password, and is yours to do.
                 </span>
               </div>
             ) : (

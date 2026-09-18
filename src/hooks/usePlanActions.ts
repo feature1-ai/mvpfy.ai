@@ -6,6 +6,7 @@ import {
   startPullFeatureRun,
   startPushFeatureRun,
   startSyncFeatureRun,
+  startFeatureChangeRun,
   startGitAuthRun,
   startRaisePrRun,
 } from '../lib/agentRunner';
@@ -70,6 +71,10 @@ export interface PlanActions {
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
+  /** Change this feature's code in plain language; the agent commits it. */
+  changeFeature(instruction: string): Promise<boolean>;
+  /** True while a change to the active feature is being made. */
+  changingFeature: boolean;
   /** Implement every remaining story in the active feature, in order. */
   implementFeature(): Promise<boolean>;
   /** The feature whose stories are being worked through, if any. */
@@ -613,6 +618,67 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     });
 
   /**
+   * A change to the feature's code, asked for in words.
+   *
+   * Everything implementStory does about *where* work happens applies equally:
+   * the feature's own checkouts, and testing released first, because the
+   * workspace is detached at a commit and a new one would leave it silently
+   * behind while still claiming to be this feature.
+   */
+  const changeFeature = (instruction: string) =>
+    guarded(async () => {
+      const text = instruction.trim();
+      if (!text) return;
+      const slug = activePlan?.slug ?? '';
+      const plan = activePlan?.plan;
+      if (!plan) throw new Error('Open a feature first.');
+      if (!plan.approved)
+        throw new Error('Agree with the PRD first — then the code is yours to change');
+      if (anyStoryRunning) {
+        throw new Error(
+          'A story is being implemented — wait for it, so two runs do not write the same checkout'
+        );
+      }
+      if (planBlocked) throw new Error('Wait for the current environment run to finish first');
+      // No gh needed: this commits and stops. The pull request is raised once,
+      // for the whole feature, when the builder says it is finished.
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      if ((project.testingSlug ?? null) === slug) {
+        await window.mvpfy.checkoutFeature(
+          project.localPath,
+          project.repos.map((r) => r.dir),
+          null
+        );
+        updateState((prev) => ({
+          ...prev,
+          projects: prev.projects.map((p) =>
+            p.id === project.id ? { ...p, testingSlug: null } : p
+          ),
+        }));
+      }
+      const branch = `mvpfy/${slug || 'feature'}`;
+      const trees = await window.mvpfy.worktree(
+        project.localPath,
+        project.repos.map((r) => r.dir),
+        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+        slug,
+        branch,
+        'add'
+      );
+      const handle = await startFeatureChangeRun(
+        project,
+        state.settings,
+        slug,
+        plan.spec.feature || slug,
+        text,
+        sessionFor(slug, false),
+        trees.ok ? (trees.paths ?? {}) : {}
+      );
+      runsApi.track(handle);
+    });
+
+  /**
    * Work through the feature's remaining stories in order.
    *
    * Chained rather than run as one large agent turn: the board keeps moving —
@@ -713,6 +779,11 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     testingStale,
     approvePlan,
     implementStory,
+    changeFeature,
+    changingFeature: projectRuns.some(
+      (r) =>
+        r.handle.kind === 'feature-change' && r.running && r.handle.planSlug === activePlan?.slug
+    ),
     implementFeature,
     runningFeature: runAllSlug,
     moveStory,

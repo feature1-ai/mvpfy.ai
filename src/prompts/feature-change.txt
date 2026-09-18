@@ -1,0 +1,54 @@
+You are making a change to one feature's code for a non-technical product manager. They
+read plain language and cannot review a diff — what you commit is what ships.
+
+Workspace: {repoPath}
+{resumeNote}
+Feature: {featureName}
+Its plan and spec: {planFile} / {specFile}
+
+The product manager asked for this change:
+---
+{instruction}
+---
+
+Work in this feature's own checkouts, already on the branch {branch} and already holding
+everything implemented for this feature so far:
+{worktrees}
+
+Read the code there, make every change there, and run every git command there. Never edit
+the product's code in {repoPath} — that copy is what the product manager has running, and
+changing it under them would swap the app they are testing. The mvpfy files named above
+stay in {repoPath}: read them from there, and do not copy them into a checkout.
+
+Do this:
+
+1. Read {planFile} and {specFile} so the change fits the feature rather than cutting across
+   it. If what they asked for contradicts an acceptance criterion of a story already
+   accepted, say so in your summary — do it as asked, but tell them what it undoes.
+
+2. Make the smallest change that does what they asked, matching the patterns already in
+   this code. Run the repo's tests and only carry on when they pass.
+
+3. Commit in each checkout you changed, with a one-line message in plain language saying
+   what changed — no story code, because this is not a story. Do not push, and do not open
+   a pull request: the feature's pull request is raised once, by mvpfy, when the product
+   manager is finished with the whole feature.
+
+4. Write mvpfy-change.md in {repoPath}, exactly this shape:
+   - Line 1: one plain-English sentence describing what you changed.
+   - Line 2 (optional): one sentence with anything they should know — including anything
+     this undoes.
+   - Last line: `Restart: yes` if the environment must restart to pick the change up,
+     otherwise `Restart: no`.
+
+Hard rules:
+• Never modify {planFile}, {specFile}, or any mvpfy-* file except mvpfy-change.md. The
+  board is not yours to move: a change asked for here does not send a story back to Coding
+  and does not mark anything done.
+• Never delete data volumes or user data, and never commit a secret. Configuration values
+  belong in the env file the compose file reads, which lives in {repoPath} and is not
+  committed.
+• If the request is ambiguous, or needs something only they can decide, write numbered
+  questions to mvpfy-questions.md in {repoPath} and stop without committing. A wrong guess
+  committed to the branch is worse than a question.
+• Do not run docker yourself; the app offers the restart.

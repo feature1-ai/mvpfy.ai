@@ -540,12 +540,66 @@ export default function PlanView({ c, onOpenTab }: Props) {
         ))}
       </div>
       <p className="mt-3 text-[11.5px] text-muted">
-        mvpfy moves stories through Coding into Testing. Only you can move a story to Done — test it
-        in the App tab first. Drag a Testing story back to Coding to send it back with feedback.
-        Every story in this feature commits to one branch, and one pull request opens for the whole
-        feature once you have accepted them all. One story is implemented at a time across all
-        features; planning new features is always allowed.
+        mvpfy moves stories through Coding into Testing as it implements the feature. Only you can
+        move a story to Done — test it in the App tab first, and send it back with feedback if it is
+        not right. Every story in this feature commits to one branch, and one pull request opens for
+        the whole feature once you have accepted them all.
       </p>
+
+      {/* Asking for a change in words, when the change is not a story. The
+          board above says what was planned; this is everything else — the
+          wording, the spacing, the thing that only shows up once you use it. */}
+      {plan.approved && <FeatureChangeBox c={c} />}
+    </div>
+  );
+}
+
+/**
+ * A change to this feature's code, asked for in plain language and committed
+ * to its branch.
+ *
+ * Separate from Ask mvpfy, which fixes the environment in the workspace and
+ * commits nothing. This one is the product's code, so it belongs to the
+ * feature: its checkouts, its branch, its conversation, its pull request.
+ */
+function FeatureChangeBox({ c }: { c: ProjectController }) {
+  const [text, setText] = useState('');
+  const busy = c.changingFeature;
+  return (
+    <div className="mt-4 rounded-[10px] border border-line bg-sunken p-3">
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="section-label">Change this feature</span>
+        <span className="text-[11px] text-faint">
+          committed to its branch — it goes out with the feature
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && text.trim() && !busy) {
+              const t = text;
+              setText('');
+              void c.changeFeature(t);
+            }
+          }}
+          disabled={busy}
+          placeholder="e.g. the date on the invoice list should read 14 Mar 2026, not 2026-03-14"
+          className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-3 text-[13px] outline-none placeholder:text-faint focus:border-muted disabled:opacity-60"
+        />
+        <button
+          onClick={() => {
+            const t = text;
+            setText('');
+            void c.changeFeature(t);
+          }}
+          disabled={busy || !text.trim()}
+          className="btn-primary h-8 shrink-0 px-3 text-xs disabled:opacity-50"
+        >
+          {busy ? 'Changing…' : 'Make the change'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1169,6 +1223,15 @@ function StoryCard({
               ✓ Done
             </button>
           </div>
+          {/* Sending a story back used to mean dragging it out of Testing.
+              With dragging gone it needs a control of its own — and a button
+              says it is there, which the drag never did. */}
+          <button
+            onClick={() => setBounce({ code: story.code, feedback: '' })}
+            className="mt-1.5 w-full text-left text-[10.5px] text-muted hover:text-body"
+          >
+            Not right? Send it back with feedback
+          </button>
           {/* The app watches the source, so most of a story shows up on its
               own — but a new dependency, env var or migration needs the stack
               rebuilt, and approving unseen work is the failure that matters. */}

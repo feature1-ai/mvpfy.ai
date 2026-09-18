@@ -14,6 +14,7 @@ import planImplementTemplate from '../prompts/plan-implement.txt?raw';
 import pullFeatureTemplate from '../prompts/pull-feature.txt?raw';
 import pushFeatureTemplate from '../prompts/push-feature.txt?raw';
 import syncFeatureTemplate from '../prompts/sync-feature.txt?raw';
+import featureChangeTemplate from '../prompts/feature-change.txt?raw';
 import installToolsTemplate from '../prompts/install-tools.txt?raw';
 import {
   AgentKind,
@@ -139,6 +140,7 @@ export type RunKind =
   | 'raise-pr'
   | 'push-feature'
   | 'sync-feature'
+  | 'feature-change'
   | 'install-tools'
   | 'seed'
   | 'git-auth';
@@ -613,6 +615,53 @@ export async function startPlanStoryRun(
     ...(session ? { session } : {}),
   });
   return { runId, kind: 'plan-story', projectId: project.id, storyId: storyCode, planSlug };
+}
+
+/**
+ * A change to one feature's code, asked for in plain language.
+ *
+ * Distinct from the project-level Ask, which edits the workspace the product
+ * manager is running and commits nothing: that is for the environment. This is
+ * the feature's own code, so it happens in the feature's checkouts, on the
+ * feature's branch, in the feature's conversation — and it commits, because a
+ * change that is not on the branch is not in the pull request, and the whole
+ * point is that it ships with the feature.
+ *
+ * It does not push and does not open a pull request. There is one of those per
+ * feature and mvpfy raises it when the builder says the feature is finished.
+ */
+export async function startFeatureChangeRun(
+  project: Project,
+  settings: Settings,
+  planSlug: string,
+  featureName: string,
+  instruction: string,
+  session?: RunSession,
+  worktrees: Record<string, string> = {}
+): Promise<RunHandle> {
+  const runId = makeRunId('featurechange');
+  const cfg = configDirFor(project.mode);
+  const checkouts = Object.entries(worktrees);
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(featureChangeTemplate, {
+      resumeNote: resumeNoteFor(session),
+      repoPath: project.localPath,
+      featureName,
+      instruction,
+      branch: `mvpfy/${planSlug || 'feature'}`,
+      planFile: cfg + planFileFor(planSlug),
+      specFile: cfg + specFileFor(planSlug),
+      worktrees:
+        checkouts.length > 0
+          ? checkouts.map(([repo, tree]) => `   • ${repo} → ${tree}`).join('\n')
+          : `   • ${project.localPath} (no separate checkout — work here)`,
+    }),
+    ...agentFor(settings),
+    ...(session ? { session } : {}),
+  });
+  return { runId, kind: 'feature-change', projectId: project.id, planSlug };
 }
 
 /** Fast-forward pull each repo of the workspace from its remote. */

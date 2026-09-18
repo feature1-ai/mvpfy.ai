@@ -319,6 +319,7 @@ const RUN_LABELS: Record<string, string> = {
   'raise-pr': 'Raising pull requests',
   'push-feature': 'Pushing the feature to Feature1',
   'sync-feature': 'Syncing the feature with Feature1',
+  'feature-change': 'Changing the feature',
   'install-tools': 'Installing the required tools',
   'git-auth': 'Connecting git to GitHub',
 };

@@ -39,11 +39,10 @@ function envState(c: ProjectController): EnvState {
     if (k === 'seed') return { kind: 'working', label: 'Adding your demo login and sample data…' };
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
     if (k === 'instruct') return { kind: 'working', label: 'Making your change…' };
-    if (k === 'sync') return { kind: 'working', label: 'Syncing repositories…' };
-    if (k === 'readiness') return { kind: 'working', label: 'Checking launch readiness…' };
-    if (k === 'plan-spec') return { kind: 'working', label: 'Writing the product spec…' };
-    if (k === 'plan-story') return { kind: 'working', label: 'Implementing a story…' };
-    if (k === 'ship') return { kind: 'working', label: 'Shipping as a pull request…' };
+    // Everything else — syncing, planning, implementing, raising a pull
+    // request — leaves the containers alone. Reporting the environment as
+    // "working" through those hid the running app's own controls and read as
+    // the environment having gone down, which it had not.
   }
   switch (c.project.status) {
     // Between "Add project" and the bootstrap run actually starting.

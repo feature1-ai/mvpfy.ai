@@ -324,10 +324,15 @@ export function useProjectController(
 
   // Poll a local port until it answers HTTP so the PM can see when the app
   // (or IDE) is actually ready, not just when its process started.
+  // Each start — including a restart the ladder issued — is its own attempt at
+  // being reachable, and gets its own ninety seconds.
+  const lastStartRunId =
+    projectRuns.filter((r) => r.handle.kind === 'docker-up').pop()?.handle.runId ?? '';
   const appUnresponsive = useHealthPoll(
     project.status === 'running' ? appPort : null,
     setAppHealthy,
-    appHealthy
+    appHealthy,
+    lastStartRunId
   );
 
   // What the containers are actually doing, asked for only once the app has
@@ -351,7 +356,11 @@ export function useProjectController(
     lastIdeRun && lastIdeRun.exitCode !== 0 ? lastIdeRun.log.trim().slice(-800) || null : null;
 
   const idePort = project.idePort ?? null;
-  useHealthPoll(idePort, setIdeHealthy, ideHealthy);
+  // The editor is started once and never auto-restarted, so its attempt is
+  // just the launch it belongs to.
+  const lastIdeRunId =
+    projectRuns.filter((r) => r.handle.kind === 'ide-up').pop()?.handle.runId ?? '';
+  useHealthPoll(idePort, setIdeHealthy, ideHealthy, lastIdeRunId);
 
   // Reconcile the stored IDE port against docker: containers die on reboot,
   // and a stale port that some OTHER project's code-server later binds would
@@ -514,12 +523,21 @@ export function useProjectController(
 function useHealthPoll(
   port: number | null,
   setHealthy: (v: boolean) => void,
-  healthy: boolean
+  healthy: boolean,
+  /**
+   * The start this verdict is about. Every start begins the ninety seconds
+   * again — without it the count carried across restarts, so an app that had
+   * already been quiet long enough was declared unresponsive the instant a
+   * restart was issued, before it could possibly have answered. The recovery
+   * ladder then spent all three of its restarts inside two seconds and went
+   * straight to diagnosing an app nobody had waited for.
+   */
+  attempt: string
 ): boolean {
-  // Keyed by the attempt it belongs to, so a new port or a recovery resets the
-  // count without an effect that writes state.
+  // Keyed by the attempt it belongs to, so a new port, a recovery, or another
+  // start resets the count without an effect that writes state.
   const [misses, setMisses] = useState({ key: '', n: 0 });
-  const key = `${port}:${healthy}`;
+  const key = `${port}:${healthy}:${attempt}`;
   useEffect(() => {
     if (!port) {
       setHealthy(false);
@@ -541,7 +559,7 @@ function useHealthPoll(
       clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [port, healthy]);
+  }, [port, healthy, attempt]);
   // ~90 seconds of silence. A container that died is already dead by then, and
   // an app that is merely slow has usually answered.
   return !healthy && misses.key === key && misses.n >= 45;

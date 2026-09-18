@@ -252,8 +252,15 @@ export function useProjectActions(
   const actedOnStart = useRef<string | null>(null);
   const lastStart = projectRuns.filter((r) => r.handle.kind === 'docker-up').pop();
   const lastStartId = lastStart && !lastStart.running ? lastStart.handle.runId : null;
+  // Something else running is reason enough for the app to be quiet: a pull
+  // changes the source under it, an implement rewrites it, an instruct edits
+  // its config. None of those is a start that failed, and restarting through
+  // one fights whatever is working.
+  const somethingElseRunning = projectRuns.some(
+    (r) => r.running && r.handle.kind !== 'app-logs' && r.handle.kind !== 'docker-up'
+  );
   useEffect(() => {
-    if (!unresponsive || !lastStartId) return;
+    if (!unresponsive || !lastStartId || somethingElseRunning) return;
     if (actedOnStart.current === lastStartId) return;
     actedOnStart.current = lastStartId;
     const state = recovery.current;
@@ -272,7 +279,7 @@ export function useProjectActions(
     }
     queueMicrotask(() => setRecoveryExhausted(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unresponsive, lastStartId]);
+  }, [unresponsive, lastStartId, somethingElseRunning]);
 
   const retryFix = () =>
     guarded(async () => {

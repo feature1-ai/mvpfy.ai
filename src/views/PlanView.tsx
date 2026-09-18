@@ -9,7 +9,6 @@ import {
   ProjectPlan,
   SpecItem,
   StoryLane,
-  canMove,
   featureLane,
   uncoveredItems,
 } from '../lib/plan';
@@ -32,8 +31,6 @@ interface Props {
 export default function PlanView({ c, onOpenTab }: Props) {
   const [draft, setDraft] = useState('');
   const [refine, setRefine] = useState('');
-  const [dragCode, setDragCode] = useState<string | null>(null);
-  const [overLane, setOverLane] = useState<StoryLane | null>(null);
   const [bounce, setBounce] = useState<{ code: string; feedback: string } | null>(null);
   const [specOpen, setSpecOpen] = useState(false);
   const [creatingNew, setCreatingNew] = useState(false);
@@ -452,19 +449,6 @@ export default function PlanView({ c, onOpenTab }: Props) {
   const byLane = (lane: StoryLane) => plan.stories.filter((s) => s.lane === lane);
   const done = byLane('done').length;
 
-  function drop(lane: StoryLane) {
-    setOverLane(null);
-    if (!dragCode) return;
-    const story = plan!.stories.find((s) => s.code === dragCode);
-    setDragCode(null);
-    if (!story || !canMove(story.lane, lane, 'user')) return;
-    if (story.lane === 'testing' && lane === 'coding') {
-      setBounce({ code: story.code, feedback: '' });
-      return;
-    }
-    void c.moveStory(story.code, lane);
-  }
-
   return (
     <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
       {toolbar}
@@ -521,17 +505,13 @@ export default function PlanView({ c, onOpenTab }: Props) {
       {/* Board */}
       <div className="grid grid-cols-2 items-start gap-4 min-[980px]:grid-cols-4">
         {LANES.map((lane) => (
+          // A lane is a report of where the work is, not a control. The feature
+          // is implemented as a whole, so a story cannot be dragged into Coding
+          // ahead of the ones before it, and dropping one into Done would mark
+          // work accepted that no run ever did.
           <div
             key={lane}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOverLane(lane);
-            }}
-            onDragLeave={() => setOverLane((v) => (v === lane ? null : v))}
-            onDrop={() => drop(lane)}
-            className={`min-h-[220px] rounded-[10px] border p-2.5 transition-colors ${
-              overLane === lane ? 'border-go bg-go-bg' : 'border-line bg-sunken'
-            }`}
+            className="min-h-[220px] rounded-[10px] border border-line bg-sunken p-2.5"
           >
             <div className="mb-2 flex items-baseline justify-between px-1">
               <span className="section-label">{LANE_LABELS[lane]}</span>
@@ -547,7 +527,6 @@ export default function PlanView({ c, onOpenTab }: Props) {
                   running={active.runningStory === story.code}
                   bounce={bounce}
                   setBounce={setBounce}
-                  onDragStart={() => setDragCode(story.code)}
                   onOpenTab={onOpenTab}
                 />
               ))}
@@ -1097,7 +1076,6 @@ function StoryCard({
   running,
   bounce,
   setBounce,
-  onDragStart,
   onOpenTab,
 }: {
   story: PlanStory;
@@ -1107,16 +1085,12 @@ function StoryCard({
   running: boolean;
   bounce: { code: string; feedback: string } | null;
   setBounce: (b: { code: string; feedback: string } | null) => void;
-  onDragStart: () => void;
   onOpenTab: (tab: 'app' | 'logs') => void;
 }) {
   const [acsOpen, setAcsOpen] = useState(false);
   const bouncing = bounce?.code === story.code;
-  const implementBlocked = c.anyStoryRunning || c.planBlocked;
   return (
     <div
-      draggable={!running}
-      onDragStart={onDragStart}
       className={`cursor-grab rounded-lg border bg-surface p-3 active:cursor-grabbing ${
         running ? 'border-go' : 'border-line'
       }`}
@@ -1172,15 +1146,6 @@ function StoryCard({
             logs
           </button>
         </p>
-      )}
-      {!running && (story.lane === 'todo' || (story.lane === 'coding' && !implementBlocked)) && (
-        <button
-          onClick={() => void c.implementStory(story.code)}
-          disabled={implementBlocked}
-          className="btn-primary mt-2 h-6 w-full text-[11px] disabled:opacity-50"
-        >
-          {story.lane === 'coding' ? 'Re-run implementation' : 'Implement'}
-        </button>
       )}
       {!running && story.lane === 'testing' && !bouncing && (
         <>

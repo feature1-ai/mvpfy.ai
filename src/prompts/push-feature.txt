@@ -28,16 +28,33 @@ Do this in order:
    • mcp__feature1__create_feature(title="<spec.feature>",
      description="<the product manager's own words, above>",
      project_id="<the project id from step 2>",
-     analysisResult={"prd": "<the full contents of {specFile}>"})
+     analysisResult={"prd": <the PRD object built as below>})
    • The description is the request, not the specification. Pass the product manager's
      words above as they wrote them — that is what a person scanning the backlog needs to
      see, and rewriting it into a summary loses the one thing only they could say. If it
      was not recorded, use the spec's Problem and Solution summary instead and say nothing
      else.
-   • The PRD is the spec. Pass {specFile} through in full as analysisResult.prd —
-     problem, solution summary, target users, success metrics, in scope / out of scope,
-     user flows, and requirements, as the Markdown it already is. Do not shorten it, do
-     not reorder it, and do not put it in the description as well.
+   • The PRD is the spec, as structured data — NOT as Markdown. Feature1 stores a PRD as
+     an object and reads its parts individually; a string put here is not a PRD to it, and
+     the feature would show an empty one. Build it from the plan's own "spec", which is
+     already almost this shape:
+
+       prd.overview.problemStatement  ← spec.overview.problem
+       prd.overview.summary           ← spec.overview.summary
+       prd.overview.targetUsers       ← spec.overview.targetUsers
+       prd.overview.successMetrics    ← spec.overview.successMetrics, joined into one line
+       prd.scope.inScope              ← spec.scope.inScope
+       prd.scope.outOfScope           ← spec.scope.outOfScope
+       prd.userExperience.primaryFlows ← spec.flows
+       prd.requirements.functional    ← spec.requirements.functional
+       prd.requirements.nonFunctional ← spec.requirements.nonFunctional
+
+     Every item in those five lists is an object {"id": ..., "anchor": ..., "text": ...}.
+     Keep the plan's own id exactly — mvpfy's stories record which spec items they deliver
+     by that id, and Feature1 maps its own coverage by the same one, so changing it breaks
+     both. Use the id as the anchor when there is nothing better.
+   • Carry the text across as written. Do not shorten it, do not reorder the lists, and do
+     not put the PRD in the description as well.
    • This tool answers in prose, not structured data. Take the UUID printed after
      "Feature ID" — that is the only identifier it returns, and it is what the next two
      steps use. There is no feature code in the answer; do not invent one.

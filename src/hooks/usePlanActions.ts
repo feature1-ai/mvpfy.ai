@@ -5,6 +5,7 @@ import {
   startPlanStoryRun,
   startPullFeatureRun,
   startPushFeatureRun,
+  startSyncFeatureRun,
   startGitAuthRun,
   startRaisePrRun,
 } from '../lib/agentRunner';
@@ -51,6 +52,10 @@ export interface PlanActions {
   pushFeature(): Promise<boolean>;
   /** True while the active feature is being filed in Feature1. */
   pushingFeature: boolean;
+  /** Bring an already-filed feature up to date: spec, stories, their state. */
+  syncFeature(): Promise<boolean>;
+  /** True while the active feature is being brought up to date. */
+  syncingFeature: boolean;
   refineSpec(instruction: string): Promise<boolean>;
   /** The builder accepts the finished feature — the gate before its PR. */
   markFeatureTested(): Promise<boolean>;
@@ -468,6 +473,30 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       runsApi.track(handle);
     });
 
+  // The other direction of the same link: the feature is there, and what has
+  // happened here since needs to reach it. Only for a feature that was filed —
+  // one that was pulled from Feature1 is already theirs to change.
+  const syncFeature = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active?.plan) throw new Error('Open a feature first.');
+      const ref = active.plan.feature1FeatureRef;
+      if (!ref) throw new Error('This feature is not in Feature1 yet — push it first.');
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const mcp = await feature1Mcp();
+      const handle = await startSyncFeatureRun(
+        project,
+        state.settings,
+        active.slug,
+        ref,
+        project.featureAsks?.[active.slug] ?? '',
+        mcp,
+        sessionFor(active.slug, false)
+      );
+      runsApi.track(handle);
+    });
+
   const refineSpec = (instruction: string) =>
     guarded(async () => {
       const text = instruction.trim();
@@ -671,6 +700,10 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     pushFeature,
     pushingFeature: projectRuns.some(
       (r) => r.handle.kind === 'push-feature' && r.running && r.handle.planSlug === activePlan?.slug
+    ),
+    syncFeature,
+    syncingFeature: projectRuns.some(
+      (r) => r.handle.kind === 'sync-feature' && r.running && r.handle.planSlug === activePlan?.slug
     ),
     refineSpec,
     markFeatureTested,

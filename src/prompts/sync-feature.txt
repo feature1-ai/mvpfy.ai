@@ -1,0 +1,104 @@
+This feature is already in Feature1. Bring Feature1 up to date with what has happened here
+since — a refined spec, stories that have moved, stories that did not exist before.
+
+Workspace: {repoPath}
+{resumeNote}
+Plan: {planFile}
+Spec: {specFile}
+The Feature1 feature: {featureRef}
+
+What the product manager asked for, in their own words:
+---
+{originalAsk}
+---
+
+This is an update, not a second filing. Never call create_feature: the feature exists, and
+a second one would split its history in two.
+
+Do this in order:
+
+1. Read {planFile} and {specFile}. Then read the other side:
+   • mcp__feature1__get_feature(feature_id="{featureRef}") — confirms it is still there and
+     shows what it currently holds.
+   • mcp__feature1__list_user_stories(feature_id="{featureRef}") — what stories exist there
+     now, with their codes and session ids.
+   If the feature cannot be found, stop and say so. Do not create one to replace it: the
+   reference here is wrong, and guessing at a new feature would hide that.
+
+2. Update the description to what the product manager asked for, above:
+   • mcp__feature1__update_feature(feature_id="{featureRef}", description="<their words>")
+   • Skip this if their words are not recorded, rather than replacing a real description
+     with a summary of the spec.
+
+3. Replace the PRD with the current spec:
+   • mcp__feature1__update_feature_stage(feature_id="{featureRef}", stage_id="prd",
+     patch=<the PRD object>)
+   • Build the PRD from the plan's "spec", which is already almost this shape:
+
+       prd.overview.problemStatement   ← spec.overview.problem
+       prd.overview.summary            ← spec.overview.summary
+       prd.overview.targetUsers        ← spec.overview.targetUsers
+       prd.overview.successMetrics     ← spec.overview.successMetrics, joined into one line
+       prd.scope.inScope               ← spec.scope.inScope
+       prd.scope.outOfScope            ← spec.scope.outOfScope
+       prd.userExperience.primaryFlows ← spec.flows
+       prd.requirements.functional     ← spec.requirements.functional
+       prd.requirements.nonFunctional  ← spec.requirements.nonFunctional
+
+     Every item in those five lists is an object {"id": ..., "anchor": ..., "text": ...}.
+     Keep the plan's own id exactly: mvpfy's stories record which spec items they deliver by
+     that id, and Feature1 maps its coverage by the same one.
+   • Send each of overview, scope, userExperience and requirements complete. The patch
+     replaces a whole section at a time, so a section sent complete drops the items a
+     refinement removed — and a section sent partially silently keeps them.
+   • Do NOT call regenerate_prd afterwards. That re-derives the PRD from the upstream
+     stages and would throw away what you just wrote.
+
+4. Create only the stories that are new here:
+   • A plan story with no "feature1StoryId" has never been filed. Create those, and only
+     those, with mcp__feature1__create_user_stories_batch(project_id=..., feature_id=...)
+     — the same rules as the first push: title from the plan's title, never beginning "As
+     a"; user_story as "As a … I want … so that …"; acceptanceCriteria as
+     {"description": "<verbatim>"} objects.
+   • A story that already has a "feature1StoryId" is NOT created again. Check against the
+     list from step 1 as well: if a story is there under a different id, use the one that
+     exists rather than making a duplicate.
+   • Match what comes back to its plan story by title, not by position, and record the
+     workflowId.
+
+5. Set every story's state to what the board here says it is now — including the ones that
+   were already filed, which is the point of syncing.
+   Pass session_id on the call itself; it must be the workflowId, not the story code.
+     lane "coding":  mark_all_acs_in_progress(session_id="<workflowId>")
+     lane "testing": mark_all_acs_implementation_done(session_id="<workflowId>")
+                     mark_ready_for_testing(session_id="<workflowId>")
+     lane "done":    mark_all_acs_approved(session_id="<workflowId>")
+                     mark_ready_for_testing(session_id="<workflowId>")
+   • One call sets the state outright — there is no ladder, so do not call the earlier ones
+     on the way to a later one.
+   • Safe to repeat: a story already in that state simply stays there. Run it for every
+     story that is not in lane "todo", whether or not it moved since the last sync.
+   • A story back in lane "todo" here cannot be walked backwards — there is no call for it.
+     Say which story, and leave it where it is.
+   • A story with no acceptance criteria cannot be moved at all; the endpoint refuses it.
+     Name it and carry on.
+   • If the plan records a prUrl for a story, call
+     attach_pr(session_id="<workflowId>", pr_url="<that url>") before mark_ready_for_testing.
+
+6. Write back into {planFile} the "feature1StoryId" of every story created in step 4, and
+   nothing else. Do not touch the lanes, the acceptance criteria, the estimates or
+   "feature1FeatureRef" — this run reports what is here, it does not change it.
+
+7. Finish with one line per thing you changed, and one line per thing you could not,
+   then as the last line exactly: SYNCED {featureRef}
+
+Hard rules:
+• Never create_feature, and never delete anything in Feature1. A story removed from the
+  plan here is left alone there and named in your summary — deleting someone's work
+  because a plan was edited is not a sync.
+• Do not call generate_prompts_for_all_acs: that starts work, and this run is bookkeeping.
+• Never move a story further along than its lane here says. This board is the truth being
+  copied, not a starting point.
+• Do not modify any other file, do not implement anything, do not run docker or git.
+• If a step fails, say which and why, and carry on with the rest: a Feature1 that is right
+  about the PRD and four stories out of five beats one that stopped at the first error.

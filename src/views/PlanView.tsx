@@ -717,13 +717,26 @@ function FailedRaise({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
  */
 function Feature1Push({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
   if (!c.tenantConnected) return null;
+  // Filed once is not filed for ever: the spec gets refined and the stories
+  // move, and Feature1 keeps whatever it was told first unless something says
+  // otherwise. The link is the label; bringing it up to date is the button.
   if (plan.feature1FeatureRef) {
     return (
-      <span
-        title="This feature is in Feature1 — its stories and acceptance criteria are linked"
-        className="font-mono text-[11.5px] text-muted"
-      >
-        Feature1 · {plan.feature1FeatureRef}
+      <span className="flex items-center gap-2">
+        <span
+          title="This feature is in Feature1 — its stories and acceptance criteria are linked"
+          className="font-mono text-[11.5px] text-muted"
+        >
+          Feature1 · {plan.feature1FeatureRef}
+        </span>
+        <button
+          onClick={() => void c.syncFeature()}
+          disabled={c.busy || c.syncingFeature}
+          title="Send the current spec, the stories added since, and where every story has got to"
+          className="btn-secondary h-8 px-3.5 disabled:opacity-50"
+        >
+          {c.syncingFeature ? 'Syncing…' : 'Sync'}
+        </button>
       </span>
     );
   }

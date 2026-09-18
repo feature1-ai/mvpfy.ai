@@ -7,6 +7,7 @@ import {
   startTriageRun,
   startGitAuthRun,
   startRaisePrRun,
+  startSyncFeatureRun,
 } from './agentRunner';
 import type { Project, RunExitEvent } from '../../shared/types';
 
@@ -236,4 +237,37 @@ describe('the workspace contract', () => {
       expect(prompt).not.toMatch(/\{[a-zA-Z]\w*\}/);
     });
   }
+});
+
+describe('startSyncFeatureRun', () => {
+  it('sends the feature reference, so the run updates rather than files again', async () => {
+    // The whole difference between this and a push: the feature already exists.
+    // A run that did not know which one would create a second and split its
+    // history in two.
+    let captured = '';
+    vi.stubGlobal('window', {
+      mvpfy: {
+        runAgent: async (req: { promptText: string }) => {
+          captured = req.promptText;
+        },
+      },
+    });
+    try {
+      await startSyncFeatureRun(
+        { id: 'p', localPath: '/repo', repos: [] } as unknown as Project,
+        { defaultAgent: 'claude', codexModel: 'x', claudeModel: '', defaultStack: '' },
+        'paging',
+        'FEA-142',
+        'let me page through products',
+        { url: 'https://acme-mcp.feature1.ai/mcp/' }
+      );
+      expect(captured).toContain('FEA-142');
+      expect(captured).toContain('let me page through products');
+      expect(captured).toMatch(/Never call create_feature/i);
+      // The sync must not silently start over from an empty board.
+      expect(captured).toMatch(/already in Feature1/i);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

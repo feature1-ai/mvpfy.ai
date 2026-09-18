@@ -13,6 +13,7 @@ import planSpecTemplate from '../prompts/plan-spec.txt?raw';
 import planImplementTemplate from '../prompts/plan-implement.txt?raw';
 import pullFeatureTemplate from '../prompts/pull-feature.txt?raw';
 import pushFeatureTemplate from '../prompts/push-feature.txt?raw';
+import syncFeatureTemplate from '../prompts/sync-feature.txt?raw';
 import installToolsTemplate from '../prompts/install-tools.txt?raw';
 import {
   AgentKind,
@@ -137,6 +138,7 @@ export type RunKind =
   | 'plan-story'
   | 'raise-pr'
   | 'push-feature'
+  | 'sync-feature'
   | 'install-tools'
   | 'seed'
   | 'git-auth';
@@ -500,6 +502,43 @@ export async function startPushFeatureRun(
     mcp,
   });
   return { runId, kind: 'push-feature', projectId: project.id, planSlug };
+}
+
+/**
+ * Bring an already-filed feature up to date: a refined spec, stories that have
+ * moved, stories that did not exist at the first push.
+ *
+ * Separate from the push rather than a branch inside it, because almost nothing
+ * is shared. The push creates; this one updates, must never create the feature
+ * again, and has to reason about what is already on the other side — which is
+ * the part a single prompt doing both would get wrong under pressure.
+ */
+export async function startSyncFeatureRun(
+  project: Project,
+  settings: Settings,
+  planSlug: string,
+  featureRef: string,
+  originalAsk: string,
+  mcp: RunAgentMcp,
+  session?: RunSession
+): Promise<RunHandle> {
+  const runId = makeRunId('syncfeature');
+  const cfg = configDirFor(project.mode);
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(syncFeatureTemplate, {
+      resumeNote: resumeNoteFor(session),
+      repoPath: project.localPath,
+      featureRef,
+      originalAsk: originalAsk.trim() || '(not recorded — this feature predates mvpfy keeping it)',
+      planFile: cfg + planFileFor(planSlug),
+      specFile: cfg + specFileFor(planSlug),
+    }),
+    ...agentFor(settings),
+    mcp,
+  });
+  return { runId, kind: 'sync-feature', projectId: project.id, planSlug };
 }
 
 /**

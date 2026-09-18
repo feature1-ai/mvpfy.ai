@@ -168,6 +168,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   pushFeature(): Promise<boolean>;
   /** True while the active feature is being filed in Feature1. */
   pushingFeature: boolean;
+  /** Bring an already-filed feature up to date: spec, stories, their state. */
+  syncFeature(): Promise<boolean>;
+  /** True while the active feature is being brought up to date. */
+  syncingFeature: boolean;
   refineSpec(instruction: string): Promise<boolean>;
   /** The builder accepts the finished feature — the gate before its PR. */
   markFeatureTested(): Promise<boolean>;

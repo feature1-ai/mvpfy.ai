@@ -236,15 +236,19 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
         <div className="flex min-w-0 flex-col gap-5">
           {/* Environment card */}
           <section className="card overflow-hidden">
+            {/* Wraps rather than squeezes. The running state carries five
+                controls, and against a text column that may shrink they took
+                the width and left the status crushed into a column a few words
+                wide. Below the basis the buttons drop to their own line. */}
             <div
-              className={`flex items-start gap-4 px-5 py-[18px] ${s.green ? 'bg-go-bg' : 'bg-surface'}`}
+              className={`flex flex-wrap items-start gap-x-4 gap-y-3 px-5 py-[18px] ${s.green ? 'bg-go-bg' : 'bg-surface'}`}
             >
               <span
                 className={`mt-1.5 h-[9px] w-[9px] shrink-0 rounded-full ${
                   s.green ? 'dot-pulse bg-go' : s.red ? 'bg-danger' : 'bg-dot-idle'
                 }`}
               />
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 basis-[280px]">
                 <h2 className="text-[15px] font-semibold">{s.title}</h2>
                 <p className="mt-0.5 text-[13px] leading-normal text-body">{s.bodyText}</p>
                 {/* Which code is running is not a detail: accepting a story
@@ -257,7 +261,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                   </p>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                 {/* The containers are up in both states — the app answering
                     is the only difference — so the controls that act on them
                     belong in both. Waiting for an app that never answers is

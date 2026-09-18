@@ -52,6 +52,15 @@ const api: MvpfyApi = {
   installTool: (runId: string, tool: string) => ipcRenderer.invoke('install-tool', runId, tool),
   installAll: (runId: string, tools: string[]) => ipcRenderer.invoke('install-all', runId, tools),
   signInAll: (runId: string, tools: string[]) => ipcRenderer.invoke('sign-in-all', runId, tools),
+  mergeTrunk: (
+    runId: string,
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string
+  ) =>
+    ipcRenderer.invoke('merge-trunk', runId, workspacePath, dirs, projectKey, featureSlug, branch),
   installToolsAgent: (req: RunAgentRequest) => ipcRenderer.invoke('install-tools-agent', req),
   readRepoFiles: (repoPath: string, relativePaths: string[]) =>
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),

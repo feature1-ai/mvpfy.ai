@@ -9,6 +9,7 @@ import {
 import {
   startAppLogsRun,
   startSeedRun,
+  makeRunId,
   startBootstrapPlanRun,
   startBootstrapRun,
   startDockerRun,
@@ -297,10 +298,58 @@ export function useProjectActions(
       refreshFiles();
     });
 
+  /**
+   * Bring the workspace up to date with everyone else's work.
+   *
+   * A plain pull is wrong whenever a feature is being tested: the workspace is
+   * then detached at one of that feature's commits, and pulling into a detached
+   * HEAD updates nothing anyone will see. So the feature is put down first, the
+   * trunk is pulled onto the trunk, the new trunk is merged into the feature's
+   * own branch in its own checkout, and the feature is picked back up — now
+   * standing on top of what everyone else has landed rather than beside it.
+   *
+   * Each step waits for the one before it. They are separate runs so the log
+   * says which part failed, and so a merge conflict stops at the merge with the
+   * pull already done rather than undoing it.
+   */
   const syncRepos = () =>
     guarded(async () => {
+      const slug = project.testingSlug ?? null;
+      const dirs = project.repos.map((r) => r.dir);
+      if (slug) {
+        await window.mvpfy.checkoutFeature(project.localPath, dirs, null);
+        updateState((prev) => ({
+          ...prev,
+          projects: prev.projects.map((p) =>
+            p.id === project.id ? { ...p, testingSlug: null } : p
+          ),
+        }));
+      }
       const handle = await startSyncRun(project);
       runsApi.track(handle);
+      if (!slug) return;
+      const code = await runsApi.completed(handle.runId);
+      // A failed pull means there is nothing new to merge, and merging a trunk
+      // that did not move would only add an empty commit.
+      if (code !== 0) return;
+      const merge = { runId: makeRunId('merge'), kind: 'sync' as const, projectId: project.id };
+      runsApi.track(merge);
+      await window.mvpfy.mergeTrunk(
+        merge.runId,
+        project.localPath,
+        dirs,
+        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+        slug,
+        `mvpfy/${slug || 'feature'}`
+      );
+      await runsApi.completed(merge.runId);
+      // Back onto the feature last, so what comes up is the merged commit and
+      // not the one it was standing on before the pull.
+      await window.mvpfy.checkoutFeature(project.localPath, dirs, slug);
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, testingSlug: slug } : p)),
+      }));
     });
 
   const startAppLogs = () =>

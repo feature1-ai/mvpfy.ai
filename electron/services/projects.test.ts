@@ -9,6 +9,7 @@ import {
   ensureInitialCommit,
   checkoutFeatureCommand,
   featureCheckedOut,
+  mergeTrunkCommand,
   raisePrCommand,
   workspaceIsEmpty,
   repoSyncCommand,
@@ -312,5 +313,22 @@ describe('workspaceIsEmpty', () => {
     expect(workspaceIsEmpty([a, b])).toBe(false);
     fs.rmSync(a, { recursive: true, force: true });
     fs.rmSync(b, { recursive: true, force: true });
+  });
+});
+
+describe('mergeTrunkCommand', () => {
+  it('produces nothing when the feature has no checkout to merge in', () => {
+    // The branch is checked out in the worktree; the workspace copy is
+    // detached at one of its commits and cannot move it. No worktree, nothing
+    // to do — and the caller must treat that as "nothing", not as a failure.
+    const dir = path.join(PROJECTS_DIR, 'shop', 'api');
+    expect(mergeTrunkCommand('shop-a1b2c3', 'paging', [dir], 'mvpfy/paging')).toBe('');
+  });
+
+  it('refuses a directory outside a managed or linked workspace', () => {
+    setLinkedRoots([]);
+    expect(() => mergeTrunkCommand('k', 'paging', ['/etc'], 'mvpfy/paging')).toThrow(
+      /restricted to managed and linked/
+    );
   });
 });

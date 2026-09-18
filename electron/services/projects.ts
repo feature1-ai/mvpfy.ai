@@ -322,6 +322,51 @@ export function linkProject(sourcePath: string): CreateProjectResult {
  * a heading per repo so the streamed log stays readable. Every directory must
  * be a managed or linked workspace path; anything else is rejected.
  */
+/**
+ * Merge the freshly pulled trunk into a feature's branch, in the feature's own
+ * checkout.
+ *
+ * The branch is checked out in the worktree, so the merge has to happen there —
+ * the workspace copy is detached at one of its commits and cannot move it. Done
+ * after the pull and before the workspace is put back on the feature, so what
+ * the builder tests is the feature ON TOP of what everyone else has landed,
+ * rather than the feature as it was the day it was branched.
+ *
+ * A conflict aborts. A worktree left half-merged breaks the next story run with
+ * an error about an unfinished merge, which is a worse place to be than simply
+ * not having merged yet — so it stops, cleanly, and says so.
+ */
+export function mergeTrunkCommand(
+  projectKey: string,
+  featureSlug: string,
+  dirs: string[],
+  branch: string
+): string {
+  const parts: string[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Merge is restricted to managed and linked project directories');
+    }
+    if (!hasBranch(dir, branch)) continue;
+    const tree = worktreePathFor(projectKey, featureSlug, dir);
+    if (!fs.existsSync(tree)) continue;
+    const base = defaultBranchOf(dir);
+    const q = shellQuote(tree);
+    parts.push(
+      `echo ${shellQuote(`── ${path.basename(dir)}`)} && ` +
+        // --no-edit: an editor opening on a merge message inside a spawned
+        // shell is a run that never returns.
+        `(git -C ${q} merge --no-edit ${shellQuote(base)} || ` +
+        `(git -C ${q} merge --abort ; echo ${shellQuote(
+          `${path.basename(dir)}: ${base} conflicts with ${branch} — merge it yourself, or ask for the change here`
+        )}))`
+    );
+  }
+  if (parts.length === 0) return '';
+  return parts.join(' && ');
+}
+
 export function repoSyncCommand(dirs: string[]): string {
   return dirs
     .map((d) => {

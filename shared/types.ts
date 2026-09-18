@@ -387,6 +387,15 @@ export interface MvpfyApi {
   installAll(runId: string, tools: string[]): Promise<void>;
   /** Sign in to several tools, one after another, in one run. */
   signInAll(runId: string, tools: string[]): Promise<void>;
+  /** Merge the freshly pulled trunk into a feature's branch, in its worktree. */
+  mergeTrunk(
+    runId: string,
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string
+  ): Promise<void>;
   /** Hand what is still missing to the coding agent to finish. */
   installToolsAgent(req: RunAgentRequest): Promise<void>;
   /** Install one required tool, streaming its output like any other run. */

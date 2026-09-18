@@ -17,6 +17,14 @@ export interface RunsApi {
   history: RunState[];
   track(handle: RunHandle): void;
   fail(runId: string, message: string): void;
+  /**
+   * Resolves with the exit code when this run ends.
+   *
+   * For sequences that must not overlap — pull, then merge, then check out —
+   * where launching the next step before the last one finished would have two
+   * git commands writing one repository.
+   */
+  completed(runId: string): Promise<number | null>;
   stop(runId: string): void;
   latestForProject(projectId: string): RunState | null;
 }
@@ -51,6 +59,12 @@ export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
       });
     });
     const offExit = window.mvpfy.onRunExit((ev) => {
+      finishedCodes.current.set(ev.runId, ev.code);
+      const waiters = waiting.current.get(ev.runId);
+      if (waiters) {
+        waiting.current.delete(ev.runId);
+        for (const resolve of waiters) resolve(ev.code);
+      }
       setRuns((prev) => {
         const run = prev[ev.runId];
         if (!run) return prev;
@@ -87,6 +101,21 @@ export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
     }));
   }, []);
 
+  // Resolved by the exit listener below; a run that has already finished
+  // resolves at once, so a caller that arrives late is not left waiting.
+  const waiting = useRef(new Map<string, Array<(code: number | null) => void>>());
+  const finishedCodes = useRef(new Map<string, number | null>());
+  const completed = useCallback((runId: string): Promise<number | null> => {
+    if (finishedCodes.current.has(runId)) {
+      return Promise.resolve(finishedCodes.current.get(runId) ?? null);
+    }
+    return new Promise((resolve) => {
+      const list = waiting.current.get(runId) ?? [];
+      list.push(resolve);
+      waiting.current.set(runId, list);
+    });
+  }, []);
+
   const stop = useCallback((runId: string) => {
     void window.mvpfy.stopRun(runId);
   }, []);
@@ -110,5 +139,5 @@ export function useRuns(onRunFinished?: (run: RunState) => void): RunsApi {
     [runs]
   );
 
-  return { runs, history, track, fail, stop, latestForProject };
+  return { runs, history, track, fail, completed, stop, latestForProject };
 }

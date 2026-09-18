@@ -162,7 +162,7 @@ function fillTemplate(template: string, vars: Record<string, string>): string {
   );
 }
 
-function makeRunId(prefix: string): string {
+export function makeRunId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 

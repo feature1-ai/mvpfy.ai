@@ -31,6 +31,7 @@ import {
   addWorktrees,
   checkoutFeature,
   featureCheckedOut,
+  mergeTrunkCommand,
   raisePrCommand,
   removeWorktrees,
   repoSyncCommand,
@@ -140,6 +141,31 @@ export function registerIpc(): void {
     }
     startRun(runId, repoSyncCommand(dirs), resolved);
   });
+  ipcMain.handle(
+    'merge-trunk',
+    (
+      _ev,
+      runId: string,
+      workspacePath: string,
+      dirs: string[],
+      projectKey: string,
+      featureSlug: string,
+      branch: string
+    ) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Merge is restricted to managed and linked project directories');
+      }
+      const command = mergeTrunkCommand(projectKey, featureSlug, dirs, branch);
+      // Nothing to merge is not a failure — the feature may have no checkout in
+      // any repository yet. Still a run, so the caller settles either way.
+      startRun(
+        runId,
+        command || `echo ${JSON.stringify('Nothing to merge — this feature has no checkout yet.')}`,
+        resolved
+      );
+    }
+  );
   ipcMain.handle(
     'raise-pr',
     (

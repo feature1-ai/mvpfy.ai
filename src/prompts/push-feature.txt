@@ -65,20 +65,26 @@ Do this in order:
    A story that has been implemented and accepted must not arrive as an untouched draft —
    the point of filing this is that the team sees where the work actually is.
 
-   For every story whose "lane" in the plan is NOT "todo", in the plan's order:
-   • mcp__feature1__load_workflow(session_id="<that story's workflowId from step 4>")
-   • Then, for lane "coding":
-       mark_all_acs_in_progress()
-     for lane "testing":
-       mark_all_acs_in_progress(), mark_all_acs_implementation_done(), mark_ready_for_testing()
-     for lane "done":
-       mark_all_acs_in_progress(), mark_all_acs_implementation_done(),
-       mark_all_acs_approved(), mark_ready_for_testing()
-   • These are cumulative stages, so a later state means running the earlier calls too, in
-     the order given. Do not skip ahead.
+   These calls take session_id directly, so pass each story's workflowId from step 4 on the
+   call itself. It must be the workflowId, not the story code — the endpoint takes a UUID.
+   For every story whose "lane" in the plan is NOT "todo":
+     lane "coding":
+       mark_all_acs_in_progress(session_id="<workflowId>")
+     lane "testing":
+       mark_all_acs_implementation_done(session_id="<workflowId>")
+       mark_ready_for_testing(session_id="<workflowId>")
+     lane "done":
+       mark_all_acs_approved(session_id="<workflowId>")
+       mark_ready_for_testing(session_id="<workflowId>")
+   • One call sets the state outright — there is no ladder to climb, so do NOT call the
+     earlier ones first on the way to a later one. Doing so is three round trips to reach
+     the state one call already reaches.
    • A story in lane "todo" gets none of these — a draft is already what it is.
-   • If the plan records a prUrl for a story, also call attach_pr(pr_url="<that url>")
-     while its workflow is loaded, before mark_ready_for_testing.
+   • A story with no acceptance criteria cannot be moved at all: the endpoint refuses a
+     workflow with none. If one of yours has none, say so and leave it a draft rather than
+     retrying.
+   • If the plan records a prUrl for a story, also call
+     attach_pr(session_id="<workflowId>", pr_url="<that url>") before mark_ready_for_testing.
    • If any of these calls fails, say which story and which call, and carry on with the
      rest: a board that is right about four stories out of five beats one that stopped.
 

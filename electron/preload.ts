@@ -43,6 +43,7 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('ide', runId, workspacePath, action, port),
   seed: (runId: string, workspacePath: string) => ipcRenderer.invoke('seed', runId, workspacePath),
   composeStatus: (workspacePath: string) => ipcRenderer.invoke('compose-status', workspacePath),
+  composeProgress: (workspacePath: string) => ipcRenderer.invoke('compose-progress', workspacePath),
   ideStatus: (workspacePath: string) => ipcRenderer.invoke('ide-status', workspacePath),
   cliLogin: (runId: string, tool: string) => ipcRenderer.invoke('cli-login', runId, tool),
   registerMcpServer: (runId: string, name: string, url: string) =>

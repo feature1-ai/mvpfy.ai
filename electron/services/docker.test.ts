@@ -96,8 +96,8 @@ describe('parseComposePs', () => {
 
   it('reads one object per line, which is what newer compose emits', () => {
     expect(parseComposePs([row('web', 'running'), row('db', 'exited', 1)].join('\n'))).toEqual([
-      { service: 'web', state: 'running', exitCode: 0 },
-      { service: 'db', state: 'exited', exitCode: 1 },
+      { service: 'web', state: 'running', exitCode: 0, health: '' },
+      { service: 'db', state: 'exited', exitCode: 1, health: '' },
     ]);
   });
 
@@ -109,7 +109,7 @@ describe('parseComposePs', () => {
 
   it('keeps the rows it can read when one line is torn', () => {
     expect(parseComposePs([row('web', 'running'), '{"Service":"db"'].join('\n'))).toEqual([
-      { service: 'web', state: 'running', exitCode: 0 },
+      { service: 'web', state: 'running', exitCode: 0, health: '' },
     ]);
   });
 
@@ -176,5 +176,21 @@ describe('composeCommand rebuild', () => {
 
   it('checks the daemon first, like every other action that touches containers', () => {
     expect(composeCommand('rebuild').startsWith('docker info')).toBe(true);
+  });
+});
+
+describe('parseComposePs health', () => {
+  it("carries the container's own healthcheck, which outranks any guess", () => {
+    // A stack that declares a healthcheck has already answered the question
+    // mvpfy would otherwise be inferring from silence.
+    const rows = parseComposePs(
+      '{"Service":"api","State":"running","ExitCode":0,"Health":"starting"}\n' +
+        '{"Service":"db","State":"running","ExitCode":0,"Health":"unhealthy"}'
+    );
+    expect(rows.map((r) => r.health)).toEqual(['starting', 'unhealthy']);
+  });
+
+  it('reports no healthcheck as empty rather than as a failure', () => {
+    expect(parseComposePs('{"Service":"web","State":"running","ExitCode":0}')[0].health).toBe('');
   });
 });

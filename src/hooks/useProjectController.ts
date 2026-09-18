@@ -24,6 +24,7 @@ import { parsePublishedPorts } from '../lib/publishedPort';
 import { UserStory } from '../lib/feature1Mcp';
 import { ENV_FILE_CANDIDATES } from '../lib/envFile';
 import { troubleReport } from '../lib/trouble';
+import { appVerdict } from '../lib/appHealth';
 import { StoryLane } from '../lib/plan';
 import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
@@ -332,7 +333,8 @@ export function useProjectController(
     project.status === 'running' ? appPort : null,
     setAppHealthy,
     appHealthy,
-    lastStartRunId
+    lastStartRunId,
+    project.localPath
   );
 
   // What the containers are actually doing, asked for only once the app has
@@ -524,19 +526,15 @@ function useHealthPoll(
   port: number | null,
   setHealthy: (v: boolean) => void,
   healthy: boolean,
-  /**
-   * The start this verdict is about. Every start begins the ninety seconds
-   * again — without it the count carried across restarts, so an app that had
-   * already been quiet long enough was declared unresponsive the instant a
-   * restart was issued, before it could possibly have answered. The recovery
-   * ladder then spent all three of its restarts inside two seconds and went
-   * straight to diagnosing an app nobody had waited for.
-   */
-  attempt: string
+  /** The start this verdict is about; each one is judged on its own. */
+  attempt: string,
+  /** Absent for the editor, which has no compose stack behind it. */
+  workspacePath?: string
 ): boolean {
-  // Keyed by the attempt it belongs to, so a new port, a recovery, or another
-  // start resets the count without an effect that writes state.
-  const [misses, setMisses] = useState({ key: '', n: 0 });
+  // Consecutive polls in which the stack wrote nothing new, keyed to the
+  // attempt so a restart starts the judgement over rather than inheriting it.
+  const [quiet, setQuiet] = useState({ key: '', n: 0, signature: '' });
+  const [services, setServices] = useState<ServiceState[]>([]);
   const key = `${port}:${healthy}:${attempt}`;
   useEffect(() => {
     if (!port) {
@@ -547,8 +545,27 @@ function useHealthPoll(
     const check = async () => {
       const res = await window.mvpfy.probeUrl(`http://localhost:${port}`);
       if (cancelled) return;
-      if (res.reachable) setHealthy(true);
-      else setMisses((m) => (m.key === key ? { key, n: m.n + 1 } : { key, n: 1 }));
+      if (res.reachable) {
+        setHealthy(true);
+        return;
+      }
+      if (!workspacePath) {
+        setQuiet((q) => (q.key === key ? { ...q, n: q.n + 1 } : { key, n: 1, signature: '' }));
+        return;
+      }
+      // Ask docker what is happening rather than assuming from the clock.
+      const progress = await window.mvpfy.composeProgress(workspacePath).catch(() => null);
+      if (cancelled || !progress) return;
+      setServices(progress.services);
+      setQuiet((q) =>
+        q.key === key && q.signature === progress.logSignature
+          ? { ...q, n: q.n + 1 }
+          : {
+              key,
+              n: q.key === key && q.signature !== progress.logSignature ? 0 : 1,
+              signature: progress.logSignature,
+            }
+      );
     };
     void check();
     const timer = setInterval(() => {
@@ -559,8 +576,8 @@ function useHealthPoll(
       clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [port, healthy, attempt]);
-  // ~90 seconds of silence. A container that died is already dead by then, and
-  // an app that is merely slow has usually answered.
-  return !healthy && misses.key === key && misses.n >= 45;
+  }, [port, healthy, attempt, workspacePath]);
+  if (healthy) return false;
+  if (quiet.key !== key) return false;
+  return appVerdict({ reachable: false, services, quietPolls: quiet.n }) === 'stuck';
 }

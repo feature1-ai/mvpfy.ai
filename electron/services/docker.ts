@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ComposeAction, ServiceState } from '../../shared/types';
+import { ComposeAction, ComposeProgress, ServiceState } from '../../shared/types';
 import { IS_WIN, shellQuote, spawnShellSync } from './shell';
 
 /** Docker specifics: local-context pinning, daemon checks, command builders. */
@@ -105,6 +105,9 @@ export function parseComposePs(stdout: string): ServiceState[] {
         .trim()
         .toLowerCase(),
       exitCode: Number.isFinite(Number(r.ExitCode)) ? Number(r.ExitCode) : null,
+      health: String(r.Health ?? '')
+        .trim()
+        .toLowerCase(),
     }))
     .filter((r) => r.service);
 }
@@ -131,6 +134,40 @@ export function composeStatus(workspacePath: string, linked: boolean): ServiceSt
   });
   if (result.status !== 0) return [];
   return parseComposePs(result.stdout ?? '');
+}
+
+/**
+ * What the stack is doing, and whether it is still doing anything.
+ *
+ * The second half is the point. Deciding an app has failed by counting seconds
+ * asks the wrong question — the answer depends on the machine, the size of the
+ * image and whether a build is cached — and a laptop that is merely slow gets
+ * called broken. A booting app writes: migrations, compiling, listening on.
+ * A stuck one writes nothing. So the tail of the logs is sampled, and while it
+ * keeps changing there is nothing to decide.
+ *
+ * Only the tail, so the cost does not grow with the log.
+ */
+export function composeProgress(workspacePath: string, linked: boolean): ComposeProgress {
+  const services = composeStatus(workspacePath, linked);
+  const base = linked
+    ? 'docker compose -f .mvpfy/docker-compose.mvpfy.yml --project-directory .'
+    : 'docker compose -f docker-compose.mvpfy.yml';
+  const result = spawnShellSync(`${base} logs --tail 5 --no-color`, {
+    encoding: 'utf8',
+    timeout: 15_000,
+    env: spawnEnv(),
+    cwd: workspacePath,
+  });
+  const text = result.status === 0 ? (result.stdout ?? '') : '';
+  // A hash rather than the text: this crosses IPC on every poll, and only
+  // whether it changed is ever asked.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return { services, logSignature: `${text.length}:${h.toString(16)}` };
 }
 
 /**

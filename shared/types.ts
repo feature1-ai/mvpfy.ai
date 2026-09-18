@@ -300,6 +300,23 @@ export interface ServiceState {
   service: string;
   state: string;
   exitCode: number | null;
+  /**
+   * The container's own healthcheck, when its image or the compose file
+   * defines one: 'healthy' | 'unhealthy' | 'starting'. Empty when there is
+   * none — which is not a problem, only less to go on.
+   */
+  health?: string;
+}
+
+/**
+ * Whether the stack is getting anywhere, asked of docker rather than of a
+ * clock. `logSignature` is the tail of the combined logs: while it keeps
+ * changing the app is doing something, however slowly, and a slow machine is
+ * therefore not mistaken for a stuck one.
+ */
+export interface ComposeProgress {
+  services: ServiceState[];
+  logSignature: string;
 }
 
 export interface UpdateStatus {
@@ -374,6 +391,8 @@ export interface MvpfyApi {
    * app that is still booting from one that started and died.
    */
   composeStatus(workspacePath: string): Promise<ServiceState[]>;
+  /** Container states plus whether anything is still being logged. */
+  composeProgress(workspacePath: string): Promise<ComposeProgress>;
   /** Live IDE-container state from docker (stored idePort can go stale). */
   ideStatus(workspacePath: string): Promise<{ running: boolean; port: number | null }>;
   cliLogin(runId: string, tool: string): Promise<void>;

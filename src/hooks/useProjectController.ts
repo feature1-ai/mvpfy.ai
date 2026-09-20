@@ -13,6 +13,7 @@ import {
   LAUNCH_FILE,
   READINESS_FILE,
   RepoFile,
+  FeatureRepoGit,
   ServiceState,
   configDirFor,
   planFileFor,
@@ -191,6 +192,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */
   changingFeature: boolean;
+  /** What each repository's checkout of the active feature is holding. */
+  featureGit: FeatureRepoGit[];
+  /** Commit whatever an agent left uncommitted in this feature's checkouts. */
+  commitFeatureWork(): Promise<boolean>;
   /** Implement every remaining story in the active feature, in order. */
   implementFeature(): Promise<boolean>;
   /** The feature whose stories are being worked through, if any. */

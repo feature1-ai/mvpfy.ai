@@ -182,6 +182,29 @@ export interface RepoCloneOutcome {
 export type BlankProjectRemote =
   { kind: 'create' } | { kind: 'existing'; url: string } | { kind: 'none' };
 
+/**
+ * What a feature's checkout of one repository is actually holding.
+ *
+ * Raising a pull request counts commits, so work an agent left uncommitted is
+ * invisible to it: the feature reports "nothing to raise" with the changes
+ * sitting on disk a folder away. This is what makes that legible, and it reads
+ * the repository rather than trusting any run's account of what it did.
+ */
+export interface FeatureRepoGit {
+  /** Repository directory in the workspace. */
+  repo: string;
+  /** Its checkout for this feature, empty when there is none yet. */
+  worktree: string;
+  /** Paths changed but not committed, as `git status --porcelain` reports. */
+  uncommitted: string[];
+  /** Commits on the branch that the trunk does not have — the pull request. */
+  ahead: number;
+  /** Commits the remote has not got. -1 when the branch was never pushed. */
+  unpushed: number;
+  /** A merge was started and never finished — the next run would fail on it. */
+  mergeInProgress: boolean;
+}
+
 export interface CreateProjectResult {
   ok: boolean;
   slug: string;
@@ -418,6 +441,24 @@ export interface MvpfyApi {
   installAll(runId: string, tools: string[]): Promise<void>;
   /** Sign in to several tools, one after another, in one run. */
   signInAll(runId: string, tools: string[]): Promise<void>;
+  /** What each repository's checkout of this feature is holding. */
+  featureGitStatus(
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string
+  ): Promise<FeatureRepoGit[]>;
+  /** Commit whatever is uncommitted in a feature's checkouts. */
+  commitFeatureWork(
+    runId: string,
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string,
+    message: string
+  ): Promise<void>;
   /** Merge the freshly pulled trunk into a feature's branch, in its worktree. */
   mergeTrunk(
     runId: string,

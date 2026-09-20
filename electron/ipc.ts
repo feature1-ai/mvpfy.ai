@@ -37,7 +37,9 @@ import {
   readRepoFiles,
   addWorktrees,
   checkoutFeature,
+  commitFeatureWorkCommand,
   featureCheckedOut,
+  featureGitStatus,
   mergeTrunkCommand,
   raisePrCommand,
   removeWorktrees,
@@ -156,6 +158,46 @@ export function registerIpc(): void {
     }
     startRun(runId, repoSyncCommand(dirs), resolved);
   });
+  ipcMain.handle(
+    'feature-git-status',
+    (
+      _ev,
+      workspacePath: string,
+      dirs: string[],
+      projectKey: string,
+      featureSlug: string,
+      branch: string
+    ) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Reading is restricted to managed and linked project directories');
+      }
+      return featureGitStatus(dirs, projectKey, featureSlug, branch);
+    }
+  );
+  ipcMain.handle(
+    'commit-feature-work',
+    (
+      _ev,
+      runId: string,
+      workspacePath: string,
+      dirs: string[],
+      projectKey: string,
+      featureSlug: string,
+      branch: string,
+      message: string
+    ) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Committing is restricted to managed and linked project directories');
+      }
+      startRun(
+        runId,
+        commitFeatureWorkCommand(dirs, projectKey, featureSlug, branch, message),
+        resolved
+      );
+    }
+  );
   ipcMain.handle(
     'merge-trunk',
     (

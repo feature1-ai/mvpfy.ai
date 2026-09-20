@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CreateProjectResult, RepoCloneOutcome, RepoFile } from '../../shared/types';
-import { BlankProjectRemote } from '../../shared/types';
+import { BlankProjectRemote, FeatureRepoGit } from '../../shared/types';
 import { slugFromRepoUrl } from '../../shared/slug';
 import {
   ensureDirs,
@@ -355,6 +355,99 @@ export function linkProject(sourcePath: string): CreateProjectResult {
  * a heading per repo so the streamed log stays readable. Every directory must
  * be a managed or linked workspace path; anything else is rejected.
  */
+/**
+ * Read what each repository's checkout of a feature is holding.
+ *
+ * Every question here is asked of git rather than of any run's account of
+ * itself. An agent that edited files and stopped before committing leaves work
+ * that raising a pull request cannot see — it counts commits — so the feature
+ * reports having nothing to raise while the changes sit a folder away. Same
+ * for a merge that was interrupted: the next story run fails on it, with an
+ * error about the merge rather than about anything the story did.
+ */
+export function featureGitStatus(
+  dirs: string[],
+  projectKey: string,
+  featureSlug: string,
+  branch: string
+): FeatureRepoGit[] {
+  const out: FeatureRepoGit[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) continue;
+    const tree = worktreePathFor(projectKey, featureSlug, dir);
+    const has = fs.existsSync(tree);
+    const q = shellQuote(has ? tree : dir);
+    const ask = (command: string) =>
+      spawnShellSync(`git -C ${q} ${command}`, { encoding: 'utf8', timeout: 15_000 });
+
+    const status = has ? ask('status --porcelain') : null;
+    const uncommitted =
+      status?.status === 0
+        ? status.stdout
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)
+        : [];
+    const base = defaultBranchOf(dir);
+    const ahead = hasBranch(dir, branch) ? commitsAhead(dir, base, branch) : 0;
+    // -1 rather than 0: a branch that was never pushed is a different answer
+    // from one whose commits are all on the remote already.
+    const pushedRange = ask(`rev-list --count ${shellQuote(`origin/${branch}..${branch}`)}`);
+    const unpushed = pushedRange.status === 0 ? Number(pushedRange.stdout.trim()) || 0 : -1;
+    const merge = has ? ask('rev-parse -q --verify MERGE_HEAD') : null;
+
+    out.push({
+      repo: dir,
+      worktree: has ? tree : '',
+      uncommitted,
+      ahead: ahead < 0 ? 0 : ahead,
+      unpushed,
+      mergeInProgress: merge?.status === 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * Commit whatever a feature's checkouts are holding.
+ *
+ * Deliberately a run the builder starts rather than something that happens by
+ * itself: this commits files nobody has read, and an agent that stopped before
+ * committing may have stopped for a reason. `add -A` honours .gitignore, which
+ * is the only thing standing between this and committing a stray env file — so
+ * the caller shows what will be committed before offering the button.
+ */
+export function commitFeatureWorkCommand(
+  dirs: string[],
+  projectKey: string,
+  featureSlug: string,
+  branch: string,
+  message: string
+): string {
+  const parts: string[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Committing is restricted to managed and linked project directories');
+    }
+    const tree = worktreePathFor(projectKey, featureSlug, dir);
+    if (!fs.existsSync(tree)) continue;
+    const q = shellQuote(tree);
+    parts.push(
+      `echo ${shellQuote(`── ${path.basename(dir)}`)} && ` +
+        // Nothing to commit is success: the other repositories still have work.
+        `(git -C ${q} diff --quiet && git -C ${q} diff --cached --quiet && ` +
+        `echo ${shellQuote('nothing uncommitted')} || ` +
+        `(git -C ${q} add -A && git -C ${q} commit -m ${shellQuote(message)}))`
+    );
+  }
+  if (parts.length === 0) {
+    throw new Error(`No checkout of ${branch} to commit in — implement something first.`);
+  }
+  return parts.join(' && ');
+}
+
 /**
  * Merge the freshly pulled trunk into a feature's branch, in the feature's own
  * checkout.

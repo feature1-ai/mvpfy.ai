@@ -7,6 +7,7 @@ import {
   startPushFeatureRun,
   startSyncFeatureRun,
   startFeatureChangeRun,
+  makeRunId,
   startGitAuthRun,
   startRaisePrRun,
 } from '../lib/agentRunner';
@@ -22,6 +23,7 @@ import {
   StoryLane,
 } from '../lib/plan';
 import { ControllerContext, contentOf } from './controllerContext';
+import type { FeatureRepoGit } from '../../shared/types';
 
 /** One planned feature: its parsed plan plus the live run state around it. */
 export interface FeaturePlan {
@@ -75,6 +77,10 @@ export interface PlanActions {
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */
   changingFeature: boolean;
+  /** What each repository's checkout of the active feature is holding. */
+  featureGit: FeatureRepoGit[];
+  /** Commit whatever an agent left uncommitted in this feature's checkouts. */
+  commitFeatureWork(): Promise<boolean>;
   /** Implement every remaining story in the active feature, in order. */
   implementFeature(): Promise<boolean>;
   /** The feature whose stories are being worked through, if any. */
@@ -451,6 +457,54 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       setSelectedPlanSlug(slug);
     });
 
+  // What the feature's checkouts are actually holding, read from git rather
+  // than from any run's account of itself. Re-read whenever a run of this
+  // project finishes, since that is when it can have changed.
+  const [featureGit, setFeatureGit] = useState<FeatureRepoGit[]>([]);
+  const gitKey = `${activePlan?.slug ?? ''}:${projectRuns.filter((r) => !r.running).length}`;
+  const readGit = useRef('');
+  useEffect(() => {
+    const slug = activePlan?.slug ?? '';
+    if (!slug || readGit.current === gitKey) return;
+    readGit.current = gitKey;
+    let cancelled = false;
+    void window.mvpfy
+      .featureGitStatus(
+        project.localPath,
+        project.repos.map((r) => r.dir),
+        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+        slug,
+        `mvpfy/${slug || 'feature'}`
+      )
+      .then((rows) => {
+        if (!cancelled) setFeatureGit(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setFeatureGit([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gitKey, activePlan?.slug, project.id, project.localPath, project.repos]);
+
+  const commitFeatureWork = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active?.plan) throw new Error('Open a feature first.');
+      const slug = active.slug;
+      const runId = makeRunId('commit-work');
+      runsApi.track({ runId, kind: 'sync', projectId: project.id, planSlug: slug });
+      await window.mvpfy.commitFeatureWork(
+        runId,
+        project.localPath,
+        project.repos.map((r) => r.dir),
+        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+        slug,
+        `mvpfy/${slug || 'feature'}`,
+        `${active.plan.spec.feature || slug}: work left uncommitted by an earlier run`
+      );
+    });
+
   // The inverse of pullFeature: a feature planned here is filed in Feature1.
   // Only for a feature that came from here — one that was pulled already has a
   // Feature1 record, and creating a second would split its history in two.
@@ -780,6 +834,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     approvePlan,
     implementStory,
     changeFeature,
+    featureGit,
+    commitFeatureWork,
     changingFeature: projectRuns.some(
       (r) =>
         r.handle.kind === 'feature-change' && r.running && r.handle.planSlug === activePlan?.slug

@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../paths';
 import {
   checkoutDefaultCommand,
+  commitFeatureWorkCommand,
   ensureInitialCommit,
+  featureGitStatus,
   isRemoteUrl,
   checkoutFeatureCommand,
   featureCheckedOut,
@@ -354,5 +356,30 @@ describe('isRemoteUrl', () => {
   it('refuses a half-typed address rather than failing at the first push', () => {
     expect(isRemoteUrl('https://github.com')).toBe(false);
     expect(isRemoteUrl('github.com/acme/app')).toBe(false);
+  });
+});
+
+describe('commitFeatureWorkCommand', () => {
+  it('refuses a directory outside a managed or linked workspace', () => {
+    setLinkedRoots([]);
+    expect(() => commitFeatureWorkCommand(['/etc'], 'k', 'paging', 'mvpfy/paging', 'msg')).toThrow(
+      /restricted to managed and linked/
+    );
+  });
+
+  it('says there is nothing to commit in rather than producing an empty command', () => {
+    // No checkout means the feature was never implemented. An empty command
+    // would "succeed" and leave the builder believing work had been committed.
+    const dir = path.join(PROJECTS_DIR, 'shop', 'api');
+    expect(() =>
+      commitFeatureWorkCommand([dir], 'shop-a1b2c3', 'paging', 'mvpfy/paging', 'msg')
+    ).toThrow(/implement something first/i);
+  });
+});
+
+describe('featureGitStatus', () => {
+  it('reports a repository it is not allowed to read as absent, not as clean', () => {
+    setLinkedRoots([]);
+    expect(featureGitStatus(['/etc'], 'k', 'paging', 'mvpfy/paging')).toEqual([]);
   });
 });

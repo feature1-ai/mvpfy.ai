@@ -486,6 +486,9 @@ export default function PlanView({ c, onOpenTab }: Props) {
 
       {/* git and gh say why in several lines, not one. A truncated line here
           is the difference between a report and a screenshot of a dead end. */}
+      {/* Read from git, not from any run's account of what it did. */}
+      <FeatureGitDoctor c={c} />
+
       <FailedRaise c={c} plan={plan} />
 
       {/* A run that reached Feature1 and was turned away says so only in its
@@ -819,6 +822,72 @@ function Feature1NotSignedIn({ c }: { c: ProjectController }) {
             ? 'Waiting for the browser…'
             : 'Sign in to Feature1'}
         </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * What the feature's checkouts are holding that the board cannot see.
+ *
+ * Raising a pull request counts commits, so work an agent edited and never
+ * committed is invisible to it — the feature reports having nothing to raise
+ * while the changes sit in a folder next door. An interrupted merge is the
+ * same shape of problem: the next run fails on the merge rather than on
+ * anything it was asked to do.
+ */
+function FeatureGitDoctor({ c }: { c: ProjectController }) {
+  const rows = c.featureGit;
+  const dirty = rows.filter((r) => r.uncommitted.length > 0);
+  const merging = rows.filter((r) => r.mergeInProgress);
+  if (dirty.length === 0 && merging.length === 0) return null;
+  const files = dirty.flatMap((r) =>
+    r.uncommitted.map((f) => `${r.repo.split(/[/\\]/).pop()}/${f}`)
+  );
+  return (
+    <section className="card mb-5 overflow-hidden border-warn-border">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="section-label text-warn-text">
+          {merging.length > 0 ? 'A merge was left unfinished' : 'Work here is not committed yet'}
+        </span>
+      </div>
+      <div className="flex flex-col gap-3 px-5 py-3">
+        {merging.length > 0 && (
+          <p className="text-[13px] text-body">
+            {merging.map((r) => r.repo.split(/[/\\]/).pop()).join(', ')} stopped part-way through a
+            merge. Until it is finished or abandoned, every run in that checkout fails on the merge
+            rather than on what it was asked to do. Open the folder and run{' '}
+            <code className="font-mono text-[12px]">git merge --abort</code>, or ask for it in
+            Change this feature.
+          </p>
+        )}
+        {dirty.length > 0 && (
+          <>
+            <p className="text-[13px] text-body">
+              An earlier run changed {files.length} file{files.length === 1 ? '' : 's'} and did not
+              commit. Raising a pull request counts commits, so this work would not go out with the
+              feature — and the feature would report having nothing to raise.
+            </p>
+            <ul className="max-h-[132px] overflow-auto rounded-md border border-line bg-sunken p-2 font-mono text-[11px] leading-relaxed text-muted">
+              {files.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={() => void c.commitFeatureWork()}
+                disabled={c.busy}
+                className="btn-secondary h-8 px-3.5 disabled:opacity-50"
+              >
+                Commit it to this feature
+              </button>
+              <span className="text-[11.5px] text-muted">
+                Anything your .gitignore covers is left out. Read the list first — an agent that
+                stopped before committing may have stopped for a reason.
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </section>
   );

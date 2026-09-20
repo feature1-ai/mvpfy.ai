@@ -54,6 +54,33 @@ const api: MvpfyApi = {
   installTool: (runId: string, tool: string) => ipcRenderer.invoke('install-tool', runId, tool),
   installAll: (runId: string, tools: string[]) => ipcRenderer.invoke('install-all', runId, tools),
   signInAll: (runId: string, tools: string[]) => ipcRenderer.invoke('sign-in-all', runId, tools),
+  featureGitStatus: (
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string
+  ) =>
+    ipcRenderer.invoke('feature-git-status', workspacePath, dirs, projectKey, featureSlug, branch),
+  commitFeatureWork: (
+    runId: string,
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string,
+    message: string
+  ) =>
+    ipcRenderer.invoke(
+      'commit-feature-work',
+      runId,
+      workspacePath,
+      dirs,
+      projectKey,
+      featureSlug,
+      branch,
+      message
+    ),
   mergeTrunk: (
     runId: string,
     workspacePath: string,

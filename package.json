@@ -18,6 +18,7 @@
     "package": "npm run build && electron-builder --mac --dir",
     "package:all": "npm run build && electron-builder --mac --win --linux",
     "test": "vitest run",
+    "test:codex": "npm run build:electron && node scripts/test-codex.mjs",
     "lint": "eslint . && prettier --check \"{src,electron,shared}/**/*.{ts,tsx}\"",
     "format": "prettier --write \"{src,electron,shared}/**/*.{ts,tsx}\""
   },

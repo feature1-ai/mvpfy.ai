@@ -30,8 +30,17 @@ export default tseslint.config(
   },
   {
     // Release tooling: plain Node scripts, not renderer or Electron code.
-    files: ['packaging/**/*.mjs'],
-    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+    files: ['packaging/**/*.mjs', 'scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+      },
+    },
   },
   prettier
 );

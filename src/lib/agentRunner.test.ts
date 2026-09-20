@@ -10,6 +10,31 @@ import {
   startSyncFeatureRun,
 } from './agentRunner';
 import type { Project, RunExitEvent } from '../../shared/types';
+import { DEFAULT_STATE } from '../../shared/types';
+
+describe('selected agent routing', () => {
+  it('sends a product change to Codex when Codex is selected', async () => {
+    const runAgent = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('window', { mvpfy: { runAgent } });
+    try {
+      await startInstructRun(
+        { id: 'p', localPath: '/fixture', repos: [], basePort: 4100 } as unknown as Project,
+        { ...DEFAULT_STATE.settings, defaultAgent: 'codex', codexModel: '', claudeModel: 'unused' },
+        'Fix the addition function'
+      );
+      expect(runAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: 'codex',
+          model: '',
+          repoPath: '/fixture',
+          promptText: expect.stringContaining('Fix the addition function'),
+        })
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe('PR run registration', () => {
   it('registers before IPC starts emitting output and never reinitializes afterward', async () => {

@@ -96,6 +96,19 @@ Starts the Vite dev server and launches Electron against it.
 
 ## Build & package
 
+To check the Codex backend with a real model run, sign in with `codex login`, then run:
+
+```bash
+npm run test:codex
+```
+
+This opt-in smoke test uses your Codex allowance and configured model through mvpfy's
+actual agent runner. It asks Codex to fix a tiny temporary project, checks the JSON event
+stream, and independently runs the fixture's tests. It keeps the fixture and diagnostic
+log at the printed temporary path. It does not test Docker bootstrap, Feature1 MCP,
+the Electron UI, or PR creation. Set `MVPFY_CODEX_TEST_MODEL` to test a specific model.
+The regular `npm test` command never starts this live smoke test.
+
 ```bash
 npm run build      # typecheck + build renderer and main/preload
 npm run package    # package the macOS app into release/

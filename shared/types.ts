@@ -89,6 +89,13 @@ export interface TenantConfig {
 
 export interface Settings {
   defaultAgent: AgentKind;
+  /**
+   * Model for Codex runs. Empty means "whatever `codex` is configured to use",
+   * for the same reason claudeModel works that way — and for one more: naming
+   * a model here made every Codex run fail for anyone signed in with a ChatGPT
+   * account, which rejects the model outright. A default that depends on which
+   * kind of account someone has is not a default.
+   */
   codexModel: string;
   /**
    * Model for Claude Code runs. Empty means "whatever `claude` is configured
@@ -130,11 +137,18 @@ export const DEFAULT_STATE: MvpfyState = {
   projects: [],
   settings: {
     defaultAgent: 'claude',
-    codexModel: 'gpt-5.3-codex',
+    codexModel: '',
     claudeModel: '',
     defaultStack: '',
   },
 };
+
+/**
+ * The Codex model mvpfy used to pick for everyone. A ChatGPT account refuses
+ * it, so every run failed at the first request. Nobody chose it — it was the
+ * default — so it is cleared on load rather than left to be found in Settings.
+ */
+export const RETIRED_CODEX_MODEL = 'gpt-5.3-codex';
 
 export const REQUIRED_CLIS = ['git', 'gh', 'docker', 'claude', 'codex'] as const;
 export type CliName = (typeof REQUIRED_CLIS)[number];

@@ -39,7 +39,7 @@ describe('state store', () => {
       projects: [project({ planSlugs: ['dark-mode'], mode: 'managed' })],
       settings: {
         defaultAgent: 'codex',
-        codexModel: 'gpt-5.3-codex',
+        codexModel: 'o3',
         claudeModel: 'opus',
         defaultStack: '',
       },
@@ -110,5 +110,31 @@ describe('state store', () => {
     readState(file);
     expect(isLinkedPath('/Users/pm/code/shop/api')).toBe(true);
     expect(isLinkedPath('/Users/pm/code/other')).toBe(false);
+  });
+});
+
+describe('the Codex model mvpfy used to choose', () => {
+  it('is cleared, because a ChatGPT account refuses it', () => {
+    // Every Codex run failed at the first request for anyone signed in that
+    // way. Nobody picked it — it was the default — so it does not survive.
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ projects: [], settings: { codexModel: 'gpt-5.3-codex' } }),
+      'utf8'
+    );
+    expect(readState(file).settings.codexModel).toBe('');
+  });
+
+  it('leaves a model somebody typed exactly as they typed it', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ projects: [], settings: { codexModel: 'gpt-5-codex' } }),
+      'utf8'
+    );
+    expect(readState(file).settings.codexModel).toBe('gpt-5-codex');
+  });
+
+  it('names no model by default, so codex uses its own', () => {
+    expect(DEFAULT_STATE.settings.codexModel).toBe('');
   });
 });

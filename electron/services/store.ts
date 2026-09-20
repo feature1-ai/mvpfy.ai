@@ -1,12 +1,30 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { DEFAULT_STATE, MvpfyState, Project } from '../../shared/types';
+import {
+  DEFAULT_STATE,
+  MvpfyState,
+  Project,
+  RETIRED_CODEX_MODEL,
+  Settings,
+} from '../../shared/types';
 import { ensureDirs, setLinkedRoots, STATE_FILE } from '../paths';
 
 /** Persistent app state (~/.mvpfy/state.json) — the app's Model. */
 
 function syncLinkedRoots(projects: Project[]): void {
   setLinkedRoots(projects.filter((p) => p.mode === 'linked').map((p) => p.localPath));
+}
+
+/**
+ * Clear the Codex model mvpfy used to choose for everyone.
+ *
+ * A ChatGPT account rejects it, so every Codex run failed at the first
+ * request. It was never anybody's choice, and leaving it in place would leave
+ * Codex broken for everyone who has already run mvpfy — a model somebody typed
+ * themselves is left exactly as they typed it.
+ */
+function retireBrokenCodexModel(settings: Settings): Settings {
+  return settings.codexModel === RETIRED_CODEX_MODEL ? { ...settings, codexModel: '' } : settings;
 }
 
 /** `file` overrides the state location — production always uses STATE_FILE. */
@@ -17,7 +35,7 @@ export function readState(file: string = STATE_FILE): MvpfyState {
     const state = {
       tenant: parsed.tenant ?? null,
       projects: migrateProjects(parsed.projects ?? []),
-      settings: { ...DEFAULT_STATE.settings, ...parsed.settings },
+      settings: retireBrokenCodexModel({ ...DEFAULT_STATE.settings, ...parsed.settings }),
     };
     syncLinkedRoots(state.projects);
     return state;

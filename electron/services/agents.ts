@@ -180,7 +180,10 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
       mcpConfig: needsMcpConfig ? scratch[scratch.length - 1] : undefined,
     });
   } else {
-    const model = req.model || DEFAULT_STATE.settings.codexModel;
+    // No model named means codex uses its own configured one, which is the
+    // only choice that cannot be wrong about somebody else's account.
+    const model = (req.model || DEFAULT_STATE.settings.codexModel).trim();
+    const modelFlag = model ? `--model ${q(model)} ` : '';
     if (req.mcp) {
       // Handed to the process as a real environment variable rather than a
       // `CODEX_HOME=... codex` prefix: that prefix is POSIX-only syntax, and
@@ -188,7 +191,7 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
       scratch.push(prepareCodexHome(req.runId, req.mcp));
       env = { CODEX_HOME: scratch[scratch.length - 1] };
     }
-    command = `${cdTo(repoPath)} && codex exec --model ${q(model)} --sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
+    command = `${cdTo(repoPath)} && codex exec ${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
   }
   startRun(req.runId, command, repoPath, () => removeQuietly(scratch), env);
 }

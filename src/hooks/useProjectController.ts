@@ -436,13 +436,31 @@ export function useProjectController(
   useEffect(() => {
     if (project.status !== 'queued' || autoBootstrapped.current === project.id) return;
     autoBootstrapped.current = project.id;
-    void projectActions.bootstrap().then((ok) => {
+    // An empty repository has nothing to set up. Bootstrap's whole job is to
+    // read the product and work out how to run it, so pointing it at nothing
+    // spends a run to either fail or invent a stack nobody asked for. Adding
+    // an empty repository — the one someone just made on GitHub — is a normal
+    // way to start, and it waits for the first feature to build something.
+    void (async () => {
+      const empty = await window.mvpfy
+        .workspaceEmpty(project.repos.map((r) => r.dir))
+        .catch(() => false);
+      if (empty) {
+        updateState((prev) => ({
+          ...prev,
+          projects: prev.projects.map((p) =>
+            p.id === project.id ? { ...p, status: 'cloned' } : p
+          ),
+        }));
+        return;
+      }
+      const ok = await projectActions.bootstrap();
       if (ok) return;
       updateState((prev) => ({
         ...prev,
         projects: prev.projects.map((p) => (p.id === project.id ? { ...p, status: 'cloned' } : p)),
       }));
-    });
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, project.status]);
 

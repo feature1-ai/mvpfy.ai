@@ -7,6 +7,7 @@ import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../
 import {
   checkoutDefaultCommand,
   ensureInitialCommit,
+  isRemoteUrl,
   checkoutFeatureCommand,
   featureCheckedOut,
   mergeTrunkCommand,
@@ -330,5 +331,28 @@ describe('mergeTrunkCommand', () => {
     expect(() => mergeTrunkCommand('k', 'paging', ['/etc'], 'mvpfy/paging')).toThrow(
       /restricted to managed and linked/
     );
+  });
+});
+
+describe('isRemoteUrl', () => {
+  it('accepts the forms GitHub actually hands people', () => {
+    expect(isRemoteUrl('https://github.com/acme/app.git')).toBe(true);
+    expect(isRemoteUrl('https://github.com/acme/app')).toBe(true);
+    expect(isRemoteUrl('git@github.com:acme/app.git')).toBe(true);
+    expect(isRemoteUrl('ssh://git@ssh.github.com:443/acme/app.git')).toBe(true);
+  });
+
+  it('refuses what would be handed to a shell as a remote', () => {
+    // The value reaches `git remote add`; anything with whitespace in it is
+    // not a remote, whatever else it might be.
+    expect(isRemoteUrl('https://github.com/acme/app && rm -rf /')).toBe(false);
+    expect(isRemoteUrl('')).toBe(false);
+    expect(isRemoteUrl('   ')).toBe(false);
+    expect(isRemoteUrl('my repo')).toBe(false);
+  });
+
+  it('refuses a half-typed address rather than failing at the first push', () => {
+    expect(isRemoteUrl('https://github.com')).toBe(false);
+    expect(isRemoteUrl('github.com/acme/app')).toBe(false);
   });
 });

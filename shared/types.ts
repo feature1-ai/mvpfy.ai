@@ -170,6 +170,18 @@ export interface RepoCloneOutcome {
   error?: string;
 }
 
+/**
+ * Where a brand-new project pushes to.
+ *
+ * 'existing' is for the repository somebody has already made and not yet put
+ * anything in — the usual way a project starts, and the case that previously
+ * forced a choice between a second repository nobody wanted and no remote at
+ * all. 'none' is fine too: everything but raising a pull request works without
+ * one, and one can be added later.
+ */
+export type BlankProjectRemote =
+  { kind: 'create' } | { kind: 'existing'; url: string } | { kind: 'none' };
+
 export interface CreateProjectResult {
   ok: boolean;
   slug: string;
@@ -371,7 +383,7 @@ export interface MvpfyApi {
    */
   createBlankProject(
     name: string,
-    remote: boolean
+    remote: BlankProjectRemote
   ): Promise<CreateProjectResult & { remoteError?: string }>;
   /** Chosen folders, in pick order. Empty when the dialog was cancelled. */
   pickDirectory(): Promise<string[]>;

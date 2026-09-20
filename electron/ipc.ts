@@ -1,7 +1,13 @@
 import { app, dialog, ipcMain, shell } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ComposeAction, McpFetchRequest, MvpfyState, RunAgentRequest } from '../shared/types';
+import {
+  BlankProjectRemote,
+  ComposeAction,
+  McpFetchRequest,
+  MvpfyState,
+  RunAgentRequest,
+} from '../shared/types';
 import { ensureDirs, isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
 import { removeQuietly, runAgent, runToolingAgent } from './services/agents';
 import {
@@ -63,7 +69,7 @@ export function registerIpc(): void {
   ipcMain.handle('create-project', (_ev, repoUrls: string[], link?: boolean) =>
     link ? linkProject(repoUrls[0] ?? '') : createProject(repoUrls)
   );
-  ipcMain.handle('create-blank-project', (_ev, name: string, remote: boolean) =>
+  ipcMain.handle('create-blank-project', (_ev, name: string, remote: BlankProjectRemote) =>
     createBlankProject(name, remote)
   );
   ipcMain.handle('workspace-empty', (_ev, dirs: string[]) => workspaceIsEmpty(dirs));

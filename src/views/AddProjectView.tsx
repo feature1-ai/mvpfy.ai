@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MvpfyState, Project } from '../../shared/types';
+import { BlankProjectRemote, MvpfyState, Project } from '../../shared/types';
 import { UpdateState } from '../hooks/useProjectController';
 import { allocateBasePort, newProjectId } from '../lib/state';
 
@@ -35,7 +35,8 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<'existing' | 'new'>('existing');
   const [newName, setNewName] = useState('');
-  const [withRemote, setWithRemote] = useState(true);
+  const [remoteKind, setRemoteKind] = useState<BlankProjectRemote['kind']>('create');
+  const [remoteUrl, setRemoteUrl] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const firstRun = state.projects.length === 0;
   const entries = splitEntries(text);
@@ -86,7 +87,9 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
     setError(null);
     setNotice(null);
     try {
-      const result = await window.mvpfy.createBlankProject(newName, withRemote);
+      const remote: BlankProjectRemote =
+        remoteKind === 'existing' ? { kind: 'existing', url: remoteUrl } : { kind: remoteKind };
+      const result = await window.mvpfy.createBlankProject(newName, remote);
       if (!result.ok) {
         setError(result.error || 'Could not create the project');
         return;
@@ -152,8 +155,10 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
         <NewProductPane
           name={newName}
           onName={setNewName}
-          remote={withRemote}
-          onRemote={setWithRemote}
+          remoteKind={remoteKind}
+          onRemoteKind={setRemoteKind}
+          remoteUrl={remoteUrl}
+          onRemoteUrl={setRemoteUrl}
           busy={cloning}
           onCreate={() => void startFromScratch()}
         />
@@ -255,18 +260,40 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
 function NewProductPane({
   name,
   onName,
-  remote,
-  onRemote,
+  remoteKind,
+  onRemoteKind,
+  remoteUrl,
+  onRemoteUrl,
   busy,
   onCreate,
 }: {
   name: string;
   onName: (v: string) => void;
-  remote: boolean;
-  onRemote: (v: boolean) => void;
+  remoteKind: BlankProjectRemote['kind'];
+  onRemoteKind: (v: BlankProjectRemote['kind']) => void;
+  remoteUrl: string;
+  onRemoteUrl: (v: string) => void;
   busy: boolean;
   onCreate: () => void;
 }) {
+  const ready = name.trim() !== '' && (remoteKind !== 'existing' || remoteUrl.trim() !== '');
+  const options: Array<[BlankProjectRemote['kind'], string, string]> = [
+    [
+      'create',
+      'Create one for me',
+      'A new private GitHub repository, using the CLI you are signed in to.',
+    ],
+    [
+      'existing',
+      'Use a repository I already have',
+      'For the empty repository you have just made. mvpfy pushes the first commit to it.',
+    ],
+    [
+      'none',
+      'No remote for now',
+      'Everything works except raising a pull request, which has nowhere to push.',
+    ],
+  ];
   return (
     <>
       <p className="mb-7 text-sm leading-relaxed text-body [text-wrap:pretty]">
@@ -280,31 +307,55 @@ function NewProductPane({
         value={name}
         onChange={(e) => onName(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') onCreate();
+          if (e.key === 'Enter' && ready) onCreate();
         }}
         placeholder="Invoice tracker"
         disabled={busy}
         className="h-[38px] w-full rounded-lg border border-line bg-surface px-3.5 text-[13.5px] outline-none placeholder:text-faint focus:border-muted"
       />
 
-      <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-sunken px-3.5 py-3">
-        <input
-          type="checkbox"
-          checked={remote}
-          onChange={(e) => onRemote(e.target.checked)}
-          className="mt-0.5 accent-ink"
-        />
-        <span className="text-[12.5px] leading-relaxed text-body">
-          <span className="font-medium text-ink">Create a private GitHub repository.</span> Uses the
-          GitHub CLI you are already signed in to. Without a remote everything works except raising
-          a pull request, which has nowhere to push — you can add one later.
-        </span>
-      </label>
+      <label className="section-label mb-1.5 mt-5 block">Where should it push?</label>
+      <div className="flex flex-col gap-1.5">
+        {options.map(([kind, label, note]) => (
+          <label
+            key={kind}
+            className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3.5 py-3 ${
+              remoteKind === kind ? 'border-muted bg-surface' : 'border-line bg-sunken'
+            }`}
+          >
+            <input
+              type="radio"
+              name="blank-remote"
+              checked={remoteKind === kind}
+              onChange={() => onRemoteKind(kind)}
+              disabled={busy}
+              className="mt-0.5 accent-ink"
+            />
+            <span className="text-[12.5px] leading-relaxed text-body">
+              <span className="font-medium text-ink">{label}.</span> {note}
+            </span>
+          </label>
+        ))}
+      </div>
 
-      <div className="mt-3 flex items-center gap-2.5">
+      {remoteKind === 'existing' && (
+        <input
+          value={remoteUrl}
+          onChange={(e) => onRemoteUrl(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && ready) onCreate();
+          }}
+          placeholder="https://github.com/acme/invoice-tracker.git"
+          disabled={busy}
+          spellCheck={false}
+          className="mt-2 h-[38px] w-full rounded-lg border border-line bg-surface px-3.5 font-mono text-[12.5px] outline-none placeholder:text-faint focus:border-muted"
+        />
+      )}
+
+      <div className="mt-4 flex items-center gap-2.5">
         <button
           onClick={onCreate}
-          disabled={busy || !name.trim()}
+          disabled={busy || !ready}
           className="btn-primary h-[38px] px-4 text-sm disabled:opacity-50"
         >
           {busy ? 'Creating…' : 'Create project'}

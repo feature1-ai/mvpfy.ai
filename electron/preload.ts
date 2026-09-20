@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 import {
   AgentKind,
+  BlankProjectRemote,
   ComposeAction,
   McpFetchRequest,
   MvpfyApi,
@@ -31,7 +32,7 @@ const api: MvpfyApi = {
   /** True when no repository in the workspace holds a product yet. */
   workspaceEmpty: (dirs: string[]) => ipcRenderer.invoke('workspace-empty', dirs),
   /** Start a product with no repository behind it yet. */
-  createBlankProject: (name: string, remote: boolean) =>
+  createBlankProject: (name: string, remote: BlankProjectRemote) =>
     ipcRenderer.invoke('create-blank-project', name, remote),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   deleteProject: (workspacePath: string) => ipcRenderer.invoke('delete-project', workspacePath),

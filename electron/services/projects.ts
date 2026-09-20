@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CreateProjectResult, RepoCloneOutcome, RepoFile } from '../../shared/types';
+import { BlankProjectRemote } from '../../shared/types';
 import { slugFromRepoUrl } from '../../shared/slug';
 import {
   ensureDirs,
@@ -204,6 +205,13 @@ export function workspaceIsEmpty(dirs: string[]): boolean {
   return true;
 }
 
+/** A plausible git remote: an https URL or an scp-style ssh address. */
+export function isRemoteUrl(value: string): boolean {
+  const v = value.trim();
+  if (!v || /\s/.test(v)) return false;
+  return /^https:\/\/[^/\s]+\/\S+$/.test(v) || /^(ssh:\/\/)?[\w.-]+@[^/\s:]+[:/]\S+$/.test(v);
+}
+
 /**
  * Start a product that does not exist yet.
  *
@@ -220,7 +228,7 @@ export function workspaceIsEmpty(dirs: string[]): boolean {
  */
 export function createBlankProject(
   name: string,
-  remote: boolean
+  remote: BlankProjectRemote
 ): CreateProjectResult & { remoteError?: string } {
   ensureDirs();
   const cleaned = name.trim();
@@ -249,7 +257,40 @@ export function createBlankProject(
   ensureInitialCommit(workspacePath);
 
   const repos = [{ url: '', dir: workspacePath, ok: true as const }];
-  if (!remote) return { ok: true, slug, workspacePath, repos };
+  if (remote.kind === 'none') return { ok: true, slug, workspacePath, repos };
+
+  // The project itself is fine whatever happens next — only the remote can
+  // fail here. Saying so beats throwing away a working workspace over the one
+  // part that can be added later with a single command.
+  const withRemoteError = (message: string) => ({
+    ok: true as const,
+    slug,
+    workspacePath,
+    repos: [{ url: remote.kind === 'existing' ? remote.url : '', dir: workspacePath, ok: true }],
+    remoteError: message,
+  });
+
+  if (remote.kind === 'existing') {
+    const url = remote.url.trim();
+    if (!isRemoteUrl(url)) {
+      return withRemoteError(
+        `"${url}" does not look like a git remote — expected https:// or git@`
+      );
+    }
+    // Pushed rather than only wired up, so the answer to "did that work?" is
+    // known now rather than at the first pull request. A repository with
+    // anything already in it refuses here, which is the right moment to hear it.
+    const wired = spawnShellSync(
+      `git -C ${q} remote add origin ${shellQuote(url)} && git -C ${q} push -u origin HEAD`,
+      { encoding: 'utf8', timeout: 120_000 }
+    );
+    if (wired.status !== 0) {
+      return withRemoteError(
+        (wired.stderr || wired.stdout || '').trim() || 'could not push to that repository'
+      );
+    }
+    return { ok: true, slug, workspacePath, repos: [{ url, dir: workspacePath, ok: true }] };
+  }
 
   // --source with --push wires origin and pushes main in one step, so a
   // half-made project cannot be left with a remote it never reached.
@@ -258,17 +299,9 @@ export function createBlankProject(
     { encoding: 'utf8', timeout: 120_000 }
   );
   if (created.status !== 0) {
-    // The project itself is fine — only the remote is missing. Saying so beats
-    // throwing away a working workspace over the one part that can be added
-    // later with a single command.
-    return {
-      ok: true,
-      slug,
-      workspacePath,
-      repos,
-      remoteError:
-        (created.stderr || created.stdout || '').trim() || 'gh could not create the repository',
-    };
+    return withRemoteError(
+      (created.stderr || created.stdout || '').trim() || 'gh could not create the repository'
+    );
   }
   return { ok: true, slug, workspacePath, repos };
 }

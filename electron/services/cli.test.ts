@@ -3,6 +3,7 @@ import {
   loginCommand,
   loginOpensTerminal,
   mcpAddCommand,
+  parseCodexModels,
   parseModelsFromHelp,
   signInAllCommand,
   signInNeedsOwnWindow,
@@ -130,5 +131,38 @@ describe('signInAllCommand', () => {
 
   it('refuses a tool with no sign-in at all', () => {
     expect(() => signInAllCommand(['docker'])).toThrow(/own window/i);
+  });
+});
+
+describe('parseCodexModels', () => {
+  it('reads the model codex is configured with', () => {
+    // The only list codex can honestly offer: what this person actually uses.
+    // There is no `codex models`, and --model takes any string, so its help
+    // has nothing to read the way Claude's does.
+    expect(parseCodexModels('model = "gpt-6-astra"\n')).toEqual(['gpt-6-astra']);
+  });
+
+  it('collects models from profiles and pinned projects too, without repeats', () => {
+    const toml = [
+      'model = "gpt-6-astra"',
+      '',
+      '[profiles.fast]',
+      "model = 'o4-mini'",
+      '',
+      '[projects."/Users/pm/app"]',
+      'model = "gpt-6-astra"',
+    ].join('\n');
+    expect(parseCodexModels(toml)).toEqual(['gpt-6-astra', 'o4-mini']);
+  });
+
+  it('does not mistake other model_ keys for a model', () => {
+    // model_provider names the provider, not a model — offering "openai" in
+    // the picker would produce a run that fails at the first request.
+    expect(parseCodexModels('model_provider = "openai"\nmodel_reasoning = "high"\n')).toEqual([]);
+  });
+
+  it('says nothing rather than guessing when there is no config', () => {
+    expect(parseCodexModels('')).toEqual([]);
+    expect(parseCodexModels('[projects."/Users/pm/app"]\ntrust_level = "trusted"\n')).toEqual([]);
   });
 });

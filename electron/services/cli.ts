@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { CliName, CliStatus, REQUIRED_CLIS } from '../../shared/types';
 import { terminalCommand } from './install';
 import { IS_WIN, resolveWindowsPath, shellQuote, spawnShellSync } from './shell';
@@ -123,8 +126,44 @@ export function parseModelsFromHelp(help: string): string[] {
   return [...new Set(quoted.map((q) => q.slice(1, -1)))];
 }
 
+/**
+ * Models named in a Codex config file.
+ *
+ * Codex has no way to list what an account may use — no `codex models`, and
+ * `--model` takes any string, so its help offers nothing to read the way
+ * Claude's does. What can be known is what this person actually uses: the
+ * model codex is configured with, and any named in a profile or pinned to a
+ * project. That is a real list, sourced from their own setup, and it cannot go
+ * stale the way a list written here would.
+ *
+ * `model_provider` and friends are deliberately not matched — only `model`.
+ */
+export function parseCodexModels(configToml: string): string[] {
+  const found = (configToml ?? '')
+    .split('\n')
+    .map((line) => line.match(/^\s*model\s*=\s*["']([^"']+)["']/))
+    .filter((m): m is RegExpMatchArray => Boolean(m))
+    .map((m) => m[1].trim())
+    .filter(Boolean);
+  return [...new Set(found)];
+}
+
+function codexModels(): string[] {
+  const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  try {
+    return parseCodexModels(fs.readFileSync(path.join(home, 'config.toml'), 'utf8'));
+  } catch {
+    // No config yet is the normal state of a fresh install, not a failure —
+    // the picker falls back to letting the user type a name.
+    return [];
+  }
+}
+
 /** Ask an agent CLI which models it will accept. Empty when it will not say. */
 export function agentModels(agent: CliName): string[] {
+  // Codex says nothing useful in its help; what it does have is the user's
+  // own configuration.
+  if (agent === 'codex') return codexModels();
   // codex documents --model on its `exec` subcommand, not at the top level.
   const help = agent === 'claude' ? 'claude --help' : 'codex exec --help';
   // Piped into cat on purpose: claude writes its help to a pipe and exits

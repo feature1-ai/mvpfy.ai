@@ -33,7 +33,9 @@ import {
   workspaceIsEmpty,
   deleteProject,
   linkProject,
+  addRemoteCommand,
   readRepoBranches,
+  readRepoRemotes,
   readRepoFiles,
   addWorktrees,
   checkoutFeature,
@@ -151,6 +153,17 @@ export function registerIpc(): void {
       writeRepoFile(repoPath, relativePath, content)
   );
   ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
+  ipcMain.handle('repo-remotes', (_ev, dirs: string[]) => readRepoRemotes(dirs));
+  ipcMain.handle(
+    'add-remote',
+    (_ev, runId: string, workspacePath: string, dir: string, url: string) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Remotes can only be set on managed and linked project directories');
+      }
+      startRun(runId, addRemoteCommand(dir, url), resolved);
+    }
+  );
   ipcMain.handle('repo-sync', (_ev, runId: string, workspacePath: string, dirs: string[]) => {
     const resolved = path.resolve(workspacePath);
     if (!isAllowedWorkspace(resolved)) {

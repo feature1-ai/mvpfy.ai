@@ -92,6 +92,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   startAppLogs(): Promise<boolean>;
   /** Pull the latest changes from each repo's remote into the clone. */
   syncRepos(): Promise<boolean>;
+  /** Point one repo at a remote and push what it has. */
+  addRemote(dir: string, url: string): Promise<boolean>;
   lastShipPrUrl: string | null;
   actionError: string | null;
   hasMvpfyYml: boolean;

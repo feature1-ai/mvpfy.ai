@@ -41,6 +41,8 @@ export interface ProjectActions {
   saveEnv(name: string, content: string): Promise<boolean>;
   /** Pull the latest changes from each repo's remote into the clone. */
   syncRepos(): Promise<boolean>;
+  /** Point one repo at a remote and push what it has. */
+  addRemote(dir: string, url: string): Promise<boolean>;
   startAppLogs(): Promise<boolean>;
   startIde(): Promise<boolean>;
   stopIde(): Promise<boolean>;
@@ -359,6 +361,30 @@ export function useProjectActions(
       }));
     });
 
+  // The way back for a project started with no remote. Everything but raising
+  // a pull request works without one, so "none for now" is a real choice —
+  // which it only is if there is somewhere to change your mind.
+  const addRemote = (dir: string, url: string) =>
+    guarded(async () => {
+      const address = url.trim();
+      if (!address) return;
+      const runId = makeRunId('add-remote');
+      runsApi.track({ runId, kind: 'sync', projectId: project.id });
+      await window.mvpfy.addRemote(runId, project.localPath, dir, address);
+      const code = await runsApi.completed(runId);
+      if (code !== 0) return;
+      // Only once the push worked: a url recorded for a remote that refused it
+      // would be the project claiming something that is not true.
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.id === project.id
+            ? { ...p, repos: p.repos.map((r) => (r.dir === dir ? { ...r, url: address } : r)) }
+            : p
+        ),
+      }));
+    });
+
   const startAppLogs = () =>
     guarded(async () => {
       if (appLogsRun?.running) return;
@@ -408,6 +434,7 @@ export function useProjectActions(
     dismissTriage,
     saveEnv,
     syncRepos,
+    addRemote,
     startAppLogs,
     startIde,
     stopIde,

@@ -95,6 +95,9 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),
   writeRepoFile: (repoPath: string, relativePath: string, content: string) =>
     ipcRenderer.invoke('write-repo-file', repoPath, relativePath, content),
+  repoRemotes: (dirs: string[]) => ipcRenderer.invoke('repo-remotes', dirs),
+  addRemote: (runId: string, workspacePath: string, dir: string, url: string) =>
+    ipcRenderer.invoke('add-remote', runId, workspacePath, dir, url),
   repoBranches: (dirs: string[]) => ipcRenderer.invoke('repo-branches', dirs),
   raisePullRequests: (
     runId: string,

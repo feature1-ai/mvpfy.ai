@@ -489,6 +489,10 @@ export interface MvpfyApi {
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
   repoBranches(dirs: string[]): Promise<Record<string, string>>;
+  /** The remote each repo actually points at; empty string when it has none. */
+  repoRemotes(dirs: string[]): Promise<Record<string, string>>;
+  /** Point a repo at a remote and push what it has. */
+  addRemote(runId: string, workspacePath: string, dir: string, url: string): Promise<void>;
   /** Push a feature branch and open a pull request in each repo that changed. */
   raisePullRequests(
     runId: string,

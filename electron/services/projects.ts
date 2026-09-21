@@ -14,7 +14,7 @@ import {
   WORKTREES_DIR,
 } from '../paths';
 import { ideContainerName, spawnEnv } from './docker';
-import { cdTo, shellQuote, spawnShell, spawnShellSync } from './shell';
+import { cdTo, IS_WIN, shellQuote, spawnShell, spawnShellSync } from './shell';
 
 /** Project workspace lifecycle: create (clone), read/write files, delete. */
 
@@ -841,6 +841,58 @@ export function raisePrCommand(
       );
     })
     .join(' && ');
+}
+
+/**
+ * The remote each repository actually points at, asked of git.
+ *
+ * Read rather than remembered, for the same reason the branch is: a project
+ * records the URL it was created with, and a remote added by hand afterwards —
+ * or changed, or removed — would leave that record describing something that
+ * is no longer true. Empty means no origin, which is a normal state for a
+ * project started from nothing.
+ */
+export function readRepoRemotes(dirs: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) continue;
+    const res = spawnShellSync(`git -C ${shellQuote(dir)} remote get-url origin`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    out[dir] = res.status === 0 ? res.stdout.trim() : '';
+  }
+  return out;
+}
+
+/**
+ * Point a repository at a remote and push what it already has.
+ *
+ * Pushed, not merely wired up, for the same reason creating a project pushes:
+ * `git remote add` always succeeds, so a wrong address or a repository someone
+ * cannot write to would go unnoticed until the first pull request. A remote
+ * with anything already in it refuses the push, which is the right moment to
+ * hear about it.
+ */
+export function addRemoteCommand(dir: string, url: string): string {
+  const resolved = path.resolve(dir);
+  if (!isAllowedWorkspace(resolved)) {
+    throw new Error('Remotes can only be set on managed and linked project directories');
+  }
+  const address = url.trim();
+  if (!isRemoteUrl(address)) {
+    throw new Error(`"${address}" does not look like a git remote — expected https:// or git@`);
+  }
+  const q = shellQuote(resolved);
+  // Replaces an existing origin rather than failing on it: a project that was
+  // pointed at the wrong place is exactly who needs this.
+  const alsoRun = IS_WIN ? '&' : ';';
+  return (
+    `git -C ${q} remote remove origin ${alsoRun} ` +
+    `git -C ${q} remote add origin ${shellQuote(address)} && ` +
+    `git -C ${q} push -u origin HEAD`
+  );
 }
 
 /** Current branch per repo dir (empty string when not resolvable). */

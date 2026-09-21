@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../paths';
 import {
+  addRemoteCommand,
   checkoutDefaultCommand,
   commitFeatureWorkCommand,
   ensureInitialCommit,
@@ -381,5 +382,36 @@ describe('featureGitStatus', () => {
   it('reports a repository it is not allowed to read as absent, not as clean', () => {
     setLinkedRoots([]);
     expect(featureGitStatus(['/etc'], 'k', 'paging', 'mvpfy/paging')).toEqual([]);
+  });
+});
+
+describe('addRemoteCommand', () => {
+  const dir = path.join(PROJECTS_DIR, 'shop', 'api');
+
+  it('pushes as well as wiring up, so a bad address is heard now', () => {
+    // `git remote add` always succeeds. Without the push, a wrong address or a
+    // repository nobody can write to goes unnoticed until the pull request.
+    const cmd = addRemoteCommand(dir, 'https://github.com/acme/app.git');
+    expect(cmd).toContain('remote add origin');
+    expect(cmd).toContain('push -u origin HEAD');
+  });
+
+  it('replaces an existing origin rather than failing on one', () => {
+    // A project pointed at the wrong place is exactly who needs this.
+    expect(addRemoteCommand(dir, 'https://github.com/acme/app.git')).toContain(
+      'remote remove origin'
+    );
+  });
+
+  it('refuses an address that is not one, before git sees it', () => {
+    expect(() => addRemoteCommand(dir, 'not a url')).toThrow(/does not look like a git remote/);
+    expect(() => addRemoteCommand(dir, '')).toThrow(/does not look like a git remote/);
+  });
+
+  it('refuses a directory outside a managed or linked workspace', () => {
+    setLinkedRoots([]);
+    expect(() => addRemoteCommand('/etc', 'https://github.com/acme/app.git')).toThrow(
+      /managed and linked/
+    );
   });
 });

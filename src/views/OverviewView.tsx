@@ -110,6 +110,7 @@ function RebuildButton({ c, className = '' }: { c: ProjectController; className?
 export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   const { project } = c;
   const [branches, setBranches] = useState<Record<string, string>>({});
+  const [remotes, setRemotes] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [forceArmed, setForceArmed] = useState(false);
@@ -118,6 +119,9 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   useEffect(() => {
     if (c.busy) return;
     void window.mvpfy.repoBranches(project.repos.map((r) => r.dir)).then(setBranches);
+    // Asked of git rather than taken from the project record, which describes
+    // the remote it was created with and not one added since.
+    void window.mvpfy.repoRemotes(project.repos.map((r) => r.dir)).then(setRemotes);
   }, [project.repos, c.busy]);
 
   const env = envState(c);
@@ -654,20 +658,28 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </button>
             </div>
             <div className="flex min-w-0 flex-col gap-3">
-              {project.repos.map((r) => (
-                <div key={r.dir}>
-                  <button
-                    onClick={() => /^https?:/.test(r.url) && c.openExternal(r.url)}
-                    className="text-[13px] font-medium text-ink hover:text-go"
-                  >
-                    {r.url.replace(/^https?:\/\/github\.com\//, '').replace(/^\/.*\//, '')}
-                    {/^https?:/.test(r.url) && ' ↗'}
-                  </button>
-                  <p className="font-mono text-[11.5px] text-muted">
-                    {r.dir.split('/').pop()}/{branches[r.dir] ? ` · ${branches[r.dir]}` : ''}
-                  </p>
-                </div>
-              ))}
+              {project.repos.map((r) => {
+                const remote = remotes[r.dir] ?? r.url;
+                return (
+                  <div key={r.dir}>
+                    {remote ? (
+                      <button
+                        onClick={() => /^https?:/.test(remote) && c.openExternal(remote)}
+                        className="text-[13px] font-medium text-ink hover:text-go"
+                      >
+                        {remote.replace(/^https?:\/\/github\.com\//, '').replace(/^\/.*\//, '')}
+                        {/^https?:/.test(remote) && ' ↗'}
+                      </button>
+                    ) : (
+                      <span className="text-[13px] font-medium text-muted">No remote yet</span>
+                    )}
+                    <p className="font-mono text-[11.5px] text-muted">
+                      {r.dir.split('/').pop()}/{branches[r.dir] ? ` · ${branches[r.dir]}` : ''}
+                    </p>
+                    {!remote && <AddRemote c={c} dir={r.dir} />}
+                  </div>
+                );
+              })}
             </div>
           </section>
 
@@ -752,6 +764,64 @@ function PortItem({ label, port }: { label: string; port: number }) {
     <div>
       <div className="section-label">{label}</div>
       <div className="font-mono text-[13px]">localhost:{port}</div>
+    </div>
+  );
+}
+
+/**
+ * Give a repository somewhere to push, after the fact.
+ *
+ * A project can be started with no remote, and everything but raising a pull
+ * request works without one — which is only a real choice if there is a way to
+ * change your mind later. This is that way.
+ */
+function AddRemote({ c, dir }: { c: ProjectController; dir: string }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState('');
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="mt-1 text-[11.5px] text-go hover:underline">
+        Add a remote
+      </button>
+    );
+  }
+  const send = () => {
+    if (!url.trim() || c.busy) return;
+    void c.addRemote(dir, url).then((ok) => {
+      if (ok) {
+        setUrl('');
+        setOpen(false);
+      }
+    });
+  };
+  return (
+    <div className="mt-1.5 flex flex-col gap-1.5">
+      <input
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && send()}
+        placeholder="https://github.com/acme/app.git"
+        disabled={c.busy}
+        spellCheck={false}
+        autoFocus
+        className="h-[30px] w-full rounded-md border border-line bg-surface px-2.5 font-mono text-[11.5px] outline-none placeholder:text-faint focus:border-muted"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={send}
+          disabled={c.busy || !url.trim()}
+          className="btn-primary h-[26px] px-2.5 text-[11.5px] disabled:opacity-50"
+        >
+          Add and push
+        </button>
+        <button onClick={() => setOpen(false)} className="text-[11.5px] text-muted hover:text-body">
+          Cancel
+        </button>
+      </div>
+      <p className="text-[11px] leading-snug text-faint">
+        Pushes what is here, so you find out now if it is the wrong address or a repository that
+        already has something in it.
+      </p>
     </div>
   );
 }

@@ -14,6 +14,7 @@ import {
 import { mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
 import { redactSecrets } from '../lib/raiseFailure';
+import { quotaExhausted } from '../lib/quota';
 import {
   canMove,
   parsePlan,
@@ -73,6 +74,12 @@ export interface PlanActions {
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
+  /** The story whose run stopped part-way, if any — its work is still there. */
+  interruptedStory: string | null;
+  /** True when that run stopped because the agent's allowance ran out. */
+  quotaRanOut: boolean;
+  /** Pick a half-finished story back up, reading what is already there. */
+  continueStory(): Promise<boolean>;
   /** Change this feature's code in plain language; the agent commits it. */
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */
@@ -505,6 +512,20 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       );
     });
 
+  // A story sitting in Coding with nothing running is one whose run stopped
+  // before it finished. Its work is in the checkout either way.
+  const lastStoryRun = storyRuns.filter((r) => !r.running).pop();
+  const interruptedStory = !anyStoryRunning
+    ? (activePlan?.plan?.stories.find((st) => st.lane === 'coding')?.code ?? null)
+    : null;
+  const quotaRanOut = Boolean(interruptedStory) && quotaExhausted(lastStoryRun?.log);
+
+  const continueStory = () =>
+    guarded(async () => {
+      if (!interruptedStory) throw new Error('Nothing here was left half-finished.');
+      await implementStory(interruptedStory, true);
+    });
+
   // The inverse of pullFeature: a feature planned here is filed in Feature1.
   // Only for a feature that came from here — one that was pulled already has a
   // Feature1 record, and creating a second would split its history in two.
@@ -596,7 +617,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       await writePlan(activePlan.slug, { ...activePlan.plan, approved: true });
     });
 
-  const implementStory = (code: string) =>
+  const implementStory = (code: string, continuing = false) =>
     guarded(async () => {
       const slug = activePlan?.slug ?? '';
       const plan = activePlan?.plan;
@@ -666,7 +687,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         story.feature1StoryId,
         mcp,
         sessionFor(slug, false),
-        trees.ok ? (trees.paths ?? {}) : {}
+        trees.ok ? (trees.paths ?? {}) : {},
+        continuing
       );
       runsApi.track(handle);
     });
@@ -744,14 +766,19 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   const implementFeature = () =>
     guarded(async () => {
       const active = activePlan;
-      const next = active?.plan?.stories.find((st) => st.lane === 'todo');
+      // A story left in Coding is one whose run stopped part-way — the
+      // allowance ran out, or it was interrupted. Picking only from To Do meant
+      // the feature refused to go on at all, with the half-finished story
+      // sitting there and no way to resume it.
+      const stuck = active?.plan?.stories.find((st) => st.lane === 'coding');
+      const next = stuck ?? active?.plan?.stories.find((st) => st.lane === 'todo');
       if (!active || !next) {
-        throw new Error('Every story in this feature has been started already');
+        throw new Error('Every story in this feature has been accepted already');
       }
       setRunAllSlug(active.slug);
       // implementStory reports its own failures; the chain below picks up from
       // whatever it leaves behind.
-      await implementStory(next.code);
+      await implementStory(next.code, Boolean(stuck));
     });
 
   // Start the next story once the last one has landed in Testing. Waiting for
@@ -833,6 +860,9 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     testingStale,
     approvePlan,
     implementStory,
+    interruptedStory,
+    quotaRanOut,
+    continueStory,
     changeFeature,
     featureGit,
     commitFeatureWork,

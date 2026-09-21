@@ -584,7 +584,12 @@ export async function startPlanStoryRun(
   mcp?: RunAgentMcp,
   session?: RunSession,
   /** Repo directory → this feature's checkout of it. */
-  worktrees: Record<string, string> = {}
+  worktrees: Record<string, string> = {},
+  /**
+   * The previous attempt at this story stopped part-way — the allowance ran
+   * out, or it was interrupted. Its work is still in the checkout.
+   */
+  continuing = false
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
   const checkouts = Object.entries(worktrees);
@@ -605,6 +610,22 @@ export async function startPlanStoryRun(
         ? `The product manager tested the previous round and sent it back with this feedback — address it fully:\n---\n${storyFeedback}\n---`
         : '',
       feature1Block: feature1BlockFor(feature1StoryId),
+      // Without this the run starts the story over, on top of a checkout that
+      // already holds half of it — which is how the same work lands twice and
+      // the two halves disagree.
+      continuationBlock: continuing
+        ? 'A previous attempt at this story stopped before it finished — it ran out of ' +
+          'allowance, or was interrupted. Whatever it had done is still in the checkout, ' +
+          'committed or not.\n' +
+          'Before writing anything: read what is there. `git log` for what was committed ' +
+          'against this story, and `git status` and `git diff` for what was left ' +
+          'uncommitted. Work out which acceptance criteria are already met and which are ' +
+          'not.\n' +
+          'Then continue from there. Do not start the story again, do not revert what is ' +
+          'already done, and do not duplicate it. If something half-written is wrong, ' +
+          'finish it properly rather than deleting it and beginning afresh. Commit the ' +
+          'uncommitted work along with the rest when the story is done.'
+        : '',
       worktrees:
         checkouts.length > 0
           ? checkouts.map(([repo, tree]) => `   • ${repo} → ${tree}`).join('\n')

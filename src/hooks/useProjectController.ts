@@ -190,6 +190,12 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
+  /** The story whose run stopped part-way, if any — its work is still there. */
+  interruptedStory: string | null;
+  /** True when that run stopped because the agent's allowance ran out. */
+  quotaRanOut: boolean;
+  /** Pick a half-finished story back up, reading what is already there. */
+  continueStory(): Promise<boolean>;
   /** Change this feature's code in plain language; the agent commits it. */
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */

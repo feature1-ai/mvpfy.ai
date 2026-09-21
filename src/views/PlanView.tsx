@@ -486,6 +486,9 @@ export default function PlanView({ c, onOpenTab }: Props) {
 
       {/* git and gh say why in several lines, not one. A truncated line here
           is the difference between a report and a screenshot of a dead end. */}
+      {/* A run that stopped part-way, and the way to pick it back up. */}
+      <InterruptedStory c={c} />
+
       {/* Read from git, not from any run's account of what it did. */}
       <FeatureGitDoctor c={c} />
 
@@ -821,6 +824,49 @@ function Feature1NotSignedIn({ c }: { c: ProjectController }) {
           {c.feature1Login.status === 'waiting'
             ? 'Waiting for the browser…'
             : 'Sign in to Feature1'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A story whose run stopped before it finished.
+ *
+ * The allowance running out is worth saying plainly, because nothing is wrong:
+ * the code is fine, the setup is fine, and the same run works again later. Read
+ * as an ordinary failure it looks like something to debug, and the line that
+ * says otherwise is thousands of lines up a log nobody opens.
+ *
+ * Offered for any interrupted story, not only that one — whether the wording
+ * was recognised should not decide whether the work can be picked back up.
+ */
+function InterruptedStory({ c }: { c: ProjectController }) {
+  if (!c.interruptedStory) return null;
+  const quota = c.quotaRanOut;
+  return (
+    <section
+      className={`card mb-5 overflow-hidden ${quota ? 'border-warn-border' : 'border-line'}`}
+    >
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className={`section-label ${quota ? 'text-warn-text' : 'text-muted'}`}>
+          {quota
+            ? `${c.interruptedStory} stopped — the agent's allowance ran out`
+            : `${c.interruptedStory} stopped before it finished`}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <p className="max-w-[460px] text-[13px] text-body">
+          {quota
+            ? 'Nothing is wrong with the code or the setup — the run simply ran out of what your subscription allows. Whatever it had done is still in this feature’s checkout. When your allowance is back, pick it up: it reads what is already there and carries on rather than starting the story again.'
+            : 'Whatever the run had done is still in this feature’s checkout, committed or not. Picking it up reads what is already there and carries on rather than starting the story again.'}
+        </p>
+        <button
+          onClick={() => void c.continueStory()}
+          disabled={c.busy}
+          className="btn-primary h-8 shrink-0 px-3.5 disabled:opacity-50"
+        >
+          Continue {c.interruptedStory}
         </button>
       </div>
     </section>

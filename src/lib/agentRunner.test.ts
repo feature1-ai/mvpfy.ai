@@ -6,6 +6,7 @@ import {
   startReadinessFixRun,
   startTriageRun,
   startGitAuthRun,
+  startPlanStoryRun,
   startRaisePrRun,
   startSyncFeatureRun,
 } from './agentRunner';
@@ -291,6 +292,62 @@ describe('startSyncFeatureRun', () => {
       expect(captured).toMatch(/Never call create_feature/i);
       // The sync must not silently start over from an empty board.
       expect(captured).toMatch(/already in Feature1/i);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('continuing an interrupted story', () => {
+  it('tells the run that work already exists, so it does not start over', async () => {
+    // Without this the run reimplements the story on top of a checkout that
+    // already holds half of it, and the two halves disagree.
+    let captured = '';
+    vi.stubGlobal('window', {
+      mvpfy: {
+        runAgent: async (req: { promptText: string }) => {
+          captured = req.promptText;
+        },
+      },
+    });
+    try {
+      await startPlanStoryRun(
+        { id: 'p', localPath: '/repo', repos: [] } as unknown as Project,
+        { ...DEFAULT_STATE.settings },
+        'paging',
+        'US-03',
+        null,
+        undefined,
+        undefined,
+        undefined,
+        {},
+        true
+      );
+      expect(captured).toMatch(/stopped before it finished/i);
+      expect(captured).toMatch(/Do not start the story again/i);
+      expect(captured).toMatch(/git status/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('says nothing of the sort on a first attempt', async () => {
+    let captured = '';
+    vi.stubGlobal('window', {
+      mvpfy: {
+        runAgent: async (req: { promptText: string }) => {
+          captured = req.promptText;
+        },
+      },
+    });
+    try {
+      await startPlanStoryRun(
+        { id: 'p', localPath: '/repo', repos: [] } as unknown as Project,
+        { ...DEFAULT_STATE.settings },
+        'paging',
+        'US-01'
+      );
+      expect(captured).not.toMatch(/Do not start the story again/i);
     } finally {
       vi.unstubAllGlobals();
     }

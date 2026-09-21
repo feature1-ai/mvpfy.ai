@@ -487,11 +487,11 @@ export default function PlanView({ c, onOpenTab }: Props) {
 
       {/* git and gh say why in several lines, not one. A truncated line here
           is the difference between a report and a screenshot of a dead end. */}
-      {/* A run that stopped part-way, and the way to pick it back up. */}
-      <InterruptedStory c={c} />
+      {/* Whatever a stopped run left behind, and the one way to pick it up. */}
+      <ContinueFeature c={c} />
 
       {/* Read from git, not from any run's account of what it did. */}
-      <FeatureGitDoctor c={c} />
+      <UnfinishedMerge c={c} />
 
       <FailedRaise c={c} plan={plan} />
 
@@ -876,109 +876,89 @@ function PrBadges({ pr }: { pr: PullRequestState }) {
 }
 
 /**
- * A story whose run stopped before it finished.
+ * A feature that was left part-way, and the one button that picks it up.
  *
- * The allowance running out is worth saying plainly, because nothing is wrong:
- * the code is fine, the setup is fine, and the same run works again later. Read
- * as an ordinary failure it looks like something to debug, and the line that
- * says otherwise is thousands of lines up a log nobody opens.
- *
- * Offered for any interrupted story, not only that one — whether the wording
- * was recognised should not decide whether the work can be picked back up.
+ * Three things can strand a feature — a story stopped halfway, a change that
+ * never committed, or both — and from outside they are one situation: work was
+ * being done, it stopped, and it is still in the checkout. Telling them apart
+ * is not the builder's job, so it is not their button either.
  */
-function InterruptedStory({ c }: { c: ProjectController }) {
-  if (!c.interruptedStory) return null;
-  const quota = c.quotaRanOut;
+function ContinueFeature({ c }: { c: ProjectController }) {
+  const s = c.stranded;
+  if (!s) return null;
+  const what = s.story
+    ? `${s.story} stopped part-way`
+    : `work here was never committed${s.files > 1 ? ` — ${s.files} files` : ''}`;
   return (
     <section
-      className={`card mb-5 overflow-hidden ${quota ? 'border-warn-border' : 'border-line'}`}
+      className={`card mb-5 overflow-hidden ${s.quota ? 'border-warn-border' : 'border-line'}`}
     >
       <div className="flex items-center gap-2 border-b border-line px-5 py-3">
-        <span className={`section-label ${quota ? 'text-warn-text' : 'text-muted'}`}>
-          {quota
-            ? `${c.interruptedStory} stopped — the agent's allowance ran out`
-            : `${c.interruptedStory} stopped before it finished`}
+        <span className={`section-label ${s.quota ? 'text-warn-text' : 'text-muted'}`}>
+          {s.quota ? `The agent's allowance ran out — ${what}` : `This feature stopped — ${what}`}
         </span>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
         <p className="max-w-[460px] text-[13px] text-body">
-          {quota
-            ? 'Nothing is wrong with the code or the setup — the run simply ran out of what your subscription allows. Whatever it had done is still in this feature’s checkout. When your allowance is back, pick it up: it reads what is already there and carries on rather than starting the story again.'
-            : 'Whatever the run had done is still in this feature’s checkout, committed or not. Picking it up reads what is already there and carries on rather than starting the story again.'}
+          {s.quota
+            ? 'Nothing is wrong with the code or the setup — the run used up what your subscription allows. '
+            : ''}
+          Everything it had done is still in this feature&apos;s checkout. Continuing reads what is
+          already there and carries on from it — it does not start again, and it does not undo
+          anything — then works through the rest of the feature.
         </p>
-        <button
-          onClick={() => void c.continueStory()}
-          disabled={c.busy}
-          className="btn-primary h-8 shrink-0 px-3.5 disabled:opacity-50"
-        >
-          Continue {c.interruptedStory}
-        </button>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <button
+            onClick={() => void c.continueFeature()}
+            disabled={c.busy}
+            className="btn-primary h-8 px-3.5 disabled:opacity-50"
+          >
+            Continue feature
+          </button>
+          {/* Continuing needs the agent, which is the one thing you do not have
+              when the allowance is what ran out. Banking the work needs
+              nothing, so it stays reachable — quietly, as the lesser answer. */}
+          {s.files > 0 && (
+            <button
+              onClick={() => void c.commitFeatureWork()}
+              disabled={c.busy}
+              title="Commit what is on disk without finishing it — for when the agent is unavailable and you do not want the work loose"
+              className="text-[11.5px] text-muted hover:text-body disabled:opacity-50"
+            >
+              or just commit what is there
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );
 }
 
 /**
- * What the feature's checkouts are holding that the board cannot see.
+ * A merge that was started in a feature's checkout and never finished.
  *
- * Raising a pull request counts commits, so work an agent edited and never
- * committed is invisible to it — the feature reports having nothing to raise
- * while the changes sit in a folder next door. An interrupted merge is the
- * same shape of problem: the next run fails on the merge rather than on
- * anything it was asked to do.
+ * The quieter way a checkout stops working: every later run in it fails on the
+ * merge rather than on what it was asked to do, and the error never mentions a
+ * merge. Uncommitted work used to be reported here too, with its own button —
+ * it belongs to Continue feature now, which is the one answer to "a run
+ * stopped and left something behind".
  */
-function FeatureGitDoctor({ c }: { c: ProjectController }) {
-  const rows = c.featureGit;
-  const dirty = rows.filter((r) => r.uncommitted.length > 0);
-  const merging = rows.filter((r) => r.mergeInProgress);
-  if (dirty.length === 0 && merging.length === 0) return null;
-  const files = dirty.flatMap((r) =>
-    r.uncommitted.map((f) => `${r.repo.split(/[/\\]/).pop()}/${f}`)
-  );
+function UnfinishedMerge({ c }: { c: ProjectController }) {
+  const merging = c.featureGit.filter((r) => r.mergeInProgress);
+  if (merging.length === 0) return null;
+  const names = merging.map((r) => r.repo.split(/[/\\]/).pop()).join(', ');
   return (
     <section className="card mb-5 overflow-hidden border-warn-border">
       <div className="flex items-center gap-2 border-b border-line px-5 py-3">
-        <span className="section-label text-warn-text">
-          {merging.length > 0 ? 'A merge was left unfinished' : 'Work here is not committed yet'}
-        </span>
+        <span className="section-label text-warn-text">A merge was left unfinished</span>
       </div>
-      <div className="flex flex-col gap-3 px-5 py-3">
-        {merging.length > 0 && (
-          <p className="text-[13px] text-body">
-            {merging.map((r) => r.repo.split(/[/\\]/).pop()).join(', ')} stopped part-way through a
-            merge. Until it is finished or abandoned, every run in that checkout fails on the merge
-            rather than on what it was asked to do. Open the folder and run{' '}
-            <code className="font-mono text-[12px]">git merge --abort</code>, or ask for it in
-            Change this feature.
-          </p>
-        )}
-        {dirty.length > 0 && (
-          <>
-            <p className="text-[13px] text-body">
-              An earlier run changed {files.length} file{files.length === 1 ? '' : 's'} and did not
-              commit. Raising a pull request counts commits, so this work would not go out with the
-              feature — and the feature would report having nothing to raise.
-            </p>
-            <ul className="max-h-[132px] overflow-auto rounded-md border border-line bg-sunken p-2 font-mono text-[11px] leading-relaxed text-muted">
-              {files.map((f) => (
-                <li key={f}>{f}</li>
-              ))}
-            </ul>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                onClick={() => void c.commitFeatureWork()}
-                disabled={c.busy}
-                className="btn-secondary h-8 px-3.5 disabled:opacity-50"
-              >
-                Commit it to this feature
-              </button>
-              <span className="text-[11.5px] text-muted">
-                Anything your .gitignore covers is left out. Read the list first — an agent that
-                stopped before committing may have stopped for a reason.
-              </span>
-            </div>
-          </>
-        )}
+      <div className="px-5 py-3">
+        <p className="text-[13px] text-body">
+          {names} stopped part-way through a merge. Until it is finished or abandoned, every run in
+          that checkout fails on the merge rather than on what it was asked to do. Run{' '}
+          <code className="font-mono text-[12px]">git merge --abort</code> there, or ask for it in
+          Change this feature.
+        </p>
       </div>
     </section>
   );

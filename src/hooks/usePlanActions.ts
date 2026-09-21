@@ -24,7 +24,7 @@ import {
   StoryLane,
 } from '../lib/plan';
 import { ControllerContext, contentOf } from './controllerContext';
-import type { FeatureRepoGit, PullRequestState } from '../../shared/types';
+import type { FeatureRepoGit, PullRequestState, StrandedFeature } from '../../shared/types';
 
 /** One planned feature: its parsed plan plus the live run state around it. */
 export interface FeaturePlan {
@@ -74,12 +74,10 @@ export interface PlanActions {
   /** PM agrees with the PRD — reveals the active feature's story board. */
   approvePlan(): Promise<boolean>;
   implementStory(code: string): Promise<boolean>;
-  /** The story whose run stopped part-way, if any — its work is still there. */
-  interruptedStory: string | null;
-  /** True when that run stopped because the agent's allowance ran out. */
-  quotaRanOut: boolean;
-  /** Pick a half-finished story back up, reading what is already there. */
-  continueStory(): Promise<boolean>;
+  /** What this feature was left holding when a run stopped part-way. */
+  stranded: StrandedFeature | null;
+  /** Pick the feature back up wherever it stopped, and carry on to the end. */
+  continueFeature(): Promise<boolean>;
   /** Change this feature's code in plain language; the agent commits it. */
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */
@@ -546,18 +544,58 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       );
     });
 
-  // A story sitting in Coding with nothing running is one whose run stopped
-  // before it finished. Its work is in the checkout either way.
+  // What a stopped run left behind, in whatever shape it left it: a story
+  // halfway through, or work in the checkout belonging to no story at all —
+  // a change that ran out of allowance leaves the second and not the first.
+  // One answer, because there is one button.
   const lastStoryRun = storyRuns.filter((r) => !r.running).pop();
-  const interruptedStory = !anyStoryRunning
-    ? (activePlan?.plan?.stories.find((st) => st.lane === 'coding')?.code ?? null)
-    : null;
-  const quotaRanOut = Boolean(interruptedStory) && quotaExhausted(lastStoryRun?.log);
+  const strandedStory = anyStoryRunning
+    ? null
+    : (activePlan?.plan?.stories.find((st) => st.lane === 'coding')?.code ?? null);
+  const strandedFiles = anyStoryRunning
+    ? 0
+    : featureGit.reduce((n, r) => n + r.uncommitted.length, 0);
+  const stranded: StrandedFeature | null =
+    strandedStory || strandedFiles > 0
+      ? {
+          story: strandedStory,
+          files: strandedFiles,
+          quota: quotaExhausted(lastStoryRun?.log),
+        }
+      : null;
 
-  const continueStory = () =>
+  /**
+   * Carry on from wherever the feature stopped.
+   *
+   * One action for every way a run can leave a feature part-way, because from
+   * the outside they are the same situation: something was being built, it
+   * stopped, and the work is still in the checkout. Which of the three it
+   * actually is should not be the builder's problem to tell apart.
+   */
+  const continueFeature = () =>
     guarded(async () => {
-      if (!interruptedStory) throw new Error('Nothing here was left half-finished.');
-      await implementStory(interruptedStory, true);
+      const active = activePlan;
+      if (!active?.plan) throw new Error('Open a feature first.');
+      // A story halfway through is resumed, and the run-all chain is armed so
+      // the rest of the feature follows it rather than stopping at one story.
+      if (strandedStory) {
+        setRunAllSlug(active.slug);
+        await implementStory(strandedStory, true);
+        return;
+      }
+      // Work in the checkout belonging to no story: a change that stopped
+      // before it committed. Finishing it is the same run that made it.
+      if (strandedFiles > 0) {
+        await changeFeature(
+          'A previous run stopped before it finished and left its work in this checkout, ' +
+            'uncommitted. Read what is there first — git status and git diff — work out what ' +
+            'it was in the middle of, finish that, and commit it. Do not undo it and do not ' +
+            'start something else.'
+        );
+        return;
+      }
+      // Nothing half-done, so continuing means the next story.
+      await implementFeature();
     });
 
   // The inverse of pullFeature: a feature planned here is filed in Feature1.
@@ -894,9 +932,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     testingStale,
     approvePlan,
     implementStory,
-    interruptedStory,
-    quotaRanOut,
-    continueStory,
+    stranded,
+    continueFeature,
     changeFeature,
     featureGit,
     prStates,

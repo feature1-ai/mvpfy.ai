@@ -242,6 +242,22 @@ export interface PullRequestState {
   error?: string;
 }
 
+/**
+ * What a feature was left holding when a run stopped part-way.
+ *
+ * The three ways it can happen look different inside and identical outside:
+ * something was being built, it stopped, the work is still there. So they are
+ * one shape, answered by one button.
+ */
+export interface StrandedFeature {
+  /** The story left in Coding, if the run that stopped was building one. */
+  story: string | null;
+  /** Files changed and never committed, across the feature's checkouts. */
+  files: number;
+  /** The run stopped because the agent's allowance ran out, not from a fault. */
+  quota: boolean;
+}
+
 export interface CreateProjectResult {
   ok: boolean;
   slug: string;

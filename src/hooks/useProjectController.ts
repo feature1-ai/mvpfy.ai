@@ -14,6 +14,7 @@ import {
   READINESS_FILE,
   RepoFile,
   FeatureRepoGit,
+  PullRequestState,
   ServiceState,
   configDirFor,
   planFileFor,
@@ -200,6 +201,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */
   changingFeature: boolean;
+  /** What GitHub says about this feature's pull requests. */
+  prStates: PullRequestState[];
+  /** Ask GitHub again — checks go red and reviews arrive after the fact. */
+  refreshPrStates(): void;
   /** What each repository's checkout of the active feature is holding. */
   featureGit: FeatureRepoGit[];
   /** Commit whatever an agent left uncommitted in this feature's checkouts. */

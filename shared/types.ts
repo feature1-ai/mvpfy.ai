@@ -219,6 +219,29 @@ export interface FeatureRepoGit {
   mergeInProgress: boolean;
 }
 
+/**
+ * What GitHub says about one pull request mvpfy raised.
+ *
+ * The board records that a pull request was opened and then stops knowing
+ * anything: whether it merged, whether its checks went red, whether somebody
+ * asked for changes. That is the half of shipping that happens after mvpfy's
+ * part is done, and it is the half a product manager most wants to see.
+ */
+export interface PullRequestState {
+  url: string;
+  number: number;
+  title: string;
+  /** OPEN, MERGED or CLOSED. Empty when GitHub could not be asked. */
+  state: string;
+  isDraft: boolean;
+  /** Rolled up from every check: passing | failing | pending | none. */
+  checks: 'passing' | 'failing' | 'pending' | 'none';
+  /** APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or empty for none. */
+  reviewDecision: string;
+  /** Why the answer is missing, when it is. */
+  error?: string;
+}
+
 export interface CreateProjectResult {
   ok: boolean;
   slug: string;
@@ -489,6 +512,8 @@ export interface MvpfyApi {
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
   repoBranches(dirs: string[]): Promise<Record<string, string>>;
+  /** What GitHub says about each pull request raised for a feature. */
+  pullRequestStates(urls: string[]): Promise<PullRequestState[]>;
   /** The remote each repo actually points at; empty string when it has none. */
   repoRemotes(dirs: string[]): Promise<Record<string, string>>;
   /** Point a repo at a remote and push what it has. */

@@ -26,6 +26,7 @@ import {
   seedCommandFor,
 } from './services/docker';
 import { installAllCommand, installCommand, installPlans } from './services/install';
+import { pullRequestStates } from './services/github';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
   createBlankProject,
@@ -154,6 +155,7 @@ export function registerIpc(): void {
   );
   ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
   ipcMain.handle('repo-remotes', (_ev, dirs: string[]) => readRepoRemotes(dirs));
+  ipcMain.handle('pr-states', (_ev, urls: string[]) => pullRequestStates(urls));
   ipcMain.handle(
     'add-remote',
     (_ev, runId: string, workspacePath: string, dir: string, url: string) => {

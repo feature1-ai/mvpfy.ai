@@ -24,7 +24,7 @@ import {
   StoryLane,
 } from '../lib/plan';
 import { ControllerContext, contentOf } from './controllerContext';
-import type { FeatureRepoGit } from '../../shared/types';
+import type { FeatureRepoGit, PullRequestState } from '../../shared/types';
 
 /** One planned feature: its parsed plan plus the live run state around it. */
 export interface FeaturePlan {
@@ -84,6 +84,10 @@ export interface PlanActions {
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */
   changingFeature: boolean;
+  /** What GitHub says about this feature's pull requests. */
+  prStates: PullRequestState[];
+  /** Ask GitHub again — checks go red and reviews arrive after the fact. */
+  refreshPrStates(): void;
   /** What each repository's checkout of the active feature is holding. */
   featureGit: FeatureRepoGit[];
   /** Commit whatever an agent left uncommitted in this feature's checkouts. */
@@ -494,6 +498,36 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     };
   }, [gitKey, activePlan?.slug, project.id, project.localPath, project.repos]);
 
+  // What GitHub says about the pull requests this feature raised. Read on
+  // opening the feature and on request: everything interesting here happens
+  // after mvpfy's part is finished — a check goes red an hour later, a review
+  // arrives overnight, it merges while nobody is looking.
+  // Stamped with the urls it answered for, so switching features shows nothing
+  // rather than the last feature's pull requests while the next load runs.
+  const [prAnswer, setPrAnswer] = useState<{ key: string; rows: PullRequestState[] }>({
+    key: '',
+    rows: [],
+  });
+  const prUrlKey = (activePlan?.plan?.prUrls ?? []).join('|');
+  const [prNonce, setPrNonce] = useState(0);
+  const refreshPrStates = useCallback(() => setPrNonce((n) => n + 1), []);
+  useEffect(() => {
+    if (!prUrlKey) return;
+    let cancelled = false;
+    void window.mvpfy
+      .pullRequestStates(prUrlKey.split('|'))
+      .then((rows) => {
+        if (!cancelled) setPrAnswer({ key: prUrlKey, rows });
+      })
+      .catch(() => {
+        if (!cancelled) setPrAnswer({ key: prUrlKey, rows: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [prUrlKey, prNonce]);
+  const prStates = prAnswer.key === prUrlKey ? prAnswer.rows : [];
+
   const commitFeatureWork = () =>
     guarded(async () => {
       const active = activePlan;
@@ -865,6 +899,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     continueStory,
     changeFeature,
     featureGit,
+    prStates,
+    refreshPrStates,
     commitFeatureWork,
     changingFeature: projectRuns.some(
       (r) =>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { FeaturePlan, ProjectController } from '../hooks/useProjectController';
 import { needsFeature1SignIn } from '../lib/feature1Auth';
+import type { PullRequestState } from '../../shared/types';
 import {
   LANES,
   LANE_LABELS,
@@ -830,6 +831,50 @@ function Feature1NotSignedIn({ c }: { c: ProjectController }) {
   );
 }
 
+/** State, checks and review, in the three words each is worth. */
+function PrBadges({ pr }: { pr: PullRequestState }) {
+  if (pr.error) {
+    return (
+      <span title={pr.error} className="text-[11px] text-muted">
+        could not be read
+      </span>
+    );
+  }
+  const chip = (text: string, tone: 'go' | 'warn' | 'danger' | 'muted') => (
+    <span
+      key={text}
+      className={`rounded-full px-1.5 py-[1px] text-[10.5px] ${
+        tone === 'go'
+          ? 'bg-go-bg text-go'
+          : tone === 'warn'
+            ? 'bg-warn-bg text-warn-text'
+            : tone === 'danger'
+              ? 'bg-red-50 text-danger'
+              : 'bg-sunken text-muted'
+      }`}
+    >
+      {text}
+    </span>
+  );
+  const out = [];
+  if (pr.state === 'MERGED') out.push(chip('merged', 'go'));
+  else if (pr.state === 'CLOSED') out.push(chip('closed without merging', 'danger'));
+  else if (pr.isDraft) out.push(chip('draft', 'muted'));
+  else out.push(chip('open', 'muted'));
+
+  // Checks stop mattering once it is in — whatever they said, it shipped.
+  if (pr.state !== 'MERGED' && pr.state !== 'CLOSED') {
+    if (pr.checks === 'failing') out.push(chip('checks failing', 'danger'));
+    else if (pr.checks === 'pending') out.push(chip('checks running', 'warn'));
+    else if (pr.checks === 'passing') out.push(chip('checks passed', 'go'));
+    if (pr.reviewDecision === 'APPROVED') out.push(chip('approved', 'go'));
+    else if (pr.reviewDecision === 'CHANGES_REQUESTED')
+      out.push(chip('changes requested', 'danger'));
+    else if (pr.reviewDecision === 'REVIEW_REQUIRED') out.push(chip('needs review', 'warn'));
+  }
+  return <>{out}</>;
+}
+
 /**
  * A story whose run stopped before it finished.
  *
@@ -956,19 +1001,32 @@ function RaisedPullRequests({ c, plan }: { c: ProjectController; plan: ProjectPl
         </span>
       </div>
       <div className="px-5 py-3">
-        <p className="mb-2 text-[12px] text-muted">
-          The branch is on GitHub and is waiting for review. Open one to see the changes.
-        </p>
-        <div className="flex flex-col items-start gap-1">
-          {urls.map((url) => (
-            <button
-              key={url}
-              onClick={() => c.openExternal(url)}
-              className="max-w-full truncate font-mono text-[11.5px] text-go hover:underline"
-            >
-              {url.replace('https://', '')}
-            </button>
-          ))}
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <p className="text-[12px] text-muted">
+            What GitHub says about them now — checks and reviews arrive after mvpfy is done.
+          </p>
+          <button
+            onClick={() => c.refreshPrStates()}
+            className="shrink-0 text-[11.5px] text-go hover:underline"
+          >
+            Refresh
+          </button>
+        </div>
+        <div className="flex flex-col items-start gap-1.5">
+          {urls.map((url) => {
+            const pr = c.prStates.find((x) => x.url === url);
+            return (
+              <div key={url} className="flex w-full flex-wrap items-center gap-x-2 gap-y-1">
+                <button
+                  onClick={() => c.openExternal(url)}
+                  className="max-w-full truncate font-mono text-[11.5px] text-go hover:underline"
+                >
+                  {url.replace('https://', '')}
+                </button>
+                {pr && <PrBadges pr={pr} />}
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

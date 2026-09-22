@@ -57,14 +57,17 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
                 `${spent.turns.length} turn${spent.turns.length === 1 ? '' : 's'}\n` +
                 `sent ${totalIn(spent.total).toLocaleString()} tokens ` +
                 `(${spent.total.cacheRead.toLocaleString()} from cache)\n` +
-                `wrote ${spent.total.output.toLocaleString()} tokens` +
-                (spent.costUsd !== null ? `\ncost $${spent.costUsd.toFixed(4)}` : '')
+                `wrote ${spent.total.output.toLocaleString()} tokens`
               }
               className="font-mono text-[10.5px] text-slate-400"
             >
               {spent.turns.length} turn{spent.turns.length === 1 ? '' : 's'} ·{' '}
-              {shortCount(totalIn(spent.total))} in · {shortCount(spent.total.output)} out
-              {spent.costUsd !== null && ` · $${spent.costUsd.toFixed(2)}`}
+              {shortCount(totalIn(spent.total))} in
+              {/* Cache is usually most of it — a run reading 40k of context
+                  it has already sent is not consuming 40k again, and the
+                  unqualified number reads as though it were. */}
+              {spent.total.cacheRead > 0 && ` (${shortCount(spent.total.cacheRead)} cached)`} ·{' '}
+              {shortCount(spent.total.output)} out
             </span>
           )}
           {run && (

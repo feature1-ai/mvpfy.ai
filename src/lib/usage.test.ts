@@ -23,7 +23,6 @@ describe('parseUsage', () => {
     expect(u.total.output).toBe(121);
     expect(u.total.cacheRead).toBe(35885);
     expect(u.total.cacheWrite).toBe(15649);
-    expect(u.costUsd).toBeCloseTo(0.161659);
   });
 
   it('does not count the final result as another turn', () => {
@@ -34,14 +33,13 @@ describe('parseUsage', () => {
     expect(parseUsage(CLAUDE).total.input).toBe(5);
   });
 
-  it('reads Codex, which says it flat and says nothing about money', () => {
+  it('reads Codex, which says it flat', () => {
     const u = parseUsage(CODEX);
     expect(u.turns).toHaveLength(1);
     expect(u.total.input).toBe(14152);
     // Reasoning tokens are billed as output and belong in it.
     expect(u.total.output).toBe(15);
     expect(u.total.cacheRead).toBe(12160);
-    expect(u.costUsd).toBeNull();
   });
 
   it('survives a line split across two chunks of streamed output', () => {
@@ -56,7 +54,6 @@ describe('parseUsage', () => {
     const u = parseUsage('$ docker compose up -d\nContainer started');
     expect(u.turns).toEqual([]);
     expect(u.total.input).toBe(0);
-    expect(u.costUsd).toBeNull();
   });
 });
 

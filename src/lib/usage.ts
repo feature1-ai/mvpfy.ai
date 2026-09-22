@@ -6,9 +6,12 @@
  * report their usage per turn as they go; nothing was reading it.
  *
  * The two say it differently — Claude Code nests usage under `message` on each
- * assistant turn and repeats it on a final `result` that also carries a dollar
- * figure; Codex emits a flat `turn.completed` with no cost — so both shapes are
- * read and reduced to the same one.
+ * assistant turn and repeats it on a final `result`; Codex emits a flat
+ * `turn.completed` — so both shapes are read and reduced to the same one.
+ *
+ * Tokens only. Claude Code also reports a dollar figure and Codex reports
+ * none, so showing money would mean showing it for one agent and not the
+ * other — which reads as one of them being free.
  */
 export interface TurnUsage {
   input: number;
@@ -21,8 +24,6 @@ export interface TurnUsage {
 export interface RunUsage {
   turns: TurnUsage[];
   total: TurnUsage;
-  /** Dollars, when the agent said so. Claude Code does; Codex does not. */
-  costUsd: number | null;
 }
 
 const ZERO: TurnUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -34,7 +35,6 @@ const num = (v: unknown): number => {
 
 export function parseUsage(log: string | null | undefined): RunUsage {
   const turns: TurnUsage[] = [];
-  let costUsd: number | null = null;
 
   for (const line of (log ?? '').split('\n')) {
     const trimmed = line.trim();
@@ -49,14 +49,11 @@ export function parseUsage(log: string | null | undefined): RunUsage {
     }
     const type = String(event.type ?? '');
 
-    if (type === 'result') {
-      const cost = Number(event.total_cost_usd);
-      if (Number.isFinite(cost)) costUsd = cost;
-      // Deliberately not counted as a turn: whether this repeats the last
-      // turn's numbers or sums the session is not something either CLI
-      // promises, and summing the turns is right either way.
-      continue;
-    }
+    // The closing event is deliberately skipped rather than counted as a
+    // turn: whether it repeats the last turn's numbers or sums the session is
+    // not something either CLI promises, and summing the turns is right either
+    // way. Counting both would inflate every total silently.
+    if (type === 'result') continue;
 
     const usage =
       type === 'assistant'
@@ -83,7 +80,7 @@ export function parseUsage(log: string | null | undefined): RunUsage {
     }),
     { ...ZERO }
   );
-  return { turns, total, costUsd };
+  return { turns, total };
 }
 
 /** Everything the model was sent, however it was billed. */

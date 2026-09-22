@@ -395,22 +395,21 @@ function ProjectUsage({ runs }: { runs: RunState[] }) {
   const used = runs.map((r) => parseUsage(r.log)).filter((u) => u.turns.length > 0);
   if (used.length === 0) return null;
   const sent = used.reduce((n, u) => n + totalIn(u.total), 0);
+  const cached = used.reduce((n, u) => n + u.total.cacheRead, 0);
   const wrote = used.reduce((n, u) => n + u.total.output, 0);
-  const priced = used.filter((u) => u.costUsd !== null);
-  const cost = priced.reduce((n, u) => n + (u.costUsd ?? 0), 0);
+  const turns = used.reduce((n, u) => n + u.turns.length, 0);
   return (
     <span
       title={
         `${used.length} agent run${used.length === 1 ? '' : 's'} in this history\n` +
-        `sent ${sent.toLocaleString()} tokens, wrote ${wrote.toLocaleString()}` +
-        (priced.length > 0
-          ? `\ncost $${cost.toFixed(4)} across the ${priced.length} that reported it`
-          : '\nCodex does not report a cost')
+        `${turns} turn${turns === 1 ? '' : 's'}\n` +
+        `sent ${sent.toLocaleString()} tokens, ${cached.toLocaleString()} of them from cache\n` +
+        `wrote ${wrote.toLocaleString()}`
       }
       className="ml-auto font-mono text-[11px] text-muted"
     >
-      {used.length} agent runs · {shortCount(sent)} in · {shortCount(wrote)} out
-      {priced.length > 0 && ` · $${cost.toFixed(2)}`}
+      {used.length} agent runs · {shortCount(sent)} in
+      {cached > 0 && ` (${shortCount(cached)} cached)`} · {shortCount(wrote)} out
     </span>
   );
 }

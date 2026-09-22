@@ -75,3 +75,20 @@ describe('shortCount', () => {
     expect(shortCount(2_400_000)).toBe('2.4M');
   });
 });
+
+describe('per-turn detail', () => {
+  it('keeps each turn separately, not only the total', () => {
+    // The total says what a run consumed; the turns say where it went, and a
+    // long run is rarely flat — one turn reading the whole repository can
+    // dwarf twenty small ones.
+    const u = parseUsage(CLAUDE);
+    expect(u.turns.map((t) => t.output)).toEqual([1, 120]);
+    expect(u.turns.map((t) => totalIn(t))).toEqual([25769, 25770]);
+  });
+
+  it('adds up to the total, so the strip and the header cannot disagree', () => {
+    const u = parseUsage(CLAUDE);
+    const summed = u.turns.reduce((n, t) => n + totalIn(t) + t.output, 0);
+    expect(summed).toBe(totalIn(u.total) + u.total.output);
+  });
+});

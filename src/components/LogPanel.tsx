@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatLog } from '../lib/logFormat';
 import { parseUsage, shortCount, totalIn } from '../lib/usage';
+import type { TurnUsage } from '../lib/usage';
 import type { RunState } from '../lib/useRuns';
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: Props) {
   const scrollRef = useRef<HTMLPreElement>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [showTurns, setShowTurns] = useState(false);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -52,14 +54,18 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
         </div>
         <div className="flex items-center gap-2">
           {spent && (
-            <span
+            <button
+              onClick={() => setShowTurns((v) => !v)}
+              aria-expanded={showTurns}
               title={
                 `${spent.turns.length} turn${spent.turns.length === 1 ? '' : 's'}\n` +
                 `sent ${totalIn(spent.total).toLocaleString()} tokens ` +
                 `(${spent.total.cacheRead.toLocaleString()} from cache)\n` +
                 `wrote ${spent.total.output.toLocaleString()} tokens`
               }
-              className="font-mono text-[10.5px] text-slate-400"
+              className={`rounded px-1 font-mono text-[10.5px] ${
+                showTurns ? 'bg-slate-800 text-slate-200' : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               {spent.turns.length} turn{spent.turns.length === 1 ? '' : 's'} ·{' '}
               {shortCount(totalIn(spent.total))} in
@@ -68,7 +74,7 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
                   unqualified number reads as though it were. */}
               {spent.total.cacheRead > 0 && ` (${shortCount(spent.total.cacheRead)} cached)`} ·{' '}
               {shortCount(spent.total.output)} out
-            </span>
+            </button>
           )}
           {run && (
             <button
@@ -88,6 +94,7 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
           )}
         </div>
       </div>
+      {spent && showTurns && <TurnStrip turns={spent.turns} />}
       <pre
         ref={scrollRef}
         className="flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-slate-200"
@@ -99,6 +106,56 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
               ? 'This run produced no readable output. Select Raw to inspect the original events.'
               : 'Completed runs will appear here. No task needs to be running to read saved logs.')}
       </pre>
+    </div>
+  );
+}
+
+/**
+ * Every turn of a run, as one bar each.
+ *
+ * The total answers what a run consumed; this answers where it went — a long
+ * run is rarely flat, and one turn that reads the whole repository dwarfing
+ * twenty small ones is the shape worth seeing. Bars rather than a table
+ * because the question is which one is tall, not what each number was, and the
+ * numbers are on the bar anyway.
+ */
+function TurnStrip({ turns }: { turns: TurnUsage[] }) {
+  // Scaled to the biggest turn rather than to an absolute ceiling: the
+  // interesting thing is the proportion between them, and a fixed scale makes
+  // a whole run of small turns look like a flat line.
+  const peak = Math.max(...turns.map((t) => totalIn(t) + t.output), 1);
+  return (
+    <div className="flex items-end gap-[2px] overflow-x-auto border-b border-slate-800 px-3 py-2">
+      {turns.map((t, i) => {
+        const size = totalIn(t) + t.output;
+        return (
+          <div
+            key={i}
+            title={
+              `turn ${i + 1} of ${turns.length}\n` +
+              `sent ${totalIn(t).toLocaleString()}` +
+              (t.cacheRead > 0 ? ` (${t.cacheRead.toLocaleString()} cached)` : '') +
+              `\nwrote ${t.output.toLocaleString()}`
+            }
+            className="flex h-10 w-[7px] shrink-0 cursor-default flex-col justify-end"
+          >
+            {/* Written tokens on top of sent, so a turn that read a great deal
+                and wrote little reads differently from one that did the
+                reverse — they cost differently and mean different things. */}
+            <div
+              className="w-full rounded-t-[1px] bg-emerald-400"
+              style={{ height: `${Math.max((t.output / peak) * 100, size > 0 ? 2 : 0)}%` }}
+            />
+            <div
+              className="w-full bg-slate-600"
+              style={{ height: `${(totalIn(t) / peak) * 100}%` }}
+            />
+          </div>
+        );
+      })}
+      <span className="ml-2 shrink-0 self-center font-mono text-[10px] text-slate-500">
+        each bar one turn · grey sent, green written
+      </span>
     </div>
   );
 }

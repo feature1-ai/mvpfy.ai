@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatLog } from '../lib/logFormat';
+import { parseUsage, shortCount, totalIn } from '../lib/usage';
 import type { RunState } from '../lib/useRuns';
 
 interface Props {
@@ -21,6 +22,11 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
   }, [run?.log, showRaw]);
 
   const display = run ? (showRaw ? run.log : formatLog(run.log)) : '';
+  // Agent runs report what they consumed as they go, per turn. Every other
+  // kind of run — docker, git, an installer — reports nothing, and a row of
+  // zeroes beside those would be noise rather than information.
+  const usage = run ? parseUsage(run.log) : null;
+  const spent = usage && usage.turns.length > 0 ? usage : null;
 
   return (
     <div className={`flex ${heightClass} flex-col rounded-lg border border-slate-200 bg-slate-950`}>
@@ -45,6 +51,22 @@ export default function LogPanel({ run, onStop, heightClass = 'h-64', title }: P
           )}
         </div>
         <div className="flex items-center gap-2">
+          {spent && (
+            <span
+              title={
+                `${spent.turns.length} turn${spent.turns.length === 1 ? '' : 's'}\n` +
+                `sent ${totalIn(spent.total).toLocaleString()} tokens ` +
+                `(${spent.total.cacheRead.toLocaleString()} from cache)\n` +
+                `wrote ${spent.total.output.toLocaleString()} tokens` +
+                (spent.costUsd !== null ? `\ncost $${spent.costUsd.toFixed(4)}` : '')
+              }
+              className="font-mono text-[10.5px] text-slate-400"
+            >
+              {spent.turns.length} turn{spent.turns.length === 1 ? '' : 's'} ·{' '}
+              {shortCount(totalIn(spent.total))} in · {shortCount(spent.total.output)} out
+              {spent.costUsd !== null && ` · $${spent.costUsd.toFixed(2)}`}
+            </span>
+          )}
           {run && (
             <button
               onClick={() => setShowRaw((v) => !v)}

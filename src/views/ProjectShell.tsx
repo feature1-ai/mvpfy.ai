@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { MvpfyState, Project } from '../../shared/types';
 import { UpdateState, useProjectController } from '../hooks/useProjectController';
-import { RunsApi } from '../lib/useRuns';
+import { RunsApi, RunState } from '../lib/useRuns';
 import AgentView from './AgentView';
 import LogPanel from '../components/LogPanel';
+import { parseUsage, shortCount, totalIn } from '../lib/usage';
 import OverviewView from './OverviewView';
 import PlanView from './PlanView';
 
@@ -234,6 +235,7 @@ export default function ProjectShell({
                 <span className="text-[11px] text-faint">
                   Recent completed runs stay available when the app is stopped.
                 </span>
+                <ProjectUsage runs={c.runHistory} />
                 {/* Every run is kept for the session. Showing only the newest
                     meant the log explaining a failure disappeared the moment
                     anything else ran — which is exactly when it is wanted. */}
@@ -244,18 +246,27 @@ export default function ProjectShell({
                     onChange={(e) => setPickedRunId(e.target.value)}
                     className="ml-auto h-7 max-w-[280px] rounded-md border border-line bg-surface px-2 text-xs"
                   >
-                    {[...c.runHistory].reverse().map((run, i) => (
-                      <option key={run.handle.runId} value={run.handle.runId}>
-                        {i === 0 ? 'Latest — ' : ''}
-                        {RUN_LABELS[run.handle.kind] ?? run.handle.kind}
-                        {run.startedAt ? ` · ${new Date(run.startedAt).toLocaleString()}` : ''}
-                        {run.running
-                          ? ' · running'
-                          : run.exitCode === 0
-                            ? ' · completed'
-                            : ' · failed'}
-                      </option>
-                    ))}
+                    {[...c.runHistory].reverse().map((run, i) => {
+                      // Only agent runs report anything; docker and git say
+                      // nothing, and "0 tokens" beside those reads as a
+                      // measurement rather than an absence.
+                      const used = parseUsage(run.log);
+                      return (
+                        <option key={run.handle.runId} value={run.handle.runId}>
+                          {i === 0 ? 'Latest — ' : ''}
+                          {RUN_LABELS[run.handle.kind] ?? run.handle.kind}
+                          {run.startedAt ? ` · ${new Date(run.startedAt).toLocaleString()}` : ''}
+                          {run.running
+                            ? ' · running'
+                            : run.exitCode === 0
+                              ? ' · completed'
+                              : ' · failed'}
+                          {used.turns.length > 0
+                            ? ` · ${shortCount(totalIn(used.total))} in / ${shortCount(used.total.output)} out`
+                            : ''}
+                        </option>
+                      );
+                    })}
                   </select>
                 )}
               </div>
@@ -369,5 +380,37 @@ function Placeholder({
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * What every agent run in this project has consumed between them.
+ *
+ * The per-run figure answers "what did that cost"; this answers the question
+ * somebody actually has, which is whether a subscription is going to last the
+ * week. Only what is still in the history — runs age out of it — so it is a
+ * recent total rather than a lifetime one, and it says so.
+ */
+function ProjectUsage({ runs }: { runs: RunState[] }) {
+  const used = runs.map((r) => parseUsage(r.log)).filter((u) => u.turns.length > 0);
+  if (used.length === 0) return null;
+  const sent = used.reduce((n, u) => n + totalIn(u.total), 0);
+  const wrote = used.reduce((n, u) => n + u.total.output, 0);
+  const priced = used.filter((u) => u.costUsd !== null);
+  const cost = priced.reduce((n, u) => n + (u.costUsd ?? 0), 0);
+  return (
+    <span
+      title={
+        `${used.length} agent run${used.length === 1 ? '' : 's'} in this history\n` +
+        `sent ${sent.toLocaleString()} tokens, wrote ${wrote.toLocaleString()}` +
+        (priced.length > 0
+          ? `\ncost $${cost.toFixed(4)} across the ${priced.length} that reported it`
+          : '\nCodex does not report a cost')
+      }
+      className="ml-auto font-mono text-[11px] text-muted"
+    >
+      {used.length} agent runs · {shortCount(sent)} in · {shortCount(wrote)} out
+      {priced.length > 0 && ` · $${cost.toFixed(2)}`}
+    </span>
   );
 }

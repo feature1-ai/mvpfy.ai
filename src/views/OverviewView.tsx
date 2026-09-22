@@ -3,6 +3,7 @@ import { ProjectController } from '../hooks/useProjectController';
 import { parsePorts } from '../lib/ports';
 import { latestActivity } from '../lib/runActivity';
 import BootstrapFlowCard from './BootstrapFlowCard';
+import QrCode from '../components/QrCode';
 import EnvVarsCard from './EnvVarsCard';
 
 interface Props {
@@ -380,6 +381,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
           {/* Only while it is up: sharing an app that is not running shares a
               connection refused, which is worse than not offering it. */}
           {env.kind === 'running' && <ShareApp c={c} />}
+
+          {/* A mobile preview was being read out of mvpfy.yml and shown
+              nowhere. Its own note says to scan a QR, and there was none. */}
+          <MobileApp c={c} />
 
           {/* Setup board — the bootstrap run as cards the PM can follow */}
           <BootstrapFlowCard c={c} />
@@ -872,8 +877,11 @@ function ShareApp({ c }: { c: ProjectController }) {
   if (c.shareUrl) {
     return (
       <section className="card border-go/30 px-5 py-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          {/* The address is four random words and a domain — nobody is typing
+              that into a phone. */}
+          <QrCode value={c.shareUrl} label="Scan to open on a phone" />
+          <div className="min-w-0 flex-1">
             <span className="section-label text-go">
               Shared — anyone with this link can open it
             </span>
@@ -884,7 +892,7 @@ function ShareApp({ c }: { c: ProjectController }) {
               {c.shareUrl.replace('https://', '')}
             </button>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <button
               onClick={() => {
                 void navigator.clipboard.writeText(c.shareUrl!);
@@ -924,6 +932,31 @@ function ShareApp({ c }: { c: ProjectController }) {
       >
         {c.shareStarting ? 'Getting a link…' : 'Share'}
       </button>
+    </section>
+  );
+}
+
+/**
+ * The app on an actual phone, when the product is one.
+ *
+ * mvpfy.yml can carry an Expo URL, and it has been parsed since before this
+ * was written — it just had nowhere to appear, which is the same as not being
+ * read at all. Its own note tells the product manager to scan a QR code.
+ */
+function MobileApp({ c }: { c: ProjectController }) {
+  const m = c.mobilePreview;
+  if (!m || (!m.expoUrl && !m.note)) return null;
+  return (
+    <section className="card flex flex-wrap items-center gap-4 px-5 py-3.5">
+      {m.expoUrl && <QrCode value={m.expoUrl} label="Scan in Expo Go" />}
+      <div className="min-w-0 flex-1">
+        <span className="section-label">On your phone</span>
+        {m.note && <p className="mt-1 text-[13px] text-body">{m.note}</p>}
+        {m.expoUrl && (
+          <p className="mt-1 break-all font-mono text-[11.5px] text-muted">{m.expoUrl}</p>
+        )}
+        {m.kind && <p className="mt-1 text-[11px] text-faint">{m.kind}</p>}
+      </div>
     </section>
   );
 }

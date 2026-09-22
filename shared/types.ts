@@ -528,6 +528,10 @@ export interface MvpfyApi {
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
   repoBranches(dirs: string[]): Promise<Record<string, string>>;
+  /** True when the tunnel client is installed. */
+  canShare(): Promise<boolean>;
+  /** Put a locally-running app on the internet until the run is stopped. */
+  startShare(runId: string, workspacePath: string, port: number): Promise<void>;
   /** What GitHub says about each pull request raised for a feature. */
   pullRequestStates(urls: string[]): Promise<PullRequestState[]>;
   /** The remote each repo actually points at; empty string when it has none. */

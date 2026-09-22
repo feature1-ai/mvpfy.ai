@@ -20,6 +20,7 @@ import {
 import { preflightAuth } from '../lib/cliCheck';
 import { RunState } from '../lib/useRuns';
 import { ControllerContext, contentOf } from './controllerContext';
+import { parseTunnelUrl, tunnelRefused } from '../lib/tunnel';
 
 /** Environment and workspace lifecycle: bootstrap, docker, triage, IDE, env
  *  file, repo sync, and project removal. */
@@ -43,6 +44,18 @@ export interface ProjectActions {
   syncRepos(): Promise<boolean>;
   /** Point one repo at a remote and push what it has. */
   addRemote(dir: string, url: string): Promise<boolean>;
+  /** The public address this app is shared on, while a share is running. */
+  shareUrl: string | null;
+  /** True once a share has started but before its address exists. */
+  shareStarting: boolean;
+  /** Cloudflare refused the tunnel — the link is not coming. */
+  shareRefused: boolean;
+  /** True when the tunnel client is installed. */
+  canShare: boolean;
+  /** Put the running app on the internet until it is stopped. */
+  startShare(): Promise<boolean>;
+  /** Take it off again. */
+  stopShare(): void;
   startAppLogs(): Promise<boolean>;
   startIde(): Promise<boolean>;
   stopIde(): Promise<boolean>;
@@ -385,6 +398,32 @@ export function useProjectActions(
       }));
     });
 
+  // A share is a run like any other, which is what makes stopping it, reading
+  // its output and surviving a crash all work without anything new.
+  const shareRun = projectRuns.filter((r) => r.handle.kind === 'share').pop() ?? null;
+  const liveShare = shareRun?.running ? shareRun : null;
+  const shareUrl = liveShare ? parseTunnelUrl(liveShare.log) : null;
+  const shareRefused = Boolean(liveShare) && tunnelRefused(liveShare!.log);
+  const [canShare, setCanShare] = useState(false);
+  useEffect(() => {
+    void window.mvpfy
+      .canShare()
+      .then(setCanShare)
+      .catch(() => setCanShare(false));
+  }, []);
+
+  const startShare = () =>
+    guarded(async () => {
+      if (liveShare) return;
+      const runId = makeRunId('share');
+      runsApi.track({ runId, kind: 'share', projectId: project.id });
+      await window.mvpfy.startShare(runId, project.localPath, project.basePort);
+    });
+
+  const stopShare = () => {
+    if (liveShare) runsApi.stop(liveShare.handle.runId);
+  };
+
   const startAppLogs = () =>
     guarded(async () => {
       if (appLogsRun?.running) return;
@@ -435,6 +474,12 @@ export function useProjectActions(
     saveEnv,
     syncRepos,
     addRemote,
+    shareUrl,
+    shareStarting: Boolean(liveShare) && !shareUrl && !shareRefused,
+    shareRefused,
+    canShare,
+    startShare,
+    stopShare,
     startAppLogs,
     startIde,
     stopIde,

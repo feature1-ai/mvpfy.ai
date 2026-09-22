@@ -134,6 +134,7 @@ export type RunKind =
   | 'triage'
   | 'instruct'
   | 'app-logs'
+  | 'share'
   | 'sync'
   | 'plan-spec'
   | 'plan-story'

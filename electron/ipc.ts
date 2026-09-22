@@ -27,6 +27,7 @@ import {
 } from './services/docker';
 import { installAllCommand, installCommand, installPlans } from './services/install';
 import { pullRequestStates } from './services/github';
+import { hasCloudflared, tunnelCommand } from './services/share';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
   createBlankProject,
@@ -156,6 +157,14 @@ export function registerIpc(): void {
   ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
   ipcMain.handle('repo-remotes', (_ev, dirs: string[]) => readRepoRemotes(dirs));
   ipcMain.handle('pr-states', (_ev, urls: string[]) => pullRequestStates(urls));
+  ipcMain.handle('can-share', () => hasCloudflared());
+  ipcMain.handle('start-share', (_ev, runId: string, workspacePath: string, port: number) => {
+    const resolved = path.resolve(workspacePath);
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('Sharing is restricted to managed and linked project directories');
+    }
+    startRun(runId, tunnelCommand(port), resolved);
+  });
   ipcMain.handle(
     'add-remote',
     (_ev, runId: string, workspacePath: string, dir: string, url: string) => {

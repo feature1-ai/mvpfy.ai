@@ -96,6 +96,18 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   syncRepos(): Promise<boolean>;
   /** Point one repo at a remote and push what it has. */
   addRemote(dir: string, url: string): Promise<boolean>;
+  /** The public address this app is shared on, while a share is running. */
+  shareUrl: string | null;
+  /** True once a share has started but before its address exists. */
+  shareStarting: boolean;
+  /** Cloudflare refused the tunnel — the link is not coming. */
+  shareRefused: boolean;
+  /** True when the tunnel client is installed. */
+  canShare: boolean;
+  /** Put the running app on the internet until it is stopped. */
+  startShare(): Promise<boolean>;
+  /** Take it off again. */
+  stopShare(): void;
   lastShipPrUrl: string | null;
   actionError: string | null;
   hasMvpfyYml: boolean;

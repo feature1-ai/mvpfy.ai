@@ -377,6 +377,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
             </div>
           </section>
 
+          {/* Only while it is up: sharing an app that is not running shares a
+              connection refused, which is worse than not offering it. */}
+          {env.kind === 'running' && <ShareApp c={c} />}
+
           {/* Setup board — the bootstrap run as cards the PM can follow */}
           <BootstrapFlowCard c={c} />
 
@@ -823,5 +827,103 @@ function AddRemote({ c, dir }: { c: ProjectController; dir: string }) {
         already has something in it.
       </p>
     </div>
+  );
+}
+
+/**
+ * Putting the running app on the internet for as long as somebody needs to
+ * look at it.
+ *
+ * The thing a product manager wants after building something is to show it to
+ * a person who is not sitting next to them, and the alternative to this is
+ * deploying — which is the whole afternoon this app exists to avoid.
+ *
+ * What it says before it does it matters as much as what it does. This is a
+ * half-built product with its demo login printed on the screen beside the
+ * link, and anybody holding that link can use it. The address is unguessable
+ * and nothing indexes it, which is not the same as private, and the difference
+ * is worth one sentence rather than a footnote nobody reads.
+ */
+function ShareApp({ c }: { c: ProjectController }) {
+  const [copied, setCopied] = useState(false);
+  if (!c.canShare) {
+    return (
+      <section className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+        <p className="text-[13px] text-body">
+          <span className="font-medium text-ink">Show this to someone else.</span> Needs Cloudflare
+          Tunnel, which mvpfy can install from Settings — no account, no signup.
+        </p>
+      </section>
+    );
+  }
+  if (c.shareRefused) {
+    return (
+      <section className="card flex flex-wrap items-center justify-between gap-3 border-warn-border px-5 py-3.5">
+        <p className="max-w-[560px] text-[13px] text-warn-text">
+          Cloudflare would not give out a link just now — the free tunnels are rate limited and it
+          refused this one. Nothing is wrong at your end; stop and try again in a few minutes.
+        </p>
+        <button onClick={() => c.stopShare()} className="btn-secondary h-8 shrink-0 px-3.5">
+          Stop
+        </button>
+      </section>
+    );
+  }
+  if (c.shareUrl) {
+    return (
+      <section className="card border-go/30 px-5 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <span className="section-label text-go">
+              Shared — anyone with this link can open it
+            </span>
+            <button
+              onClick={() => c.openExternal(c.shareUrl!)}
+              className="mt-1 block max-w-full truncate font-mono text-[12.5px] text-go hover:underline"
+            >
+              {c.shareUrl.replace('https://', '')}
+            </button>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => {
+                void navigator.clipboard.writeText(c.shareUrl!);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              }}
+              className="btn-secondary h-8 px-3.5"
+            >
+              {copied ? 'Copied' : 'Copy link'}
+            </button>
+            <button
+              onClick={() => c.stopShare()}
+              className="h-8 rounded-md px-3 text-[13px] text-muted hover:text-danger"
+            >
+              Stop sharing
+            </button>
+          </div>
+        </div>
+        <p className="mt-2 text-[11.5px] text-muted">
+          The link works while mvpfy is open and stops the moment you stop sharing. Your demo login
+          works on it too, so send it to people you would give that login to.
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+      <p className="max-w-[520px] text-[13px] text-body">
+        <span className="font-medium text-ink">Show this to someone else.</span> Puts the running
+        app on a temporary public address so anyone you send it to can try it — no deploying. It
+        lasts until you stop it, and anybody with the link can use it, demo login included.
+      </p>
+      <button
+        onClick={() => void c.startShare()}
+        disabled={c.busy || c.shareStarting}
+        className="btn-secondary h-8 shrink-0 px-3.5 disabled:opacity-50"
+      >
+        {c.shareStarting ? 'Getting a link…' : 'Share'}
+      </button>
+    </section>
   );
 }

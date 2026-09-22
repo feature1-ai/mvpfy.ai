@@ -97,6 +97,9 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('write-repo-file', repoPath, relativePath, content),
   repoRemotes: (dirs: string[]) => ipcRenderer.invoke('repo-remotes', dirs),
   pullRequestStates: (urls: string[]) => ipcRenderer.invoke('pr-states', urls),
+  canShare: () => ipcRenderer.invoke('can-share'),
+  startShare: (runId: string, workspacePath: string, port: number) =>
+    ipcRenderer.invoke('start-share', runId, workspacePath, port),
   addRemote: (runId: string, workspacePath: string, dir: string, url: string) =>
     ipcRenderer.invoke('add-remote', runId, workspacePath, dir, url),
   repoBranches: (dirs: string[]) => ipcRenderer.invoke('repo-branches', dirs),

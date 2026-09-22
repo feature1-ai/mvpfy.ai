@@ -65,6 +65,12 @@ function windowsPlans(): InstallPlan[] {
       'Opens its own installer and asks for admin rights.',
       'terminal'
     ),
+    viaWinget(
+      'cloudflared',
+      'Cloudflare Tunnel',
+      'Cloudflare.cloudflared',
+      'Only needed to share a running app.'
+    ),
     {
       tool: 'claude',
       label: 'Claude Code',
@@ -159,6 +165,7 @@ export function installPlans(): InstallPlan[] {
       available: true,
     },
     viaBrew('gh', 'GitHub CLI', 'gh'),
+    viaBrew('cloudflared', 'Cloudflare Tunnel', 'cloudflared'),
     viaBrew('docker', 'Docker Desktop', '--cask docker-desktop'),
     {
       tool: 'claude',

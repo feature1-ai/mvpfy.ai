@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { REQUIRED_CLIS } from '../../shared/types';
 import {
   installAllCommand,
   installCommand,
@@ -38,13 +39,25 @@ describe.skipIf(!onMac)('installPlans (macOS)', () => {
   });
 
   it('covers every required tool plus Homebrew', () => {
-    expect(plans.map((p) => p.tool).sort()).toEqual(
-      ['brew', 'claude', 'codex', 'docker', 'gh', 'git'].sort()
-    );
+    // A superset, not an exact set: optional tools are offered here too, and
+    // adding one must not read as a required tool going missing.
+    for (const tool of ['brew', 'claude', 'codex', 'docker', 'gh', 'git']) {
+      expect(
+        plans.map((p) => p.tool),
+        `no plan for ${tool}`
+      ).toContain(tool);
+    }
     for (const p of plans) {
       expect(p.command.trim()).not.toBe('');
       expect(p.note.trim()).not.toBe('');
     }
+  });
+
+  it('offers the tunnel client, which is optional and not in the checklist', () => {
+    // Sharing needs it; nothing else does, so it must never show as a missing
+    // requirement — it is installable from here and absent from REQUIRED_CLIS.
+    expect(plans.map((p) => p.tool)).toContain('cloudflared');
+    expect(REQUIRED_CLIS).not.toContain('cloudflared');
   });
 
   it('hands the password-prompting installs to Terminal', () => {

@@ -125,3 +125,22 @@ describe('installPlans', () => {
     }
   });
 });
+
+describe('installing the tunnel client', () => {
+  it.runIf(onMac)('installs it with Homebrew, like the other formulae', () => {
+    const plan = installPlans().find((p) => p.tool === 'cloudflared');
+    expect(plan?.command).toBe('brew install cloudflared');
+    expect(plan?.mode).toBe('in-app');
+  });
+
+  it('goes through the same installer machinery as everything else', () => {
+    expect(() => installAllCommand(['cloudflared'])).not.toThrow();
+  });
+
+  it('cannot be swept into Install all, because that reads the checklist', () => {
+    // Install all is handed the missing entries of the required checklist, and
+    // this is deliberately not on it — so an optional tool can never be
+    // installed by a button nobody pressed for it.
+    expect(REQUIRED_CLIS).not.toContain('cloudflared');
+  });
+});

@@ -77,6 +77,9 @@ export default function SettingsView({
   // handed what actually failed rather than being asked to guess.
   const [lastInstallLog, setLastInstallLog] = useState('');
   const [plans, setPlans] = useState<InstallPlan[]>([]);
+  // Not in REQUIRED_CLIS — nothing but sharing wants it, so it must never read
+  // as a missing requirement. Asked for separately for the same reason.
+  const [hasTunnel, setHasTunnel] = useState(true);
   const planFor = (tool: string) => plans.find((p) => p.tool === tool) ?? null;
   const brewPlan = planFor('brew');
 
@@ -84,6 +87,10 @@ export default function SettingsView({
   // Docker and Node), so the plans are recomputed whenever the checklist is.
   useEffect(() => {
     void window.mvpfy.installPlans().then(setPlans);
+    void window.mvpfy
+      .canShare()
+      .then(setHasTunnel)
+      .catch(() => setHasTunnel(true));
   }, [cliStatuses]);
 
   // The models come from the installed CLIs, so they are re-read whenever the
@@ -334,6 +341,47 @@ export default function SettingsView({
             )}
           </div>
         )}
+
+        {/* Sharing is the only thing that wants this, so it sits apart from the
+            checklist rather than in it: a tool nobody needs showing as missing
+            is how a working setup comes to look broken. */}
+        {(() => {
+          const plan = planFor('cloudflared');
+          const busy = toolRun?.tool === 'cloudflared';
+          return (
+            <div className="flex items-center gap-3 border-t border-line-subtle pt-3">
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  hasTunnel ? 'bg-go' : 'bg-dot-idle'
+                }`}
+              />
+              <span className="w-24 text-[13px] font-medium">
+                Sharing
+                <span className="ml-1 text-[10px] text-faint">optional</span>
+              </span>
+              <span className="min-w-0 flex-1 text-[11.5px] text-muted">
+                {hasTunnel
+                  ? 'Cloudflare Tunnel is installed — Share is available on a running app.'
+                  : 'Cloudflare Tunnel puts a running app on a temporary public link. No account needed.'}
+              </span>
+              {!hasTunnel && plan?.available && (
+                <button
+                  onClick={() => install('cloudflared')}
+                  disabled={toolRun !== null}
+                  title={`${plan.command}\n\n${plan.note}`}
+                  className="btn-primary h-6 shrink-0 px-2.5 text-[11.5px] disabled:opacity-50"
+                >
+                  {busy ? 'Installing…' : 'Install'}
+                </button>
+              )}
+              {!hasTunnel && !plan?.available && (
+                <span className="shrink-0 text-[11.5px] text-warn-text">
+                  {plan?.note ?? 'no installer on this platform'}
+                </span>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Homebrew is not a tool mvpfy uses — it is how three of the others
             get installed, so it only appears while it is the thing in the way. */}

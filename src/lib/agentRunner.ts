@@ -146,6 +146,24 @@ export type RunKind =
   | 'seed'
   | 'git-auth';
 
+/**
+ * Runs that are not activity.
+ *
+ * Most runs are a task with an end, and while one is going the buttons that
+ * would start another are off. These are the other kind: they last exactly as
+ * long as somebody wants them to — a log being followed, an app being shared —
+ * and treating one as activity switches off the whole app for as long as it is
+ * useful, which is precisely backwards.
+ *
+ * A set rather than a condition at each site, because the last time a run of
+ * this shape was added the one place that knew the rule was not updated.
+ */
+export const AMBIENT_RUNS: ReadonlySet<RunKind> = new Set<RunKind>(['app-logs', 'share']);
+
+export function isAmbientRun(kind: RunKind): boolean {
+  return AMBIENT_RUNS.has(kind);
+}
+
 export interface RunHandle {
   runId: string;
   kind: RunKind;

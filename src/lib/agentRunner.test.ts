@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildShipFeaturePrompt,
+  isAmbientRun,
   extractPrUrl,
   startInstructRun,
   startReadinessFixRun,
@@ -350,6 +351,22 @@ describe('continuing an interrupted story', () => {
       expect(captured).not.toMatch(/Do not start the story again/i);
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('runs that are not activity', () => {
+  it('does not count a followed log or a live share as busy', () => {
+    // Both last exactly as long as somebody wants them to. Counting either as
+    // activity switches off every button in the app for as long as it is
+    // useful — which is how sharing an app disabled the feature buttons.
+    expect(isAmbientRun('app-logs')).toBe(true);
+    expect(isAmbientRun('share')).toBe(true);
+  });
+
+  it('still counts the runs that are actually doing something', () => {
+    for (const kind of ['plan-story', 'docker-up', 'raise-pr', 'bootstrap'] as const) {
+      expect(isAmbientRun(kind), kind).toBe(false);
     }
   });
 });

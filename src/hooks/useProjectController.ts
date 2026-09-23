@@ -31,6 +31,7 @@ import { appVerdict } from '../lib/appHealth';
 import { StoryLane } from '../lib/plan';
 import { MobilePreview, parseMobilePreview } from '../lib/mobile';
 import { RunsApi, RunState } from '../lib/useRuns';
+import { isAmbientRun } from '../lib/agentRunner';
 import { ControllerContext, contentOf, UpdateState } from './controllerContext';
 import { BootstrapFlowState, useBootstrapFlow } from './useBootstrapFlow';
 import { Feature1LoginState, useFeature1Login } from './useFeature1Login';
@@ -269,9 +270,10 @@ export function useProjectController(
 
   const projectRuns = Object.values(runsApi.runs).filter((r) => r.handle.projectId === project.id);
   const history = runsApi.history.filter((r) => r.handle.projectId === project.id);
-  // The follow-mode app-logs stream never counts as activity: it runs for
-  // as long as the tab wants it and must not block buttons or the strip.
-  const latestRun = projectRuns.filter((r) => r.handle.kind !== 'app-logs').pop() ?? null;
+  // A followed log stream and a live share are not activity: each runs for as
+  // long as somebody wants it, and counting either as busy switches off every
+  // button in the app for as long as it is useful.
+  const latestRun = projectRuns.filter((r) => !isAmbientRun(r.handle.kind)).pop() ?? null;
   const appLogsRun = projectRuns.filter((r) => r.handle.kind === 'app-logs').pop() ?? null;
   const busy = latestRun?.running ?? false;
   const lastShipRun = Object.values(runsApi.runs)

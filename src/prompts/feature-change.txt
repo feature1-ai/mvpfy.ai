@@ -10,6 +10,7 @@ The product manager asked for this change:
 ---
 {instruction}
 ---
+{designBlock}
 
 Work in this feature's own checkouts, already on the branch {branch} and already holding
 everything implemented for this feature so far:

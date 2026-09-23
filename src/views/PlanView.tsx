@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { FeaturePlan, ProjectController } from '../hooks/useProjectController';
 import { needsFeature1SignIn } from '../lib/feature1Auth';
@@ -506,6 +506,12 @@ export default function PlanView({ c, onOpenTab }: Props) {
       {/* Whose turn it is, when every story is accepted but the feature is not. */}
       <AwaitingAcceptance c={c} plan={plan} />
 
+      {/* What it should look like, next to what it should do. A feature
+          carried a PRD and nothing about its interface, so implementation
+          invented one — the part a PM can see is wrong without being able to
+          say why. */}
+      <FeatureDesign c={c} plan={plan} slug={active.slug} />
+
       {/* Spec (the agreed PRD, collapsible) */}
       {specOpen && specCard}
 
@@ -873,6 +879,143 @@ function PrBadges({ pr }: { pr: PullRequestState }) {
     else if (pr.reviewDecision === 'REVIEW_REQUIRED') out.push(chip('needs review', 'warn'));
   }
   return <>{out}</>;
+}
+
+/**
+ * The design this feature is built to match.
+ *
+ * Images are copied into the workspace so the agent can open them the way it
+ * opens anything else, and shown back here so the product manager can see what
+ * the agent was given rather than trusting that it was given anything.
+ */
+function FeatureDesign({
+  c,
+  plan,
+  slug,
+}: {
+  c: ProjectController;
+  plan: ProjectPlan;
+  slug: string;
+}) {
+  const design = plan.design ?? { images: [], links: [] };
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [editingLinks, setEditingLinks] = useState(false);
+  const [linkText, setLinkText] = useState(design.links.join('\n'));
+  const key = design.images.join('|');
+
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    void Promise.all(
+      key.split('|').map(async (name) => {
+        const url = await c.readDesign(slug, name).catch(() => null);
+        return [name, url] as const;
+      })
+    ).then((pairs) => {
+      if (cancelled) return;
+      setThumbs(Object.fromEntries(pairs.filter(([, url]) => url) as Array<[string, string]>));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [key, slug, c]);
+
+  const empty = design.images.length === 0 && design.links.length === 0;
+  return (
+    <section className="card mb-5 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
+        <span className="section-label">Design</span>
+        <span className="text-[11.5px] text-muted">
+          {empty
+            ? 'What it should look like. Without one, the agent invents an interface.'
+            : 'What the agent is told to match.'}
+        </span>
+        <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={() => setEditingLinks((v) => !v)}
+            className="text-[11.5px] text-go hover:underline"
+          >
+            {design.links.length > 0 ? 'Edit links' : 'Add a link'}
+          </button>
+          <button
+            onClick={() => void c.addDesign()}
+            disabled={c.busy}
+            className="btn-secondary h-7 px-3 text-[11.5px] disabled:opacity-50"
+          >
+            Add images
+          </button>
+        </div>
+      </div>
+
+      {design.images.length > 0 && (
+        <div className="flex flex-wrap gap-2.5 px-5 py-3">
+          {design.images.map((name) => (
+            <figure key={name} className="group relative">
+              {thumbs[name] ? (
+                <img
+                  src={thumbs[name]}
+                  alt={name}
+                  className="h-[92px] w-auto max-w-[190px] rounded-md border border-line object-cover"
+                />
+              ) : (
+                <div className="flex h-[92px] w-[130px] items-center justify-center rounded-md border border-line bg-sunken px-2 text-center font-mono text-[10px] text-faint">
+                  {name}
+                </div>
+              )}
+              <button
+                onClick={() => void c.removeDesign(name)}
+                title={`Remove ${name}`}
+                className="absolute right-1 top-1 hidden rounded bg-ink/80 px-1.5 text-[11px] text-white group-hover:block"
+              >
+                ×
+              </button>
+            </figure>
+          ))}
+        </div>
+      )}
+
+      {editingLinks && (
+        <div className="flex flex-col gap-2 border-t border-line-subtle px-5 py-3">
+          <textarea
+            value={linkText}
+            onChange={(e) => setLinkText(e.target.value)}
+            placeholder="https://www.figma.com/file/…&#10;one per line"
+            rows={2}
+            spellCheck={false}
+            className="w-full rounded-md border border-line bg-surface p-2 font-mono text-[11.5px] outline-none placeholder:text-faint focus:border-muted"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                void c.setDesignLinks(linkText.split('\n'));
+                setEditingLinks(false);
+              }}
+              className="btn-primary h-7 px-3 text-[11.5px]"
+            >
+              Save
+            </button>
+            <span className="text-[11px] text-muted">
+              The agent cannot open a Figma link — it is here so a person can.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {design.links.length > 0 && !editingLinks && (
+        <div className="flex flex-col items-start gap-1 border-t border-line-subtle px-5 py-2.5">
+          {design.links.map((l) => (
+            <button
+              key={l}
+              onClick={() => c.openExternal(l)}
+              className="max-w-full truncate font-mono text-[11.5px] text-go hover:underline"
+            >
+              {l.replace(/^https?:\/\//, '')}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 /**

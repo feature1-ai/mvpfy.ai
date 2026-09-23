@@ -545,6 +545,53 @@ export async function startSyncFeatureRun(
 }
 
 /**
+ * What the feature is supposed to look like, as something the agent can open.
+ *
+ * Paths rather than descriptions: both CLIs can read an image off disk, and a
+ * screenshot described in words is how an implementation ends up resembling
+ * the description instead of the design.
+ *
+ * Claude Code opens them from the paths in the prompt. Codex takes them as
+ * --image arguments instead, which is why the paths are also returned rather
+ * than only written into the text.
+ */
+export async function designFor(
+  project: Project,
+  planSlug: string,
+  design: { images: string[]; links: string[] } | undefined
+): Promise<{ block: string; imagePaths: string[] }> {
+  const images = design?.images ?? [];
+  const links = design?.links ?? [];
+  if (images.length === 0 && links.length === 0) return { block: '', imagePaths: [] };
+  let paths: string[] = [];
+  if (images.length > 0) {
+    paths = await window.mvpfy
+      .designPaths(project.localPath, configDirFor(project.mode), planSlug, images)
+      .catch(() => []);
+  }
+  const lines = [
+    'This feature has a design. What you build must match it — it is the one part of a',
+    'feature the product manager can see is wrong without being able to say why.',
+  ];
+  if (paths.length > 0) {
+    lines.push('', 'Open each of these images before you write any interface code:');
+    for (const p of paths) lines.push(`   • ${p}`);
+    lines.push(
+      '',
+      'Follow the layout, the wording on screen, the states and the spacing as drawn.',
+      'Where the design does not say, match the patterns already in this product rather',
+      'than inventing something new. Where it contradicts an acceptance criterion, do what',
+      'the criterion says and note the difference in your summary.'
+    );
+  }
+  if (links.length > 0) {
+    lines.push('', 'The design also lives here, for reference you may not be able to open:');
+    for (const l of links) lines.push(`   • ${l}`);
+  }
+  return { block: lines.join('\n'), imagePaths: paths };
+}
+
+/**
  * When a planned story was pulled from Feature1, implementing it should also
  * drive the Feature1 workflow over MCP so its ACs and status stay in sync —
  * the same ship-feature sequence, folded into the plan-story run. Empty for
@@ -590,10 +637,12 @@ export async function startPlanStoryRun(
    * The previous attempt at this story stopped part-way — the allowance ran
    * out, or it was interrupted. Its work is still in the checkout.
    */
-  continuing = false
+  continuing = false,
+  design?: { images: string[]; links: string[] }
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
   const checkouts = Object.entries(worktrees);
+  const art = await designFor(project, planSlug, design);
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
@@ -611,6 +660,7 @@ export async function startPlanStoryRun(
         ? `The product manager tested the previous round and sent it back with this feedback — address it fully:\n---\n${storyFeedback}\n---`
         : '',
       feature1Block: feature1BlockFor(feature1StoryId),
+      designBlock: art.block,
       // Without this the run starts the story over, on top of a checkout that
       // already holds half of it — which is how the same work lands twice and
       // the two halves disagree.
@@ -635,6 +685,7 @@ export async function startPlanStoryRun(
     ...agentFor(settings),
     ...(mcp ? { mcp } : {}),
     ...(session ? { session } : {}),
+    ...(art.imagePaths.length > 0 ? { images: art.imagePaths } : {}),
   });
   return { runId, kind: 'plan-story', projectId: project.id, storyId: storyCode, planSlug };
 }
@@ -659,11 +710,13 @@ export async function startFeatureChangeRun(
   featureName: string,
   instruction: string,
   session?: RunSession,
-  worktrees: Record<string, string> = {}
+  worktrees: Record<string, string> = {},
+  design?: { images: string[]; links: string[] }
 ): Promise<RunHandle> {
   const runId = makeRunId('featurechange');
   const cfg = configDirFor(project.mode);
   const checkouts = Object.entries(worktrees);
+  const art = await designFor(project, planSlug, design);
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
@@ -673,6 +726,7 @@ export async function startFeatureChangeRun(
       featureName,
       instruction,
       branch: `mvpfy/${planSlug || 'feature'}`,
+      designBlock: art.block,
       planFile: cfg + planFileFor(planSlug),
       specFile: cfg + specFileFor(planSlug),
       worktrees:
@@ -682,6 +736,7 @@ export async function startFeatureChangeRun(
     }),
     ...agentFor(settings),
     ...(session ? { session } : {}),
+    ...(art.imagePaths.length > 0 ? { images: art.imagePaths } : {}),
   });
   return { runId, kind: 'feature-change', projectId: project.id, planSlug };
 }

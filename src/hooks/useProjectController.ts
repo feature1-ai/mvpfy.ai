@@ -208,6 +208,14 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   stranded: StrandedFeature | null;
   /** Pick the feature back up wherever it stopped, and carry on to the end. */
   continueFeature(): Promise<boolean>;
+  /** Attach images of what this feature should look like. */
+  addDesign(): Promise<boolean>;
+  /** Remove one attached design. */
+  removeDesign(name: string): Promise<boolean>;
+  /** One design as a data URL, for showing it back. */
+  readDesign(slug: string, name: string): Promise<string | null>;
+  /** Record where the design lives, for one nobody can open from here. */
+  setDesignLinks(links: string[]): Promise<boolean>;
   /** Change this feature's code in plain language; the agent commits it. */
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */

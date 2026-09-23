@@ -308,6 +308,12 @@ export interface RunAgentRequest {
   mcp?: RunAgentMcp;
   /** When set, the run opens or continues a named conversation. */
   session?: RunSession;
+  /**
+   * Images the agent should look at — a feature's design. Codex takes these as
+   * --image arguments; Claude Code opens them from the paths in the prompt,
+   * which the prompt carries either way.
+   */
+  images?: string[];
 }
 
 export interface RunOutputEvent {
@@ -382,6 +388,17 @@ export function planFileFor(slug: string): string {
 export function specFileFor(slug: string): string {
   return slug ? `mvpfy-spec.${slug}.md` : SPEC_FILE;
 }
+
+/**
+ * Where a feature's design files live, inside the workspace so the agent can
+ * open them by path the way it opens anything else.
+ */
+export function designDirFor(slug: string): string {
+  return `mvpfy-design/${slug || 'feature'}`;
+}
+
+/** Image files a design can be attached as. */
+export const DESIGN_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 
 /** One service of a project's stack, as docker reports it. */
 export interface ServiceState {
@@ -528,6 +545,30 @@ export interface MvpfyApi {
   readRepoFiles(repoPath: string, relativePaths: string[]): Promise<RepoFile[]>;
   writeRepoFile(repoPath: string, relativePath: string, content: string): Promise<void>;
   repoBranches(dirs: string[]): Promise<Record<string, string>>;
+  /** Chosen image files, in pick order. Empty when cancelled. */
+  pickImages(): Promise<string[]>;
+  /** Copy designs into the feature's folder; returns the recorded names. */
+  addDesign(
+    workspacePath: string,
+    configDir: string,
+    slug: string,
+    sources: string[]
+  ): Promise<string[]>;
+  removeDesign(workspacePath: string, configDir: string, slug: string, name: string): Promise<void>;
+  /** One design as a data URL, or null when it is missing or too large. */
+  readDesign(
+    workspacePath: string,
+    configDir: string,
+    slug: string,
+    name: string
+  ): Promise<string | null>;
+  /** Absolute paths of a feature's designs, for handing to an agent. */
+  designPaths(
+    workspacePath: string,
+    configDir: string,
+    slug: string,
+    names: string[]
+  ): Promise<string[]>;
   /** True when the tunnel client is installed. */
   canShare(): Promise<boolean>;
   /** Put a locally-running app on the internet until the run is stopped. */

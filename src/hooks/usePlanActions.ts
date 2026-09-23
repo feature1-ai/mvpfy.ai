@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RunSession, planFileFor, specFileFor } from '../../shared/types';
+import { RunSession, configDirFor, planFileFor, specFileFor } from '../../shared/types';
 import {
   startPlanSpecRun,
   startPlanStoryRun,
@@ -78,6 +78,14 @@ export interface PlanActions {
   stranded: StrandedFeature | null;
   /** Pick the feature back up wherever it stopped, and carry on to the end. */
   continueFeature(): Promise<boolean>;
+  /** Attach images of what this feature should look like. */
+  addDesign(): Promise<boolean>;
+  /** Remove one attached design. */
+  removeDesign(name: string): Promise<boolean>;
+  /** One design as a data URL, for showing it back. */
+  readDesign(slug: string, name: string): Promise<string | null>;
+  /** Record where the design lives, for one nobody can open from here. */
+  setDesignLinks(links: string[]): Promise<boolean>;
   /** Change this feature's code in plain language; the agent commits it. */
   changeFeature(instruction: string): Promise<boolean>;
   /** True while a change to the active feature is being made. */
@@ -598,6 +606,48 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       await implementFeature();
     });
 
+  const writeDesign = async (next: { images: string[]; links: string[] }) => {
+    const active = activePlan;
+    if (!active?.plan) throw new Error('Open a feature first.');
+    await writePlan(active.slug, { ...active.plan, design: next });
+  };
+
+  const addDesign = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active?.plan) throw new Error('Open a feature first.');
+      const picked = await window.mvpfy.pickImages();
+      if (picked.length === 0) return;
+      const added = await window.mvpfy.addDesign(
+        project.localPath,
+        configDirFor(project.mode),
+        active.slug,
+        picked
+      );
+      const design = active.plan.design ?? { images: [], links: [] };
+      await writeDesign({ ...design, images: [...design.images, ...added] });
+    });
+
+  const removeDesign = (name: string) =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active?.plan) return;
+      await window.mvpfy.removeDesign(
+        project.localPath,
+        configDirFor(project.mode),
+        active.slug,
+        name
+      );
+      const design = active.plan.design ?? { images: [], links: [] };
+      await writeDesign({ ...design, images: design.images.filter((i) => i !== name) });
+    });
+
+  const setDesignLinks = (links: string[]) =>
+    guarded(async () => {
+      const design = activePlan?.plan?.design ?? { images: [], links: [] };
+      await writeDesign({ ...design, links: links.map((l) => l.trim()).filter(Boolean) });
+    });
+
   // The inverse of pullFeature: a feature planned here is filed in Feature1.
   // Only for a feature that came from here — one that was pulled already has a
   // Feature1 record, and creating a second would split its history in two.
@@ -760,7 +810,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         mcp,
         sessionFor(slug, false),
         trees.ok ? (trees.paths ?? {}) : {},
-        continuing
+        continuing,
+        plan.design
       );
       runsApi.track(handle);
     });
@@ -935,6 +986,11 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     stranded,
     continueFeature,
     changeFeature,
+    addDesign,
+    removeDesign,
+    readDesign: (slug: string, name: string) =>
+      window.mvpfy.readDesign(project.localPath, configDirFor(project.mode), slug, name),
+    setDesignLinks,
     featureGit,
     prStates,
     refreshPrStates,

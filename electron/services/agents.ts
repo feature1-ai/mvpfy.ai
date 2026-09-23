@@ -166,7 +166,11 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
     const modelFlag = model ? `--model ${q(model)} ` : '';
     const mcpConfig = req.mcp ? codexMcpConfig(req.mcp) : undefined;
     env = mcpConfig?.env;
-    command = `${cdTo(repoPath)} && codex exec ${mcpConfig?.flag ?? ''}${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
+    // Codex attaches images to the prompt rather than opening them from a
+    // path, so a design has to be handed over as arguments. The prompt names
+    // the same files regardless, which is what Claude Code reads.
+    const imageFlags = (req.images ?? []).map((f) => `--image ${q(f)} `).join('');
+    command = `${cdTo(repoPath)} && codex exec ${mcpConfig?.flag ?? ''}${imageFlags}${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
   }
   startRun(req.runId, command, repoPath, () => removeQuietly(scratch), env);
 }

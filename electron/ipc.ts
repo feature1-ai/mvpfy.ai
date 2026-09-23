@@ -5,6 +5,7 @@ import {
   AgentKind,
   BlankProjectRemote,
   ComposeAction,
+  DESIGN_IMAGE_EXTENSIONS,
   McpFetchRequest,
   MvpfyState,
   RunAgentRequest,
@@ -27,6 +28,12 @@ import {
   seedCommandFor,
 } from './services/docker';
 import { installAllCommand, installCommand, installPlans } from './services/install';
+import {
+  addDesignImages,
+  designImagePaths,
+  readDesignImage,
+  removeDesignImage,
+} from './services/design';
 import { pullRequestStates } from './services/github';
 import { hasCloudflared, tunnelCommand } from './services/share';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
@@ -158,6 +165,34 @@ export function registerIpc(): void {
   ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
   ipcMain.handle('repo-remotes', (_ev, dirs: string[]) => readRepoRemotes(dirs));
   ipcMain.handle('pr-states', (_ev, urls: string[]) => pullRequestStates(urls));
+  ipcMain.handle('pick-images', async () => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      message: 'Choose the design for this feature',
+      filters: [{ name: 'Images', extensions: [...DESIGN_IMAGE_EXTENSIONS] }],
+    });
+    return res.canceled ? [] : res.filePaths;
+  });
+  ipcMain.handle(
+    'add-design',
+    (_ev, workspacePath: string, configDir: string, slug: string, sources: string[]) =>
+      addDesignImages(workspacePath, configDir, slug, sources)
+  );
+  ipcMain.handle(
+    'remove-design',
+    (_ev, workspacePath: string, configDir: string, slug: string, name: string) =>
+      removeDesignImage(workspacePath, configDir, slug, name)
+  );
+  ipcMain.handle(
+    'read-design',
+    (_ev, workspacePath: string, configDir: string, slug: string, name: string) =>
+      readDesignImage(workspacePath, configDir, slug, name)
+  );
+  ipcMain.handle(
+    'design-paths',
+    (_ev, workspacePath: string, configDir: string, slug: string, names: string[]) =>
+      designImagePaths(workspacePath, configDir, slug, names)
+  );
   ipcMain.handle('can-share', () => hasCloudflared());
   ipcMain.handle('start-share', (_ev, runId: string, workspacePath: string, port: number) => {
     const resolved = path.resolve(workspacePath);

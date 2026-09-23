@@ -97,6 +97,15 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('write-repo-file', repoPath, relativePath, content),
   repoRemotes: (dirs: string[]) => ipcRenderer.invoke('repo-remotes', dirs),
   pullRequestStates: (urls: string[]) => ipcRenderer.invoke('pr-states', urls),
+  pickImages: () => ipcRenderer.invoke('pick-images'),
+  addDesign: (workspacePath: string, configDir: string, slug: string, sources: string[]) =>
+    ipcRenderer.invoke('add-design', workspacePath, configDir, slug, sources),
+  removeDesign: (workspacePath: string, configDir: string, slug: string, name: string) =>
+    ipcRenderer.invoke('remove-design', workspacePath, configDir, slug, name),
+  readDesign: (workspacePath: string, configDir: string, slug: string, name: string) =>
+    ipcRenderer.invoke('read-design', workspacePath, configDir, slug, name),
+  designPaths: (workspacePath: string, configDir: string, slug: string, names: string[]) =>
+    ipcRenderer.invoke('design-paths', workspacePath, configDir, slug, names),
   canShare: () => ipcRenderer.invoke('can-share'),
   startShare: (runId: string, workspacePath: string, port: number) =>
     ipcRenderer.invoke('start-share', runId, workspacePath, port),

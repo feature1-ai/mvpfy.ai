@@ -96,6 +96,14 @@ export interface ProjectPlan {
    * this is the second one, over the finished set.
    */
   tested?: boolean;
+  /**
+   * What this feature is supposed to look like: images copied into the
+   * workspace, and links to wherever the design actually lives.
+   *
+   * Without it an implementation invents its own interface, which is the one
+   * part of a feature a product manager can see is wrong and cannot say why.
+   */
+  design?: { images: string[]; links: string[] };
   /** Pull requests raised for this feature: one per repository that changed. */
   prUrls?: string[];
   /** Latest PR result, retained when the app restarts. */
@@ -267,6 +275,13 @@ export function parsePlan(content: string | null | undefined): ProjectPlan | nul
   const approved = raw.approved === true || stories.some((s) => s.lane !== 'todo' || s.prUrl);
   const featureRef = String(raw.feature1FeatureRef ?? '').trim();
   const prUrls = normalizeStrings(raw.prUrls);
+  // A design the agent rewrote out of the plan is a design silently lost, so
+  // it is read back with the same care as everything else the file carries.
+  const designRaw = (raw.design ?? {}) as Record<string, unknown>;
+  const design = {
+    images: normalizeStrings(designRaw.images),
+    links: normalizeStrings(designRaw.links),
+  };
   const last = raw.lastRaise as ProjectPlan['lastRaise'];
   const lastRaise =
     last &&
@@ -282,6 +297,7 @@ export function parsePlan(content: string | null | undefined): ProjectPlan | nul
     approved,
     ...(raw.tested === true ? { tested: true } : {}),
     ...(prUrls.length > 0 ? { prUrls } : {}),
+    ...(design.images.length > 0 || design.links.length > 0 ? { design } : {}),
     ...(lastRaise ? { lastRaise } : {}),
     ...(raw.source === 'feature1' ? { source: 'feature1' as const } : {}),
     ...(featureRef ? { feature1FeatureRef: featureRef } : {}),

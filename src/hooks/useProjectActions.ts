@@ -21,6 +21,8 @@ import { preflightAuth } from '../lib/cliCheck';
 import { RunState } from '../lib/useRuns';
 import { ControllerContext, contentOf } from './controllerContext';
 import { parseTunnelUrl, tunnelRefused } from '../lib/tunnel';
+import { hostFromDemoLogin } from '../lib/shareHost';
+import { parseDemoCredentials } from '../lib/credentials';
 
 /** Environment and workspace lifecycle: bootstrap, docker, triage, IDE, env
  *  file, repo sync, and project removal. */
@@ -483,7 +485,12 @@ export function useProjectActions(
     syncRepos,
     addRemote,
     shareUrl,
-    shareHostHeader: project.shareHostHeader ?? '',
+    // The seed already recorded where the demo tenant lives; asking somebody
+    // to type it again is asking them for something the app knows. An explicit
+    // value still wins, so this is a starting point rather than a decision.
+    shareHostHeader:
+      project.shareHostHeader ??
+      hostFromDemoLogin(parseDemoCredentials(contentOf(files, pf('mvpfy.yml')))),
     setShareHostHeader: (value: string) =>
       updateState((prev) => ({
         ...prev,

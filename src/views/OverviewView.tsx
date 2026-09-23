@@ -957,9 +957,10 @@ function ShareApp({ c }: { c: ProjectController }) {
           </div>
           <p className="text-[11px] leading-snug text-muted">
             A shared link arrives as four random words, which matches no tenant, so the app shows
-            the visitor nothing. Put the address it expects here and it will be told that is what
-            was asked for. It does not fix an app that redirects the visitor to its own local
-            address — that has to be the app&apos;s doing.
+            the visitor nothing. This is the address it will be told it was asked for — taken from
+            your demo login when that names a tenant, and yours to change. It does not fix an app
+            that redirects the visitor to its own local address; that has to be the app&apos;s
+            doing.
           </p>
         </div>
       )}

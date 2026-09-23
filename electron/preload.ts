@@ -107,8 +107,8 @@ const api: MvpfyApi = {
   designPaths: (workspacePath: string, configDir: string, slug: string, names: string[]) =>
     ipcRenderer.invoke('design-paths', workspacePath, configDir, slug, names),
   canShare: () => ipcRenderer.invoke('can-share'),
-  startShare: (runId: string, workspacePath: string, port: number) =>
-    ipcRenderer.invoke('start-share', runId, workspacePath, port),
+  startShare: (runId: string, workspacePath: string, port: number, hostHeader?: string) =>
+    ipcRenderer.invoke('start-share', runId, workspacePath, port, hostHeader),
   addRemote: (runId: string, workspacePath: string, dir: string, url: string) =>
     ipcRenderer.invoke('add-remote', runId, workspacePath, dir, url),
   repoBranches: (dirs: string[]) => ipcRenderer.invoke('repo-branches', dirs),

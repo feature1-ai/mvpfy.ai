@@ -54,6 +54,9 @@ export interface ProjectActions {
   canShare: boolean;
   /** Put the running app on the internet until it is stopped. */
   startShare(): Promise<boolean>;
+  /** The hostname the app expects, for a product with tenants in the host. */
+  shareHostHeader: string;
+  setShareHostHeader(value: string): void;
   /** Take it off again. */
   stopShare(): void;
   startAppLogs(): Promise<boolean>;
@@ -417,7 +420,12 @@ export function useProjectActions(
       if (liveShare) return;
       const runId = makeRunId('share');
       runsApi.track({ runId, kind: 'share', projectId: project.id });
-      await window.mvpfy.startShare(runId, project.localPath, project.basePort);
+      await window.mvpfy.startShare(
+        runId,
+        project.localPath,
+        project.basePort,
+        project.shareHostHeader
+      );
     });
 
   const stopShare = () => {
@@ -475,6 +483,14 @@ export function useProjectActions(
     syncRepos,
     addRemote,
     shareUrl,
+    shareHostHeader: project.shareHostHeader ?? '',
+    setShareHostHeader: (value: string) =>
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.id === project.id ? { ...p, shareHostHeader: value.trim() } : p
+        ),
+      })),
     shareStarting: Boolean(liveShare) && !shareUrl && !shareRefused,
     shareRefused,
     canShare,

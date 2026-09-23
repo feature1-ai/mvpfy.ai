@@ -194,13 +194,16 @@ export function registerIpc(): void {
       designImagePaths(workspacePath, configDir, slug, names)
   );
   ipcMain.handle('can-share', () => hasCloudflared());
-  ipcMain.handle('start-share', (_ev, runId: string, workspacePath: string, port: number) => {
-    const resolved = path.resolve(workspacePath);
-    if (!isAllowedWorkspace(resolved)) {
-      throw new Error('Sharing is restricted to managed and linked project directories');
+  ipcMain.handle(
+    'start-share',
+    (_ev, runId: string, workspacePath: string, port: number, hostHeader?: string) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Sharing is restricted to managed and linked project directories');
+      }
+      startRun(runId, tunnelCommand(port, hostHeader ?? ''), resolved);
     }
-    startRun(runId, tunnelCommand(port), resolved);
-  });
+  );
   ipcMain.handle(
     'add-remote',
     (_ev, runId: string, workspacePath: string, dir: string, url: string) => {

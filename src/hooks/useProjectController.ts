@@ -106,6 +106,9 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   canShare: boolean;
   /** Put the running app on the internet until it is stopped. */
   startShare(): Promise<boolean>;
+  /** The hostname the app expects, for a product with tenants in the host. */
+  shareHostHeader: string;
+  setShareHostHeader(value: string): void;
   /** Take it off again. */
   stopShare(): void;
   lastShipPrUrl: string | null;

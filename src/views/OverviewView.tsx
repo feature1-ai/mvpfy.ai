@@ -851,6 +851,7 @@ function AddRemote({ c, dir }: { c: ProjectController; dir: string }) {
  */
 function ShareApp({ c }: { c: ProjectController }) {
   const [copied, setCopied] = useState(false);
+  const [showHost, setShowHost] = useState(Boolean(c.shareHostHeader));
   if (!c.canShare) {
     return (
       <section className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
@@ -919,19 +920,49 @@ function ShareApp({ c }: { c: ProjectController }) {
     );
   }
   return (
-    <section className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
-      <p className="max-w-[520px] text-[13px] text-body">
-        <span className="font-medium text-ink">Show this to someone else.</span> Puts the running
-        app on a temporary public address so anyone you send it to can try it — no deploying. It
-        lasts until you stop it, and anybody with the link can use it, demo login included.
-      </p>
+    <section className="card px-5 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-[520px] text-[13px] text-body">
+          <span className="font-medium text-ink">Show this to someone else.</span> Puts the running
+          app on a temporary public address so anyone you send it to can try it — no deploying. It
+          lasts until you stop it, and anybody with the link can use it, demo login included.
+        </p>
+        <button
+          onClick={() => void c.startShare()}
+          disabled={c.busy || c.shareStarting}
+          className="btn-secondary h-8 shrink-0 px-3.5 disabled:opacity-50"
+        >
+          {c.shareStarting ? 'Getting a link…' : 'Share'}
+        </button>
+      </div>
+      {/* Only for products that work out who they are serving from the
+          hostname. For everything else it is a question nobody needs, so it
+          stays folded away rather than sitting in the way. */}
       <button
-        onClick={() => void c.startShare()}
-        disabled={c.busy || c.shareStarting}
-        className="btn-secondary h-8 shrink-0 px-3.5 disabled:opacity-50"
+        onClick={() => setShowHost((v) => !v)}
+        className="mt-2 text-[11.5px] text-muted hover:text-body"
       >
-        {c.shareStarting ? 'Getting a link…' : 'Share'}
+        {showHost ? 'Hide' : 'Does your app pick a tenant from the address?'}
       </button>
+      {showHost && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={c.shareHostHeader}
+              onChange={(e) => c.setShareHostHeader(e.target.value)}
+              placeholder="acme.localhost:4100"
+              spellCheck={false}
+              className="h-[30px] min-w-0 flex-1 rounded-md border border-line bg-surface px-2.5 font-mono text-[11.5px] outline-none placeholder:text-faint focus:border-muted"
+            />
+          </div>
+          <p className="text-[11px] leading-snug text-muted">
+            A shared link arrives as four random words, which matches no tenant, so the app shows
+            the visitor nothing. Put the address it expects here and it will be told that is what
+            was asked for. It does not fix an app that redirects the visitor to its own local
+            address — that has to be the app&apos;s doing.
+          </p>
+        </div>
+      )}
     </section>
   );
 }

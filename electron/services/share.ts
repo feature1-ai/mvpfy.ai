@@ -13,13 +13,22 @@ import { IS_WIN } from './shell';
  * screen beside it, somewhere anybody holding the link can reach — which is a
  * decision, made each time, that ends when they close it.
  */
-export function tunnelCommand(port: number): string {
+export function tunnelCommand(port: number, hostHeader = ''): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`${port} is not a port`);
   }
+  // A product that works out which tenant it is serving from the hostname sees
+  // the tunnel's random name instead — four words that match no tenant — and
+  // shows the visitor nothing. This tells the local app which host it is being
+  // asked for, while the world still uses the tunnel's address.
+  const host = hostHeader.trim();
+  if (host && !/^[\w.-]+(:\d{1,5})?$/.test(host)) {
+    throw new Error(`"${host}" is not a hostname`);
+  }
+  const hostFlag = host ? `--http-host-header ${shellQuote(host)} ` : '';
   // --no-autoupdate: an update mid-share restarts the process and changes the
   // address, which is a link going dead in somebody else's browser.
-  return `cloudflared tunnel --no-autoupdate --url ${shellQuote(`http://localhost:${port}`)}`;
+  return `cloudflared tunnel --no-autoupdate ${hostFlag}--url ${shellQuote(`http://localhost:${port}`)}`;
 }
 
 /** Whether the tunnel client is on this machine at all. */

@@ -67,6 +67,12 @@ export interface Project {
    * its files inside a .mvpfy/ subfolder and never deletes the folder.
    */
   mode?: 'managed' | 'linked';
+  /**
+   * The hostname the app expects to be asked for, when it resolves a tenant
+   * from one. A share otherwise arrives as the tunnel's random name, which
+   * matches no tenant, and the visitor is shown nothing.
+   */
+  shareHostHeader?: string;
 }
 
 /** Where mvpfy's generated/communication files live inside a workspace. */
@@ -571,8 +577,17 @@ export interface MvpfyApi {
   ): Promise<string[]>;
   /** True when the tunnel client is installed. */
   canShare(): Promise<boolean>;
-  /** Put a locally-running app on the internet until the run is stopped. */
-  startShare(runId: string, workspacePath: string, port: number): Promise<void>;
+  /**
+   * Put a locally-running app on the internet until the run is stopped.
+   * `hostHeader` is what the local app should be told it was asked for, for a
+   * product that resolves a tenant from the hostname.
+   */
+  startShare(
+    runId: string,
+    workspacePath: string,
+    port: number,
+    hostHeader?: string
+  ): Promise<void>;
   /** What GitHub says about each pull request raised for a feature. */
   pullRequestStates(urls: string[]): Promise<PullRequestState[]>;
   /** The remote each repo actually points at; empty string when it has none. */

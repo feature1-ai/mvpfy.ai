@@ -29,6 +29,7 @@ function writeClaudeMcpConfig(runId: string, mcp: RunAgentMcp): string {
 
 /** Override just this server for a run, keeping the user's normal Codex home. */
 export function codexMcpConfig(mcp: RunAgentMcp): { flag: string; env?: NodeJS.ProcessEnv } {
+  if (!mcp.token?.trim()) throw new Error('Feature1 requires a personal bearer token. Reconnect.');
   const tokenSetting = mcp.token ? ', bearer_token_env_var = "MVPFY_FEATURE1_TOKEN"' : '';
   const value = `mcp_servers.feature1={ url = ${JSON.stringify(mcp.url)}${tokenSetting} }`;
   return {
@@ -134,6 +135,8 @@ export function runToolingAgent(req: RunAgentRequest): void {
 }
 
 function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
+  if (req.mcp && !req.mcp.token?.trim())
+    throw new Error('Feature1 requires a personal bearer token. Reconnect.');
   ensureDirs();
   const promptFile = path.join(TMP_DIR, `prompt-${req.runId}.txt`);
   fs.writeFileSync(promptFile, req.promptText, 'utf8');
@@ -149,9 +152,8 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
     // ship-feature flow must run unattended (the PM reviews outputs, not
     // individual tool calls), and the process is confined to the cloned repo.
     // --mcp-config registers the Feature1 server for this run only.
-    // Only worth a per-run config when there is a token to carry: without one,
-    // the server registered on Claude Code itself is already reachable, and a
-    // second unauthenticated copy of it would add nothing.
+    // Feature1 runs always carry their own token; never rely on a global
+    // agent registration or another client’s server-side login.
     const needsMcpConfig = Boolean(req.mcp?.token);
     if (needsMcpConfig) scratch.push(writeClaudeMcpConfig(req.runId, req.mcp!));
     command = claudeCommandFor(req, {

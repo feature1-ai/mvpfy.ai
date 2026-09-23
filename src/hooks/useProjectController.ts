@@ -442,7 +442,7 @@ export function useProjectController(
     guarded,
   };
   const feature1Login = useFeature1Login(state, updateState);
-  const feature1Sync = useFeature1Sync(state);
+  const feature1Sync = useFeature1Sync(state, updateState);
   // Composed here because this is where the failed run, the container states
   // and the health verdict all already are.
   const trouble = troubleReport({
@@ -561,7 +561,7 @@ export function useProjectController(
     viewerFiles: files.filter((f) => f.exists && !hiddenFromViewer(f.relativePath)),
     activeFile,
     activeFileContent: files.find((f) => f.relativePath === activeFile)?.content ?? '',
-    tenantConnected: state.tenant !== null,
+    tenantConnected: Boolean(state.tenant?.tokenKeychainEntry),
     feature1Login,
     feature1Sync,
     refreshFiles,

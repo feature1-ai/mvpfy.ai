@@ -13,6 +13,8 @@
  */
 
 const PATTERNS = [
+  /MCP tenant access denied|different (?:tenant|workspace)|personal bearer token|shared server sign-in/i,
+  /Feature1 (?:access denied|credentials were rejected|session expired)/i,
   // The server's own wording for a tool call with no token behind it.
   /not authenticated/i,
   // What it tells the agent to do about it, in case the sentence is reflowed.

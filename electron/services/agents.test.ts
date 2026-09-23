@@ -15,11 +15,10 @@ describe('Codex Feature1 configuration', () => {
     expect(config.flag).not.toContain('private-token');
     expect(config.env).toEqual({ MVPFY_FEATURE1_TOKEN: 'private-token' });
   });
-  it('does not invent a bearer token for a session-only workspace', () => {
-    const config = codexMcpConfig({ url: 'https://example.com/mcp' });
-    expect(config.flag).not.toContain('bearer_token_env_var');
-    expect(config.flag).not.toContain('undefined');
-    expect(config.env).toBeUndefined();
+  it('rejects tokenless Feature1 agent runs', () => {
+    expect(() => codexMcpConfig({ url: 'https://example.com/mcp' })).toThrow(
+      /personal bearer token/
+    );
   });
 });
 

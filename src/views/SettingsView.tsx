@@ -429,7 +429,7 @@ export default function SettingsView({
         <div className="flex items-center gap-4">
           <span
             className={`mt-[7px] h-1.5 w-1.5 shrink-0 self-start rounded-full ${
-              state.tenant ? 'bg-go' : 'bg-dot-idle'
+              login.connected ? 'bg-go' : 'bg-dot-idle'
             }`}
           />
           <div className="min-w-0 flex-1">
@@ -442,7 +442,7 @@ export default function SettingsView({
                 : 'Paste your Feature1 address to pull your user stories into mvpfy.'}
             </p>
           </div>
-          {state.tenant ? (
+          {login.connected && state.tenant ? (
             <div className="flex shrink-0 items-center gap-3">
               <span className="font-mono text-[11.5px] text-go">{state.tenant.host}</span>
               <button
@@ -474,11 +474,34 @@ export default function SettingsView({
                 disabled={login.status === 'waiting' || !login.address.trim()}
                 className="btn-primary h-[30px] px-3 text-[12.5px] disabled:opacity-50"
               >
-                {login.status === 'waiting' ? 'Waiting…' : 'Connect'}
+                {login.status === 'waiting'
+                  ? 'Checking…'
+                  : login.token.trim()
+                    ? 'Verify and connect'
+                    : 'Sign in'}
               </button>
             </div>
           )}
         </div>
+        {!login.connected && (
+          <label className="block text-[12px]">
+            Personal Feature1 token
+            <input
+              type="password"
+              autoComplete="off"
+              value={login.token}
+              onChange={(e) => login.setToken(e.target.value)}
+              disabled={login.status === 'waiting'}
+              placeholder="Paste your personal token after browser sign-in"
+              className="mt-1 block h-[34px] w-full rounded-md border border-line px-2.5"
+            />
+          </label>
+        )}
+        {login.notice && (
+          <p role="status" className="text-[12px] text-muted">
+            {login.notice}
+          </p>
+        )}
         {login.status === 'error' && login.error && (
           <p className="text-[12.5px] text-danger">{login.error}</p>
         )}

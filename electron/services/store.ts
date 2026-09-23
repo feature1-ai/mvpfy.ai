@@ -33,7 +33,8 @@ export function readState(file: string = STATE_FILE): MvpfyState {
     const raw = fs.readFileSync(file, 'utf8');
     const parsed = JSON.parse(raw) as Partial<MvpfyState>;
     const state = {
-      tenant: parsed.tenant ?? null,
+      // Legacy shared-server connections have no client credential and are unsafe.
+      tenant: parsed.tenant?.tokenKeychainEntry?.trim() ? parsed.tenant : null,
       projects: migrateProjects(parsed.projects ?? []),
       settings: retireBrokenCodexModel({ ...DEFAULT_STATE.settings, ...parsed.settings }),
     };

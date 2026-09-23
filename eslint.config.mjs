@@ -42,5 +42,22 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // A harness driven by a real browser: CommonJS on the Node side and
+    // browser globals on the other, which is neither of the two worlds the
+    // rest of this config describes.
+    files: ['scripts/**/*.cjs'],
+    languageOptions: {
+      globals: {
+        require: 'readonly',
+        module: 'writable',
+        process: 'readonly',
+        console: 'readonly',
+        window: 'readonly',
+        document: 'readonly',
+      },
+    },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
   prettier
 );

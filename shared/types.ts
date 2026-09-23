@@ -282,9 +282,8 @@ export interface RunAgentMcp {
   /** e.g. https://<slug>-mcp.feature1.ai/mcp/ */
   url: string;
   /**
-   * Bearer token for the tenant, when the workspace issued one. Absent for a
-   * workspace that keeps the session itself — the agent reaches it through the
-   * MCP server registered on Claude Code instead.
+   * Personal bearer token. Feature1 agent runs reject missing credentials;
+   * optional here only for compatibility with older IPC callers.
    */
   token?: string;
 }

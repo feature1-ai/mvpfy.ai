@@ -138,3 +138,17 @@ describe('the Codex model mvpfy used to choose', () => {
     expect(DEFAULT_STATE.settings.codexModel).toBe('');
   });
 });
+
+it('disconnects legacy shared-login connections while preserving projects', () => {
+  const projects = [project()];
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      tenant: { slug: 'watiq', host: 'watiq-mcp.feature1.ai', tokenKeychainEntry: '' },
+      projects,
+    })
+  );
+  const state = readState(file);
+  expect(state.tenant).toBeNull();
+  expect(state.projects).toEqual(projects);
+});

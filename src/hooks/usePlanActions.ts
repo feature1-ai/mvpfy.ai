@@ -11,7 +11,7 @@ import {
   startGitAuthRun,
   startRaisePrRun,
 } from '../lib/agentRunner';
-import { mcpBaseUrl } from '../lib/feature1Mcp';
+import { Feature1McpClient, mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
 import { redactSecrets } from '../lib/raiseFailure';
 import { quotaExhausted } from '../lib/quota';
@@ -158,16 +158,23 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // Feature1 MCP config for this tenant: URL + keychain token. Throws with a
   // clear message when Feature1 isn't connected or the session has expired,
   // so pull/implement-from-Feature1 fail loudly rather than silently.
+  // Kept current from an effect rather than during render. The check below
+  // happens after a network round trip, by which time the effect has long
+  // run — so the reading is the same and nothing is written while rendering.
+  const activeTenant = useRef(state.tenant);
+  useEffect(() => {
+    activeTenant.current = state.tenant;
+  }, [state.tenant]);
   const feature1Mcp = useCallback(async () => {
     if (!state.tenant) throw new Error('Connect Feature1 in Settings first.');
     const entry = state.tenant.tokenKeychainEntry;
     const token = entry ? await window.mvpfy.keychainGet(entry) : null;
-    // No token is not a failure: a workspace that keeps the session itself is
-    // reached through the MCP server registered on Claude Code, which carries
-    // the sign-in. A workspace that DID issue one and has since lost it is a
-    // real expiry, and says so.
-    if (entry && !token) throw new Error('Feature1 session expired — reconnect in Settings.');
-    return { url: mcpBaseUrl(state.tenant.slug), ...(token ? { token } : {}) };
+    if (!token)
+      throw new Error('Feature1 session expired — reconnect with your own token in Settings.');
+    await new Feature1McpClient(state.tenant.slug, token).verifyIdentity();
+    if (activeTenant.current !== state.tenant)
+      throw new Error('Feature1 connection changed. Try again.');
+    return { url: mcpBaseUrl(state.tenant.slug), token };
   }, [state.tenant]);
 
   // When a story run finishes cleanly, the agent's allowed move fires on its

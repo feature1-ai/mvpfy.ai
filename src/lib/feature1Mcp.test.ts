@@ -55,10 +55,14 @@ describe('listAssignedFeatures', () => {
   const reply = (result: unknown) => {
     (globalThis as { window?: unknown }).window = {
       mvpfy: {
-        mcpFetch: async () => ({
+        mcpFetch: async (req: { url: string }) => ({
           ok: true,
           status: 200,
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, result }),
+          body: JSON.stringify(
+            req.url.endsWith('/api/auth/me')
+              ? { tenant: { id: 'tenant-acme', slug: 'acme' }, user: { id: 'user-acme' } }
+              : { jsonrpc: '2.0', id: 1, result }
+          ),
         }),
       },
     };
@@ -138,10 +142,14 @@ describe('browserLogin', () => {
   const reply = (result: unknown) => {
     (globalThis as { window?: unknown }).window = {
       mvpfy: {
-        mcpFetch: async () => ({
+        mcpFetch: async (req: { url: string }) => ({
           ok: true,
           status: 200,
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, result }),
+          body: JSON.stringify(
+            req.url.endsWith('/api/auth/me')
+              ? { tenant: { id: 'tenant-acme', slug: 'acme' }, user: { id: 'user-acme' } }
+              : { jsonrpc: '2.0', id: 1, result }
+          ),
         }),
       },
     };
@@ -155,31 +163,32 @@ describe('browserLogin', () => {
     // The tool's answer lives in fields next to `content`; the text block is
     // instructions for a human and is not JSON.
     reply({
-      content: [{ type: 'text', text: 'Open this URL to sign in:\n\nhttps://x/login' }],
-      loginUrl: 'https://x/login',
+      content: [
+        { type: 'text', text: 'Open this URL to sign in:\n\nhttps://acme-mcp.feature1.ai/login' },
+      ],
+      loginUrl: 'https://acme-mcp.feature1.ai/login',
       loginId: 'abc123',
     });
     expect(await new Feature1McpClient('acme', null).browserLogin()).toEqual({
-      loginUrl: 'https://x/login',
+      loginUrl: 'https://acme-mcp.feature1.ai/login',
       loginId: 'abc123',
     });
   });
 
   it('accepts snake_case too', async () => {
-    reply({ content: [], login_url: 'https://x/login', login_id: 'abc123' });
+    reply({ content: [], login_url: 'https://acme-mcp.feature1.ai/login', login_id: 'abc123' });
     const start = await new Feature1McpClient('acme', null).browserLogin();
     expect(start.loginId).toBe('abc123');
   });
 
-  it('accepts a workspace that keeps the session and issues no login id', async () => {
-    // Signing in is still real; the agent's own connection to the workspace
-    // carries the identity instead of a token mvpfy holds.
+  it('can open a browser without treating it as an authenticated connection', async () => {
+    // A sign-in URL is only an instruction; it does not authenticate this client.
     reply({
-      content: [{ type: 'text', text: 'Open https://x/login' }],
-      loginUrl: 'https://x/login',
+      content: [{ type: 'text', text: 'Open https://acme-mcp.feature1.ai/login' }],
+      loginUrl: 'https://acme-mcp.feature1.ai/login',
     });
     expect(await new Feature1McpClient('acme', null).browserLogin()).toEqual({
-      loginUrl: 'https://x/login',
+      loginUrl: 'https://acme-mcp.feature1.ai/login',
       loginId: null,
     });
   });
@@ -188,6 +197,125 @@ describe('browserLogin', () => {
     reply({ content: [{ type: 'text', text: 'nope' }] });
     await expect(new Feature1McpClient('acme', null).browserLogin()).rejects.toThrow(
       /did not offer a sign-in URL/
+    );
+  });
+});
+
+describe('tenant isolation', () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+  it('never lists features without a personal bearer token', async () => {
+    let called = false;
+    (globalThis as { window?: unknown }).window = {
+      mvpfy: {
+        mcpFetch: async () => {
+          called = true;
+          throw new Error('Must not fetch');
+        },
+      },
+    };
+    await expect(new Feature1McpClient('watiq', null).listAssignedFeatures()).rejects.toThrow(
+      /own token/
+    );
+    expect(called).toBe(false);
+  });
+  it('rejects a Satorixr token on Watiq before calling the feature tool', async () => {
+    const urls: string[] = [];
+    (globalThis as { window?: unknown }).window = {
+      mvpfy: {
+        mcpFetch: async (req: { url: string }) => {
+          urls.push(req.url);
+          return {
+            ok: true,
+            status: 200,
+            body: JSON.stringify({
+              tenant: { id: 'satorixr', slug: 'satorixr' },
+              user: { id: 'u' },
+            }),
+          };
+        },
+      },
+    };
+    await expect(
+      new Feature1McpClient('watiq', 'wrong-token').listAssignedFeatures()
+    ).rejects.toThrow(/different workspace/);
+    expect(urls).toEqual(['https://watiq.feature1.ai/api/auth/me']);
+  });
+  it('sends the same personal credential to identity verification and feature listing', async () => {
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+    (globalThis as { window?: unknown }).window = {
+      mvpfy: {
+        mcpFetch: async (req: { url: string; headers: Record<string, string> }) => {
+          requests.push(req);
+          return {
+            ok: true,
+            status: 200,
+            body: JSON.stringify(
+              req.url.endsWith('/auth/me')
+                ? { tenant: { id: 'watiq', slug: 'watiq' }, user: { id: 'u' } }
+                : { result: { structuredContent: { features: [] } } }
+            ),
+          };
+        },
+      },
+    };
+    await expect(
+      new Feature1McpClient('watiq', 'personal').listAssignedFeatures()
+    ).resolves.toEqual([]);
+    expect(requests).toHaveLength(2);
+    expect(requests.every((r) => r.headers.Authorization === 'Bearer personal')).toBe(true);
+  });
+  it('does not trust a legacy authenticated flag as an identity', async () => {
+    (globalThis as { window?: unknown }).window = {
+      mvpfy: {
+        mcpFetch: async () => ({
+          ok: true,
+          status: 200,
+          body: JSON.stringify({ authenticated: true }),
+        }),
+      },
+    };
+    await expect(new Feature1McpClient('watiq', 't').verifyIdentity()).rejects.toThrow(
+      /verified identity/
+    );
+  });
+  it('rejects tool errors even when accompanied by structured data', async () => {
+    (globalThis as { window?: unknown }).window = {
+      mvpfy: {
+        mcpFetch: async (req: { url: string }) => ({
+          ok: true,
+          status: 200,
+          body: JSON.stringify(
+            req.url.endsWith('/auth/me')
+              ? { tenant: { id: 'watiq', slug: 'watiq' }, user: { id: 'u' } }
+              : {
+                  result: {
+                    isError: true,
+                    content: [{ type: 'text', text: 'Access denied' }],
+                    structuredContent: { features: [] },
+                  },
+                }
+          ),
+        }),
+      },
+    };
+    await expect(new Feature1McpClient('watiq', 't').listAssignedFeatures()).rejects.toThrow(
+      'Access denied'
+    );
+  });
+  it('will not open a browser login on another workspace', async () => {
+    (globalThis as { window?: unknown }).window = {
+      mvpfy: {
+        mcpFetch: async () => ({
+          ok: true,
+          status: 200,
+          body: JSON.stringify({ result: { loginUrl: 'https://satorixr-mcp.feature1.ai/login' } }),
+        }),
+      },
+    };
+    await expect(new Feature1McpClient('watiq', null).browserLogin()).rejects.toThrow(
+      /different workspace/
     );
   });
 });

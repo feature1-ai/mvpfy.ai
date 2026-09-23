@@ -9,7 +9,7 @@ export interface UserStory {
 
 export interface BrowserLoginStart {
   loginUrl: string;
-  /** Null on a workspace that keeps the session rather than issuing one. */
+  /** Optional browser-flow identifier; never proof of authentication. */
   loginId: string | null;
 }
 
@@ -71,6 +71,7 @@ export function tenantSlugFrom(input: string): string | null {
 let rpcId = 0;
 
 export class Feature1McpError extends Error {}
+export class Feature1McpAuthError extends Feature1McpError {}
 
 export class Feature1McpClient {
   constructor(
@@ -92,6 +93,10 @@ export class Feature1McpClient {
       body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
     });
     if (!res.ok) {
+      if (res.status === 401 || res.status === 403)
+        throw new Feature1McpAuthError(
+          'Feature1 access denied. Reconnect to the correct workspace.'
+        );
       throw new Feature1McpError(
         res.error || `Feature1 MCP request failed (HTTP ${res.status}): ${res.body.slice(0, 300)}`
       );
@@ -115,10 +120,16 @@ export class Feature1McpClient {
    * structured JSON or as a text content block containing JSON.
    */
   private async callTool(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    if (name !== 'browser_login') await this.verifyIdentity();
     const result = (await this.rpc('tools/call', { name, arguments: args })) as {
       content?: Array<{ type: string; text?: string }>;
       structuredContent?: unknown;
+      isError?: boolean;
     } | null;
+    if (result?.isError)
+      throw new Feature1McpError(
+        result.content?.find((c) => c.type === 'text')?.text || 'Feature1 tool failed'
+      );
     if (result?.structuredContent !== undefined) return result.structuredContent;
     const text = result?.content?.find((c) => c.type === 'text')?.text;
     if (text === undefined) return result;
@@ -143,45 +154,49 @@ export class Feature1McpClient {
         'Feature1 did not offer a sign-in URL. Check the address is right and that the workspace is reachable.'
       );
     }
-    // login_id is optional: a workspace that holds the session itself has no
-    // id to hand out, and signing in is then finished when it says somebody
-    // is authenticated rather than when it returns a token.
+    const url = new URL(loginUrl);
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== mcpHost(this.tenantSlug) ||
+      url.username ||
+      url.password ||
+      url.port
+    )
+      throw new Feature1McpError('Feature1 returned a sign-in URL for a different workspace.');
+    // Opening the browser is not proof of client authentication.
     return { loginUrl, loginId: loginId ?? null };
   }
 
-  /**
-   * Wait for the browser sign-in to finish.
-   *
-   * Resolves to a token when the workspace issues one, and to null when it
-   * keeps the session itself and only reports that somebody is now signed in —
-   * which is a completed sign-in either way, just one where the agent's own
-   * connection to the workspace carries the identity instead of mvpfy's.
-   */
-  async pollLoginStatus(loginId: string | null, timeoutMs = 5 * 60_000): Promise<string | null> {
-    const statusUrl =
-      `https://${mcpHost(this.tenantSlug)}/login/status` +
-      (loginId ? `?login_id=${encodeURIComponent(loginId)}` : '');
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const res = await window.mvpfy.mcpFetch({ url: statusUrl });
-      if (res.ok) {
-        try {
-          const body = JSON.parse(res.body) as {
-            status?: string;
-            token?: string;
-            authenticated?: boolean;
-          };
-          if (body.status === 'complete' && body.token) return body.token;
-          if (body.status === 'failed') throw new Feature1McpError('Browser login failed');
-          if (body.authenticated === true) return null;
-        } catch (err) {
-          if (err instanceof Feature1McpError) throw err;
-          // Non-JSON response while pending; keep polling.
-        }
-      }
-      await new Promise((r) => setTimeout(r, 2000));
+  /** Verify identity at the tenant API, independently of shared MCP status. */
+  async verifyIdentity(): Promise<{ tenant: { id: string; slug: string }; user: { id: string } }> {
+    if (!this.token?.trim())
+      throw new Feature1McpAuthError(
+        'Reconnect Feature1 with your own token. Shared server sign-in is not supported.'
+      );
+    const res = await window.mvpfy.mcpFetch({
+      url: `https://${this.tenantSlug}.feature1.ai/api/auth/me`,
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403)
+        throw new Feature1McpAuthError(
+          'Feature1 credentials were rejected. Reconnect to the correct workspace.'
+        );
+      throw new Feature1McpError(
+        'Feature1 identity could not be checked. Try again when the workspace is reachable.'
+      );
     }
-    throw new Feature1McpError('Timed out waiting for the sign-in to finish in your browser');
+    let identity;
+    try {
+      identity = JSON.parse(res.body);
+    } catch {
+      throw new Feature1McpError('Invalid Feature1 identity response');
+    }
+    if (!identity?.tenant?.id || !identity?.user?.id || identity.tenant.slug !== this.tenantSlug)
+      throw new Feature1McpAuthError(
+        'Feature1 token belongs to a different workspace or has no verified identity. Reconnect.'
+      );
+    return identity;
   }
 
   // -- Workflow helpers ----------------------------------------------------

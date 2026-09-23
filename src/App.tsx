@@ -107,7 +107,7 @@ export default function App() {
         version={appVersion}
         projects={state.projects}
         activeProjectId={activeProject?.id ?? null}
-        tenantConnected={state.tenant !== null}
+        tenantConnected={Boolean(state.tenant?.tokenKeychainEntry)}
         tenantSlug={state.tenant?.slug ?? null}
         onSelectProject={(id) => {
           setActiveProjectId(id);

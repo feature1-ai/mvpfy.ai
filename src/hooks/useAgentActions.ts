@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CHANGE_FILE } from '../../shared/types';
 import { startInstructRun, startShipChangeRun, startShipFeatureRun } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
@@ -27,10 +27,31 @@ export function useAgentActions(
   trouble: string
 ): AgentActions {
   const { project, state, runsApi, pf, refreshFiles, guarded } = ctx;
-  const [stories, setStories] = useState<UserStory[]>([]);
-  const [storiesError, setStoriesError] = useState<string | null>(null);
-  const [loadingStories, setLoadingStories] = useState(false);
+  const storyRequest = useRef(0);
+  // Stamped with the workspace they were fetched for, and read back through
+  // that stamp. Clearing them in an effect instead renders the previous
+  // workspace's stories once before removing them, which is the frame where
+  // somebody clicks one.
+  const tenantKey = state.tenant?.tokenKeychainEntry ?? '';
+  const [loaded, setLoaded] = useState<{
+    tenantKey: string;
+    stories: UserStory[];
+    error: string | null;
+    loading: boolean;
+  }>({ tenantKey: '', stories: [], error: null, loading: false });
+  const stories = loaded.tenantKey === tenantKey ? loaded.stories : [];
+  const storiesError = loaded.tenantKey === tenantKey ? loaded.error : null;
+  const loadingStories = loaded.tenantKey === tenantKey ? loaded.loading : false;
   const [targetRepoDir, setTargetRepoDir] = useState(project.repos[0]?.dir ?? project.localPath);
+
+  // Retires every request in flight when the workspace changes, so an answer
+  // for the previous one cannot arrive in the new one. Only the ref moves.
+  useEffect(() => {
+    ++storyRequest.current;
+    return () => {
+      ++storyRequest.current;
+    };
+  }, [tenantKey]);
 
   const instruct = (instruction: string) =>
     guarded(async () => {
@@ -61,20 +82,35 @@ export function useAgentActions(
   const refreshStories = () =>
     guarded(async () => {
       if (!state.tenant) {
-        setStoriesError('Connect Feature1 in Settings first.');
+        setLoaded({
+          tenantKey,
+          stories: [],
+          error: 'Connect Feature1 in Settings first.',
+          loading: false,
+        });
         return;
       }
-      setLoadingStories(true);
-      setStoriesError(null);
+      const request = ++storyRequest.current;
+      // The request number settles it on its own: a change of workspace
+      // retires every one of them through the effect above.
+      const current = () => request === storyRequest.current;
+      setLoaded({ tenantKey, stories: [], error: null, loading: true });
       try {
         const entry = state.tenant.tokenKeychainEntry;
         const token = entry ? await window.mvpfy.keychainGet(entry) : null;
         const client = new Feature1McpClient(state.tenant.slug, token);
-        setStories(await client.listUserStories());
+        const next = await client.listUserStories();
+        if (current()) setLoaded({ tenantKey, stories: next, error: null, loading: true });
       } catch (err) {
-        setStoriesError(err instanceof Error ? err.message : String(err));
+        if (!current()) return;
+        setLoaded({
+          tenantKey,
+          stories: [],
+          error: err instanceof Error ? err.message : String(err),
+          loading: false,
+        });
       } finally {
-        setLoadingStories(false);
+        if (current()) setLoaded((prev) => ({ ...prev, tenantKey, loading: false }));
       }
     });
 
@@ -89,8 +125,11 @@ export function useAgentActions(
       if (!state.tenant) throw new Error('Connect Feature1 in Settings first.');
       const entry = state.tenant.tokenKeychainEntry;
       const token = entry ? await window.mvpfy.keychainGet(entry) : null;
-      if (entry && !token) throw new Error('Feature1 session expired — reconnect in Settings.');
-      const mcp = { url: mcpBaseUrl(state.tenant.slug), ...(token ? { token } : {}) };
+      if (!token) throw new Error('Feature1 session expired — reconnect in Settings.');
+      await new Feature1McpClient(state.tenant.slug, token).verifyIdentity();
+      if ((state.tenant?.tokenKeychainEntry ?? '') !== tenantKey)
+        throw new Error('Feature1 connection changed. Try again.');
+      const mcp = { url: mcpBaseUrl(state.tenant.slug), token };
       const handle = await startShipFeatureRun(
         project,
         story.id,

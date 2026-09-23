@@ -2,6 +2,7 @@ import { app, dialog, ipcMain, shell } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  AgentKind,
   BlankProjectRemote,
   ComposeAction,
   McpFetchRequest,
@@ -312,11 +313,25 @@ export function registerIpc(): void {
   ipcMain.handle('sign-in-all', (_ev, runId: string, tools: string[]) =>
     startRun(runId, signInAllCommand(tools), TMP_DIR)
   );
-  ipcMain.handle('mcp-register', (_ev, runId: string, name: string, url: string) => {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:') throw new Error('Only https MCP servers can be registered');
-    startRun(runId, mcpAddCommand(name, url), TMP_DIR);
-  });
+  ipcMain.handle(
+    'mcp-register',
+    (_ev, runId: string, name: string, url: string, agent: AgentKind) => {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') throw new Error('Only https MCP servers can be registered');
+      ensureDirs();
+      return new Promise<void>((resolve, reject) => {
+        startRun(runId, mcpAddCommand(name, url, agent), TMP_DIR, (code) => {
+          if (code === 0) resolve();
+          else
+            reject(
+              new Error(
+                `Could not register Feature1 in ${agent}. Check that its CLI is installed and retry.`
+              )
+            );
+        });
+      });
+    }
+  );
   ipcMain.handle('open-terminal', (_ev, workspacePath: string) => {
     const resolved = path.resolve(workspacePath);
     if (!isAllowedWorkspace(resolved)) {

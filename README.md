@@ -82,6 +82,11 @@ the Git row says so while GitHub is not connected.
 
 ## Setup
 
+Feature1 MCP registration follows **Settings → Default agent**. Choose **Codex CLI**,
+then connect Feature1 (or click **Reconnect** if already connected) to register the
+workspace in Codex. Claude Code uses its existing user-scope registration flow.
+Registration must finish successfully before the Feature1 browser sign-in starts.
+
 ```bash
 npm install
 ```

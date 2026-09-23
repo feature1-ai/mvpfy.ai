@@ -485,8 +485,8 @@ export interface MvpfyApi {
   ideStatus(workspacePath: string): Promise<{ running: boolean; port: number | null }>;
   cliLogin(runId: string, tool: string): Promise<void>;
   /** How each required tool would be installed on this machine (macOS only). */
-  /** Add an MCP server to Claude Code itself, at user scope. */
-  registerMcpServer(runId: string, name: string, url: string): Promise<void>;
+  /** Add an MCP server to the selected agent, at user scope. */
+  registerMcpServer(runId: string, name: string, url: string, agent: AgentKind): Promise<void>;
   /** Open the user's own terminal in a project, for talking to the agent directly. */
   openTerminal(workspacePath: string): Promise<void>;
   installPlans(): Promise<InstallPlan[]>;

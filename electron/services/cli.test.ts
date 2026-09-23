@@ -81,6 +81,11 @@ describe('parseModelsFromHelp', () => {
 });
 
 describe('mcpAddCommand', () => {
+  it('registers Codex without requiring Claude', () => {
+    expect(mcpAddCommand('feature1', 'https://example.com/mcp', 'codex')).toBe(
+      `codex mcp add ${shellQuote('feature1')} --url ${shellQuote('https://example.com/mcp')}`
+    );
+  });
   const command = mcpAddCommand('feature1', 'https://warsha-mcp.feature1.ai/mcp/');
 
   it('registers at user scope, so no repository gains an .mcp.json', () => {

@@ -46,13 +46,14 @@ export function useFeature1Login(state: MvpfyState, updateState: UpdateState): F
     setStatus('waiting');
     setError(null);
     try {
-      // Give Claude Code the workspace first: with the server registered, the
+      // Give the selected agent the workspace first: with the server registered, the
       // agent's own connection carries the sign-in, which is what makes a
       // workspace that keeps its session usable at all.
       await window.mvpfy.registerMcpServer(
         `f1-mcp-${Date.now().toString(36)}`,
         'feature1',
-        mcpBaseUrl(slug)
+        mcpBaseUrl(slug),
+        state.settings.defaultAgent
       );
       const client = new Feature1McpClient(slug, null);
       const { loginUrl, loginId } = await client.browserLogin();
@@ -73,7 +74,7 @@ export function useFeature1Login(state: MvpfyState, updateState: UpdateState): F
       setError(err instanceof Error ? err.message : String(err));
       return false;
     }
-  }, [address, updateState]);
+  }, [address, updateState, state.settings.defaultAgent]);
 
   const disconnect = useCallback(() => {
     updateState((prev) => ({ ...prev, tenant: null }));

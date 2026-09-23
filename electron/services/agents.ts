@@ -1,5 +1,4 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { DEFAULT_STATE, RunAgentMcp, RunAgentRequest } from '../../shared/types';
 import { ensureDirs, isAllowedWorkspace, TMP_DIR } from '../paths';
@@ -28,33 +27,14 @@ function writeClaudeMcpConfig(runId: string, mcp: RunAgentMcp): string {
   return file;
 }
 
-/**
- * Codex has no --mcp-config flag; it reads $CODEX_HOME/config.toml. Build a
- * per-run CODEX_HOME that copies the user's real ~/.codex (to keep their
- * sign-in) and appends the Feature1 MCP server, so the run is self-contained
- * and the user's global config is never mutated.
- */
-function prepareCodexHome(runId: string, mcp: RunAgentMcp): string {
-  const dir = path.join(TMP_DIR, `codex-home-${runId}`);
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const realHome = path.join(os.homedir(), '.codex');
-  if (fs.existsSync(realHome)) {
-    fs.cpSync(realHome, dir, { recursive: true });
-  }
-  const configPath = path.join(dir, 'config.toml');
-  const existing = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
-  // Streamable-HTTP MCP server entry; auth carried as an Authorization
-  // header. (Codex HTTP-MCP config may need verification on the target host.)
-  const block = [
-    '',
-    '[mcp_servers.feature1]',
-    `url = "${mcp.url}"`,
-    `http_headers = { "Authorization" = "Bearer ${mcp.token}" }`,
-    '',
-  ].join('\n');
-  fs.writeFileSync(configPath, existing + block, { mode: 0o600 });
-  return dir;
+/** Override just this server for a run, keeping the user's normal Codex home. */
+export function codexMcpConfig(mcp: RunAgentMcp): { flag: string; env?: NodeJS.ProcessEnv } {
+  const tokenSetting = mcp.token ? ', bearer_token_env_var = "MVPFY_FEATURE1_TOKEN"' : '';
+  const value = `mcp_servers.feature1={ url = ${JSON.stringify(mcp.url)}${tokenSetting} }`;
+  return {
+    flag: `-c ${shellQuote(value)} `,
+    ...(mcp.token ? { env: { MVPFY_FEATURE1_TOKEN: mcp.token } } : {}),
+  };
 }
 
 /** Per-run scratch that must not outlive the run. */
@@ -184,14 +164,9 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
     // only choice that cannot be wrong about somebody else's account.
     const model = (req.model || DEFAULT_STATE.settings.codexModel).trim();
     const modelFlag = model ? `--model ${q(model)} ` : '';
-    if (req.mcp) {
-      // Handed to the process as a real environment variable rather than a
-      // `CODEX_HOME=... codex` prefix: that prefix is POSIX-only syntax, and
-      // cmd.exe reads it as the name of a command to run.
-      scratch.push(prepareCodexHome(req.runId, req.mcp));
-      env = { CODEX_HOME: scratch[scratch.length - 1] };
-    }
-    command = `${cdTo(repoPath)} && codex exec ${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
+    const mcpConfig = req.mcp ? codexMcpConfig(req.mcp) : undefined;
+    env = mcpConfig?.env;
+    command = `${cdTo(repoPath)} && codex exec ${mcpConfig?.flag ?? ''}${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
   }
   startRun(req.runId, command, repoPath, () => removeQuietly(scratch), env);
 }

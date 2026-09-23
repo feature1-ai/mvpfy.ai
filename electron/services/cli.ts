@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { CliName, CliStatus, REQUIRED_CLIS } from '../../shared/types';
+import { AgentKind, CliName, CliStatus, REQUIRED_CLIS } from '../../shared/types';
 import { terminalCommand } from './install';
 import { IS_WIN, resolveWindowsPath, shellQuote, spawnShellSync } from './shell';
 
@@ -186,7 +186,11 @@ export function agentModels(agent: CliName): string[] {
  * old one rather than fail; it runs unconditionally, since "not registered" is
  * the state we want either way.
  */
-export function mcpAddCommand(name: string, url: string): string {
+export function mcpAddCommand(name: string, url: string, agent: AgentKind = 'claude'): string {
+  if (agent !== 'claude' && agent !== 'codex') throw new Error('Unsupported agent');
+  if (agent === 'codex') {
+    return `codex mcp add ${shellQuote(name)} --url ${shellQuote(url)}`;
+  }
   const alsoRun = IS_WIN ? '&' : ';';
   return (
     `claude mcp remove ${shellQuote(name)} -s user ${alsoRun} ` +

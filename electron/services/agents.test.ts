@@ -2,10 +2,26 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { claudeCommandFor, sweepRunArtifacts } from './agents';
+import { claudeCommandFor, codexMcpConfig, sweepRunArtifacts } from './agents';
 import { shellQuote } from './shell';
 
 let dir: string;
+
+describe('Codex Feature1 configuration', () => {
+  it('uses an environment token rather than exposing it in the command', () => {
+    const config = codexMcpConfig({ url: 'https://example.com/mcp', token: 'private-token' });
+    expect(config.flag).toContain('mcp_servers.feature1=');
+    expect(config.flag).toContain('MVPFY_FEATURE1_TOKEN');
+    expect(config.flag).not.toContain('private-token');
+    expect(config.env).toEqual({ MVPFY_FEATURE1_TOKEN: 'private-token' });
+  });
+  it('does not invent a bearer token for a session-only workspace', () => {
+    const config = codexMcpConfig({ url: 'https://example.com/mcp' });
+    expect(config.flag).not.toContain('bearer_token_env_var');
+    expect(config.flag).not.toContain('undefined');
+    expect(config.env).toBeUndefined();
+  });
+});
 
 /** Create an entry and backdate it so the age check can be exercised. */
 function make(name: string, ageMs: number, isDir = false): string {

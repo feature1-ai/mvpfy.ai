@@ -398,6 +398,13 @@ export default function SettingsView({
             <div className="flex shrink-0 items-center gap-3">
               <span className="font-mono text-[11.5px] text-go">{state.tenant.host}</span>
               <button
+                onClick={() => void login.connect()}
+                disabled={login.status === 'waiting'}
+                className="text-[11.5px] text-go disabled:opacity-50"
+              >
+                {login.status === 'waiting' ? 'Connecting…' : 'Reconnect'}
+              </button>
+              <button
                 onClick={login.disconnect}
                 className="text-[11.5px] text-muted hover:text-ink"
               >

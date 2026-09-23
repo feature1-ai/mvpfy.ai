@@ -32,18 +32,18 @@ export function startRun(
   runId: string,
   command: string,
   cwd: string,
-  onExit?: () => void,
+  onExit?: (code: number | null) => void,
   extraEnv?: NodeJS.ProcessEnv
 ): void {
   if (activeRuns.has(runId)) {
     throw new Error(`Run ${runId} is already active`);
   }
   let cleaned = false;
-  const cleanup = () => {
+  const cleanup = (code: number | null) => {
     if (cleaned) return;
     cleaned = true;
     try {
-      onExit?.();
+      onExit?.(code);
     } catch {
       // Cleanup is best effort; the startup sweep is the backstop.
     }
@@ -68,7 +68,7 @@ export function startRun(
     if (exited) return;
     exited = true;
     activeRuns.delete(runId);
-    cleanup();
+    cleanup(code);
     sink.exit({ runId, code });
   };
   child.on('error', (err) => {

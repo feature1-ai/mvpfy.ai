@@ -40,6 +40,7 @@ import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
   createBlankProject,
   createProject,
+  deleteFeatureFiles,
   workspaceIsEmpty,
   deleteProject,
   linkProject,
@@ -164,6 +165,9 @@ export function registerIpc(): void {
   );
   ipcMain.handle('repo-branches', (_ev, dirs: string[]) => readRepoBranches(dirs));
   ipcMain.handle('repo-remotes', (_ev, dirs: string[]) => readRepoRemotes(dirs));
+  ipcMain.handle('delete-feature', (_ev, workspacePath: string, configDir: string, slug: string) =>
+    deleteFeatureFiles(workspacePath, configDir, slug)
+  );
   ipcMain.handle('pr-states', (_ev, urls: string[]) => pullRequestStates(urls));
   ipcMain.handle('pick-images', async () => {
     const res = await dialog.showOpenDialog({

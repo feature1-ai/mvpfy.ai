@@ -2,7 +2,13 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CreateProjectResult, RepoCloneOutcome, RepoFile } from '../../shared/types';
-import { BlankProjectRemote, FeatureRepoGit } from '../../shared/types';
+import {
+  BlankProjectRemote,
+  designDirFor,
+  FeatureRepoGit,
+  planFileFor,
+  specFileFor,
+} from '../../shared/types';
 import { slugFromRepoUrl } from '../../shared/slug';
 import {
   ensureDirs,
@@ -893,6 +899,43 @@ export function addRemoteCommand(dir: string, url: string): string {
     `git -C ${q} remote add origin ${shellQuote(address)} && ` +
     `git -C ${q} push -u origin HEAD`
   );
+}
+
+/**
+ * Remove a feature's board: its plan, its spec, its designs, its checkouts.
+ *
+ * Deliberately not its branch, and deliberately not its commits. A board is
+ * mvpfy's record of a feature; the work is in git and on GitHub, and removing
+ * a card is not a decision to throw code away. A feature deleted by mistake
+ * costs the planning; one that also deleted its branch would cost the work.
+ */
+export function deleteFeatureFiles(
+  workspacePath: string,
+  configDir: string,
+  slug: string
+): { removed: string[] } {
+  const root = path.resolve(workspacePath);
+  if (!isAllowedWorkspace(root)) {
+    throw new Error('Features can only be removed from managed and linked project directories');
+  }
+  if (!slug.trim()) throw new Error('Refusing to remove the unnamed plan');
+  const removed: string[] = [];
+  const targets = [
+    path.join(root, configDir, planFileFor(slug)),
+    path.join(root, configDir, specFileFor(slug)),
+    path.join(root, configDir, designDirFor(slug)),
+  ];
+  for (const target of targets) {
+    // Every path is built from a slug that named a plan file; asserted anyway
+    // because these reach rm.
+    if (!target.startsWith(path.join(root, configDir))) {
+      throw new Error('Refusing to remove outside the workspace');
+    }
+    if (!fs.existsSync(target)) continue;
+    fs.rmSync(target, { recursive: true, force: true });
+    removed.push(path.basename(target));
+  }
+  return { removed };
 }
 
 /** Current branch per repo dir (empty string when not resolvable). */

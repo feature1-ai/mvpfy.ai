@@ -485,6 +485,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
           <button onClick={() => setSpecOpen((v) => !v)} className="btn-secondary h-8 px-3.5">
             {specOpen ? 'Hide spec' : 'View spec'}
           </button>
+          <DeleteFeature c={c} plan={plan} />
         </div>
       </div>
 
@@ -888,6 +889,60 @@ function PrBadges({ pr }: { pr: PullRequestState }) {
     else if (pr.reviewDecision === 'REVIEW_REQUIRED') out.push(chip('needs review', 'warn'));
   }
   return <>{out}</>;
+}
+
+/**
+ * Removing a feature's board.
+ *
+ * What it removes and what it leaves is the whole question, so the
+ * confirmation says both rather than asking "are you sure?" — which is a
+ * question nobody can answer without already knowing the answer.
+ *
+ * Two clicks rather than a dialog: the first arms it, moving away disarms it,
+ * and it never steals the screen.
+ */
+function DeleteFeature({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
+  const [armed, setArmed] = useState(false);
+  const built = c.featureGit.reduce((n, r) => n + r.ahead, 0);
+  const prs = plan.prUrls?.length ?? 0;
+  if (!armed) {
+    return (
+      <button
+        onClick={() => setArmed(true)}
+        className="h-8 px-2.5 text-[13px] text-muted hover:text-danger"
+      >
+        Delete
+      </button>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="max-w-[420px] text-[11.5px] leading-snug text-muted">
+        Removes the plan, the spec and the designs.{' '}
+        <strong className="font-medium text-ink">
+          {built > 0 || prs > 0
+            ? `The branch keeps its ${built > 0 ? `${built} commit${built === 1 ? '' : 's'}` : 'work'}${prs > 0 ? `, and ${prs} pull request${prs === 1 ? '' : 's'} stay open` : ''}.`
+            : 'Nothing in git is touched.'}
+        </strong>
+      </span>
+      <button
+        onClick={() => {
+          setArmed(false);
+          void c.deleteFeature();
+        }}
+        disabled={c.busy}
+        className="h-8 rounded-md bg-danger px-3 text-[13px] font-medium text-white disabled:opacity-50"
+      >
+        Delete this feature
+      </button>
+      <button
+        onClick={() => setArmed(false)}
+        className="h-8 px-2 text-[13px] text-muted hover:text-body"
+      >
+        Cancel
+      </button>
+    </span>
+  );
 }
 
 /**

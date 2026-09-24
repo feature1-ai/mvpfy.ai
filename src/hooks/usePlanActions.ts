@@ -78,6 +78,8 @@ export interface PlanActions {
   stranded: StrandedFeature | null;
   /** Pick the feature back up wherever it stopped, and carry on to the end. */
   continueFeature(): Promise<boolean>;
+  /** Remove this feature's board. Its branch and commits are left alone. */
+  deleteFeature(): Promise<boolean>;
   /** Attach images of what this feature should look like. */
   addDesign(): Promise<boolean>;
   /** Remove one attached design. */
@@ -635,6 +637,64 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       await implementFeature();
     });
 
+  /**
+   * Remove a feature's board.
+   *
+   * Everything mvpfy wrote about the feature goes; nothing git holds does. The
+   * branch and its commits stay, and so does anything already on GitHub —
+   * deleting a card is not a decision to throw work away, and somebody who
+   * deletes the wrong one should lose an afternoon of planning at worst.
+   */
+  const deleteFeature = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active) throw new Error('Open a feature first.');
+      const slug = active.slug;
+      if (!slug) throw new Error('This feature has no name to remove it by.');
+      if (anyStoryRunning || projectRuns.some((r) => r.running && r.handle.planSlug === slug)) {
+        throw new Error('Something is still running for this feature — stop it first.');
+      }
+      const dirs = project.repos.map((r) => r.dir);
+      const projectKey = `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`;
+      // Put the workspace back on its trunk first: the checkout is detached at
+      // a commit of this feature, and removing the board while the app is
+      // running its code leaves somebody testing a feature that is gone.
+      if ((project.testingSlug ?? null) === slug) {
+        await window.mvpfy.checkoutFeature(project.localPath, dirs, null);
+      }
+      await window.mvpfy.worktree(
+        project.localPath,
+        dirs,
+        projectKey,
+        slug,
+        `mvpfy/${slug}`,
+        'remove'
+      );
+      await window.mvpfy.deleteFeature(project.localPath, configDirFor(project.mode), slug);
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => {
+          if (p.id !== project.id) return p;
+          const drop = <T>(rec: Record<string, T> | undefined) => {
+            if (!rec) return rec;
+            const next = { ...rec };
+            delete next[slug];
+            return next;
+          };
+          return {
+            ...p,
+            planSlugs: (p.planSlugs ?? []).filter((s) => s !== slug),
+            featureSessions: drop(p.featureSessions),
+            featureAsks: drop(p.featureAsks),
+            feature1Refs: drop(p.feature1Refs),
+            testingSlug: p.testingSlug === slug ? null : p.testingSlug,
+          };
+        }),
+      }));
+      setSelectedPlanSlug(null);
+      refreshFiles();
+    });
+
   const writeDesign = async (next: { images: string[]; links: string[] }) => {
     const active = activePlan;
     if (!active?.plan) throw new Error('Open a feature first.');
@@ -1015,6 +1075,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     stranded,
     continueFeature,
     changeFeature,
+    deleteFeature,
     addDesign,
     removeDesign,
     readDesign: (slug: string, name: string) =>

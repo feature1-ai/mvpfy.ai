@@ -96,6 +96,8 @@ const api: MvpfyApi = {
   writeRepoFile: (repoPath: string, relativePath: string, content: string) =>
     ipcRenderer.invoke('write-repo-file', repoPath, relativePath, content),
   repoRemotes: (dirs: string[]) => ipcRenderer.invoke('repo-remotes', dirs),
+  deleteFeature: (workspacePath: string, configDir: string, slug: string) =>
+    ipcRenderer.invoke('delete-feature', workspacePath, configDir, slug),
   pullRequestStates: (urls: string[]) => ipcRenderer.invoke('pr-states', urls),
   pickImages: () => ipcRenderer.invoke('pick-images'),
   addDesign: (workspacePath: string, configDir: string, slug: string, sources: string[]) =>

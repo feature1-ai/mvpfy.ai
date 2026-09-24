@@ -597,6 +597,12 @@ export interface MvpfyApi {
     port: number,
     hostHeader?: string
   ): Promise<void>;
+  /** Remove a feature's plan, spec and designs. Never its branch. */
+  deleteFeature(
+    workspacePath: string,
+    configDir: string,
+    slug: string
+  ): Promise<{ removed: string[] }>;
   /** What GitHub says about each pull request raised for a feature. */
   pullRequestStates(urls: string[]): Promise<PullRequestState[]>;
   /** The remote each repo actually points at; empty string when it has none. */

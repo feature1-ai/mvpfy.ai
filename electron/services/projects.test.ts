@@ -8,6 +8,7 @@ import {
   addRemoteCommand,
   checkoutDefaultCommand,
   commitFeatureWorkCommand,
+  deleteFeatureFiles,
   ensureInitialCommit,
   featureGitStatus,
   isRemoteUrl,
@@ -413,5 +414,52 @@ describe('addRemoteCommand', () => {
     expect(() => addRemoteCommand('/etc', 'https://github.com/acme/app.git')).toThrow(
       /managed and linked/
     );
+  });
+});
+
+describe('deleteFeatureFiles', () => {
+  const workspace = (): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-del-'));
+    setLinkedRoots([dir]);
+    return dir;
+  };
+
+  it('removes what mvpfy wrote about the feature', () => {
+    const ws = workspace();
+    fs.writeFileSync(path.join(ws, 'mvpfy-plan.paging.json'), '{}');
+    fs.writeFileSync(path.join(ws, 'mvpfy-spec.paging.md'), '# Paging');
+    fs.mkdirSync(path.join(ws, 'mvpfy-design/paging'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'mvpfy-design/paging/a.png'), 'x');
+
+    expect(deleteFeatureFiles(ws, '', 'paging').removed).toHaveLength(3);
+    expect(fs.existsSync(path.join(ws, 'mvpfy-plan.paging.json'))).toBe(false);
+    expect(fs.existsSync(path.join(ws, 'mvpfy-design/paging'))).toBe(false);
+    fs.rmSync(ws, { recursive: true, force: true });
+  });
+
+  it('leaves another feature alone', () => {
+    // Slugs share prefixes — feature1-wat-f-1 and feature1-wat-f-1-2 — and a
+    // delete that matched loosely would take the wrong board with it.
+    const ws = workspace();
+    fs.writeFileSync(path.join(ws, 'mvpfy-plan.paging.json'), '{}');
+    fs.writeFileSync(path.join(ws, 'mvpfy-plan.paging-2.json'), '{}');
+    deleteFeatureFiles(ws, '', 'paging');
+    expect(fs.existsSync(path.join(ws, 'mvpfy-plan.paging-2.json'))).toBe(true);
+    fs.rmSync(ws, { recursive: true, force: true });
+  });
+
+  it('refuses the unnamed plan, which is the whole project', () => {
+    // An empty slug names mvpfy-plan.json — the legacy single plan, not one
+    // feature among several.
+    expect(() => deleteFeatureFiles(workspace(), '', '  ')).toThrow(/unnamed plan/);
+  });
+
+  it('refuses a workspace it does not own', () => {
+    setLinkedRoots([]);
+    expect(() => deleteFeatureFiles('/etc', '', 'paging')).toThrow(/managed and linked/);
+  });
+
+  it('says nothing was there rather than failing on a feature already gone', () => {
+    expect(deleteFeatureFiles(workspace(), '', 'paging').removed).toEqual([]);
   });
 });

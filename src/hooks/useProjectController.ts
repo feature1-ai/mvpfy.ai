@@ -212,6 +212,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   stranded: StrandedFeature | null;
   /** Pick the feature back up wherever it stopped, and carry on to the end. */
   continueFeature(): Promise<boolean>;
+  /** Remove this feature's board. Its branch and commits are left alone. */
+  deleteFeature(): Promise<boolean>;
   /** Attach images of what this feature should look like. */
   addDesign(): Promise<boolean>;
   /** Remove one attached design. */

@@ -511,7 +511,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                 {confirmRerun ? 'Re-run setup — confirm' : 'Re-run setup'}
               </button>
               <button
-                onClick={c.refreshFiles}
+                onClick={c.refresh}
                 className="text-xs text-go hover:text-go-hover hover:underline"
               >
                 Refresh

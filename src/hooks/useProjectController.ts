@@ -228,6 +228,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   changingFeature: boolean;
   /** What GitHub says about this feature's pull requests. */
   prStates: PullRequestState[];
+  /** True while GitHub is being asked again. */
+  prStatesLoading: boolean;
   /** Ask GitHub again — checks go red and reviews arrive after the fact. */
   refreshPrStates(): void;
   /** What each repository's checkout of the active feature is holding. */
@@ -244,7 +246,13 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   startIde(): Promise<boolean>;
   stopIde(): Promise<boolean>;
   removeProject(): Promise<boolean>;
-  refreshFiles(): void;
+  /**
+   * Re-read everything that goes stale while nobody is looking: the plans
+   * and stories on disk, and what GitHub now says about the pull requests.
+   * A PM presses one Refresh; a check that went red an hour ago is exactly
+   * what they pressed it for.
+   */
+  refresh(): void;
   stopRun(runId: string): void;
   setActiveFile(file: string): void;
   setAnswersDraft(text: string): void;
@@ -465,6 +473,14 @@ export function useProjectController(
     appHealthy
   );
   const planActions = usePlanActions(ctx);
+  // The one Refresh in the toolbar. Files come from disk and move when a run
+  // moves them; pull request state only ever changes on GitHub's side, so
+  // without this it stayed at whatever it said when the feature was opened.
+  const { refreshPrStates } = planActions;
+  const refresh = useCallback(() => {
+    refreshFiles();
+    refreshPrStates();
+  }, [refreshFiles, refreshPrStates]);
   const agentActions = useAgentActions(ctx, trouble);
   const bootstrapFlow = useBootstrapFlow(ctx, appHealthy);
   const readinessActions = useReadinessActions(ctx);
@@ -568,7 +584,7 @@ export function useProjectController(
     tenantConnected: Boolean(state.tenant?.tokenKeychainEntry),
     feature1Login,
     feature1Sync,
-    refreshFiles,
+    refresh,
     stopRun: runsApi.stop,
     setActiveFile,
     openExternal: (url: string) => void window.mvpfy.openExternal(url),

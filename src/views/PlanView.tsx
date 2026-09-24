@@ -139,8 +139,8 @@ export default function PlanView({ c, onOpenTab }: Props) {
         {sync.syncing ? 'Syncing…' : '⇅ Sync Feature1'}
       </button>
       <button
-        onClick={c.refreshFiles}
-        title="Re-read plans, stories and launch readiness from disk"
+        onClick={c.refresh}
+        title="Re-read plans, stories, launch readiness and pull request status"
         className="h-7 rounded-full border border-line bg-surface px-3 text-xs text-muted transition-colors hover:border-muted hover:text-body"
       >
         ↻ Refresh
@@ -1220,9 +1220,10 @@ function RaisedPullRequests({ c, plan }: { c: ProjectController; plan: ProjectPl
           </p>
           <button
             onClick={() => c.refreshPrStates()}
-            className="shrink-0 text-[11.5px] text-go hover:underline"
+            disabled={c.prStatesLoading}
+            className="shrink-0 text-[11.5px] text-go hover:underline disabled:text-muted disabled:no-underline"
           >
-            Refresh
+            {c.prStatesLoading ? 'Checking…' : 'Refresh'}
           </button>
         </div>
         <div className="flex flex-col items-start gap-1.5">

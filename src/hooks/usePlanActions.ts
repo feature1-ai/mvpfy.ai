@@ -96,6 +96,8 @@ export interface PlanActions {
   changingFeature: boolean;
   /** What GitHub says about this feature's pull requests. */
   prStates: PullRequestState[];
+  /** True while gh is being asked — a refresh that says nothing reads as broken. */
+  prStatesLoading: boolean;
   /** Ask GitHub again — checks go red and reviews arrive after the fact. */
   refreshPrStates(): void;
   /** What each repository's checkout of the active feature is holding. */
@@ -572,10 +574,11 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // arrives overnight, it merges while nobody is looking.
   // Stamped with the urls it answered for, so switching features shows nothing
   // rather than the last feature's pull requests while the next load runs.
-  const [prAnswer, setPrAnswer] = useState<{ key: string; rows: PullRequestState[] }>({
-    key: '',
-    rows: [],
-  });
+  const [prAnswer, setPrAnswer] = useState<{
+    key: string;
+    nonce: number;
+    rows: PullRequestState[];
+  }>({ key: '', nonce: -1, rows: [] });
   const prUrlKey = (activePlan?.plan?.prUrls ?? []).join('|');
   const [prNonce, setPrNonce] = useState(0);
   const refreshPrStates = useCallback(() => setPrNonce((n) => n + 1), []);
@@ -585,16 +588,21 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     void window.mvpfy
       .pullRequestStates(prUrlKey.split('|'))
       .then((rows) => {
-        if (!cancelled) setPrAnswer({ key: prUrlKey, rows });
+        if (!cancelled) setPrAnswer({ key: prUrlKey, nonce: prNonce, rows });
       })
       .catch(() => {
-        if (!cancelled) setPrAnswer({ key: prUrlKey, rows: [] });
+        if (!cancelled) setPrAnswer({ key: prUrlKey, nonce: prNonce, rows: [] });
       });
     return () => {
       cancelled = true;
     };
   }, [prUrlKey, prNonce]);
   const prStates = prAnswer.key === prUrlKey ? prAnswer.rows : [];
+  // Derived rather than set in the effect: an answer that is not for this
+  // feature's urls, or is one Refresh behind, means gh is still being asked.
+  // The rows already on screen stay up meanwhile — a refresh that blanked them
+  // would say less than the stale ones did.
+  const prStatesLoading = prAnswer.key !== prUrlKey || prAnswer.nonce !== prNonce;
 
   const commitFeatureWork = () =>
     guarded(async () => {
@@ -1121,6 +1129,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     setDesignLinks,
     featureGit,
     prStates,
+    prStatesLoading,
     refreshPrStates,
     commitFeatureWork,
     changingFeature: projectRuns.some(

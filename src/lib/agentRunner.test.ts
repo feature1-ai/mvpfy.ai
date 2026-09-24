@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildShipFeaturePrompt,
   isAmbientRun,
+  lostConversation,
   extractPrUrl,
   startInstructRun,
   startReadinessFixRun,
@@ -368,5 +369,25 @@ describe('runs that are not activity', () => {
     for (const kind of ['plan-story', 'docker-up', 'raise-pr', 'bootstrap'] as const) {
       expect(isAmbientRun(kind), kind).toBe(false);
     }
+  });
+});
+
+describe('lostConversation', () => {
+  it('spots a resume for a conversation that was never there', () => {
+    // mvpfy records a feature's conversation id when it mints it, not when the
+    // conversation is proved to exist — so an opening run that failed leaves
+    // an id with nothing behind it, and every later run asks to resume it.
+    expect(lostConversation('No conversation found with session ID: fba777bc-3cf8-431f')).toBe(
+      true
+    );
+  });
+
+  it('is not every failure, only the one that fixes itself', () => {
+    // Forgetting the id and going again repairs this and nothing else; doing
+    // it for a real failure would hide the failure and lose the context.
+    expect(lostConversation('FAIL src/app.test.ts — expected 2 received 3')).toBe(false);
+    expect(lostConversation('usage limit reached')).toBe(false);
+    expect(lostConversation('')).toBe(false);
+    expect(lostConversation(null)).toBe(false);
   });
 });

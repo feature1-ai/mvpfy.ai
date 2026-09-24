@@ -8,6 +8,7 @@ import {
   startSyncFeatureRun,
   startFeatureChangeRun,
   isAmbientRun,
+  lostConversation,
   makeRunId,
   startGitAuthRun,
   startRaisePrRun,
@@ -422,12 +423,35 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   const failedRuns = projectRuns.filter(
     (r) => !r.running && r.exitCode !== 0 && r.handle.planSlug !== undefined
   );
+  // Held in a ref because implementStory is declared further down; reading it
+  // directly here would be a use before declaration.
+  const implementStoryRef = useRef<
+    ((code: string, continuing?: boolean) => Promise<boolean>) | null
+  >(null);
   const processedFailures = useRef(new Set<string>());
+  // One automatic retry per feature, so a conversation that was never there
+  // cannot become a loop of runs each opening and failing in turn.
+  const reopened = useRef(new Set<string>());
   useEffect(() => {
     for (const run of failedRuns) {
       if (processedFailures.current.has(run.handle.runId)) continue;
       processedFailures.current.add(run.handle.runId);
-      forgetSession(run.handle.planSlug ?? '');
+      const slug = run.handle.planSlug ?? '';
+      forgetSession(slug);
+      // A story that asked to resume a conversation that does not exist has
+      // not failed at anything — nothing was attempted. Forgetting the id and
+      // making the person press the button again shows them an error about
+      // our own bookkeeping, so it just goes again, once.
+      if (
+        run.handle.kind === 'plan-story' &&
+        run.handle.storyId &&
+        lostConversation(run.log) &&
+        !reopened.current.has(slug)
+      ) {
+        reopened.current.add(slug);
+        const code = run.handle.storyId;
+        queueMicrotask(() => void implementStoryRef.current?.(code, true));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [failedRuns]);
@@ -972,6 +996,13 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       );
       runsApi.track(handle);
     });
+
+  // Published for the lost-conversation retry above, which is declared before
+  // implementStory exists. Assigned in an effect: writing a ref during render
+  // is the rule this file already had to be fixed for once.
+  useEffect(() => {
+    implementStoryRef.current = implementStory;
+  });
 
   /**
    * Work through the feature's remaining stories in order.

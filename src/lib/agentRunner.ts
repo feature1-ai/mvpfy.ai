@@ -147,6 +147,22 @@ export type RunKind =
   | 'git-auth';
 
 /**
+ * A resume that failed because the conversation was never there.
+ *
+ * mvpfy records a feature's conversation id when it mints it, not when the
+ * conversation is proved to exist — so an opening run that failed early, or
+ * was killed, leaves an id behind with nothing behind it. Every later run then
+ * asks to resume something that was never started.
+ *
+ * Told apart from every other failure because it is the one that fixes itself:
+ * forget the id, open a new conversation, and the work is unaffected. The plan
+ * and the spec carry everything that mattered.
+ */
+export function lostConversation(log: string | null | undefined): boolean {
+  return /No conversation found with session ID/i.test(log ?? '');
+}
+
+/**
  * Runs that are not activity.
  *
  * Most runs are a task with an end, and while one is going the buttons that

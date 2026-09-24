@@ -458,6 +458,19 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     guarded(async () => {
       const ref = featureRef.trim();
       if (!ref) return;
+      // Guarded here as well as hidden in the list, because the reference can
+      // also be typed in — and a second board for one Feature1 feature splits
+      // its stories across two places that each think they are the whole thing.
+      const already = Object.entries(project.feature1Refs ?? {}).find(
+        ([, r]) => r.toLowerCase() === ref.toLowerCase()
+      );
+      const fromPlan = plans.find(
+        (pl) => (pl.plan?.feature1FeatureRef ?? '').toLowerCase() === ref.toLowerCase()
+      );
+      if (already || fromPlan) {
+        setSelectedPlanSlug(already?.[0] ?? fromPlan!.slug);
+        throw new Error(`${ref} is already here — opened it rather than pulling it again.`);
+      }
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
       const mcp = await feature1Mcp();
@@ -475,7 +488,16 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       updateState((prev) => ({
         ...prev,
         projects: prev.projects.map((p) =>
-          p.id === project.id ? { ...p, planSlugs: [...(p.planSlugs ?? []), slug] } : p
+          p.id === project.id
+            ? {
+                ...p,
+                planSlugs: [...(p.planSlugs ?? []), slug],
+                // Recorded now, not when the run finishes writing the plan:
+                // until something knows this feature is being pulled, it stays
+                // on offer and the next click starts a second board for it.
+                feature1Refs: { ...(p.feature1Refs ?? {}), [slug]: ref },
+              }
+            : p
         ),
       }));
       setSelectedPlanSlug(slug);

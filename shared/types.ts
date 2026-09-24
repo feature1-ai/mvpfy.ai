@@ -62,6 +62,16 @@ export interface Project {
    */
   featureAsks?: Record<string, string>;
   /**
+   * The Feature1 feature each board was pulled from, by plan slug, recorded
+   * the moment a pull starts.
+   *
+   * The plan file carries the same reference, but only once the run has
+   * finished writing it — minutes later. Until then nothing knew the feature
+   * was already being pulled, so it stayed on offer and every click started
+   * another board for it.
+   */
+  feature1Refs?: Record<string, string>;
+  /**
    * 'managed' (default): a clone under ~/.mvpfy/projects, fully owned by
    * mvpfy. 'linked': the user's own folder used in place — mvpfy keeps all
    * its files inside a .mvpfy/ subfolder and never deletes the folder.

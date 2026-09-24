@@ -72,8 +72,17 @@ export default function PlanView({ c, onOpenTab }: Props) {
 
   // A synced feature already on a board is one of the chips above; only the
   // ones with nothing behind them yet need an offer to pull.
+  // Both the features already pulled and the ones being pulled right now. The
+  // plan file carries the reference only once the run has finished writing it,
+  // which is minutes after the pull began — and an offer that stays up for
+  // those minutes is an offer somebody takes twice.
   const pulledRefs = new Set(
-    plans.map((f) => (f.plan?.feature1FeatureRef ?? '').toLowerCase()).filter(Boolean)
+    [
+      ...plans.map((f) => f.plan?.feature1FeatureRef ?? ''),
+      ...Object.values(c.project.feature1Refs ?? {}),
+    ]
+      .map((r) => r.toLowerCase())
+      .filter(Boolean)
   );
   const assignedNotPulled = sync.features.filter(
     (f) => !pulledRefs.has(f.code.toLowerCase()) && !pulledRefs.has(f.id.toLowerCase())

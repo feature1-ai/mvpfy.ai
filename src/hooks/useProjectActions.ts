@@ -95,10 +95,48 @@ export function useProjectActions(
   const regenerating = useRef(false);
 
   /** Phase B: the run that actually makes the repo runnable. */
+  /**
+   * Put the workspace on a feature's code before reading it, when the code is
+   * only on a branch.
+   *
+   * A project started from nothing has an empty trunk. The first feature is
+   * built in its own checkout and committed to its own branch, so the trunk is
+   * still empty afterwards — and setting up reads the trunk. It concluded,
+   * truthfully from where it stood, that there was no code, and generated a
+   * blank starter product that had nothing to do with the feature sitting on
+   * the branch beside it. Two codebases, one project, neither aware.
+   *
+   * So: if there is nothing here and a feature has commits, stand on that
+   * feature first. Returns the slug it checked out, for the caller to record.
+   */
+  const standOnFeatureIfTrunkIsEmpty = async (): Promise<string | null> => {
+    const dirs = project.repos.map((r) => r.dir);
+    const empty = await window.mvpfy.workspaceEmpty(dirs).catch(() => false);
+    if (!empty) return null;
+    const projectKey = `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`;
+    for (const slug of project.planSlugs ?? []) {
+      const rows = await window.mvpfy
+        .featureGitStatus(project.localPath, dirs, projectKey, slug, `mvpfy/${slug}`)
+        .catch(() => []);
+      if (!rows.some((r) => r.ahead > 0)) continue;
+      await window.mvpfy.checkoutFeature(project.localPath, dirs, slug);
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, testingSlug: slug } : p)),
+      }));
+      refreshFiles();
+      return slug;
+    }
+    return null;
+  };
+
   const bootstrapWork = () =>
     guarded(async () => {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
+      // Phase B reads the workspace as well, and can be reached without phase
+      // A having just run.
+      await standOnFeatureIfTrunkIsEmpty();
       // Re-verify the port right before generating: it is baked into the
       // compose file, so it must be genuinely free at bootstrap time.
       const freePort = await window.mvpfy.findFreePort(project.basePort);
@@ -122,6 +160,8 @@ export function useProjectActions(
     guarded(async () => {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
+      // Before reading the workspace, make sure it holds the product.
+      await standOnFeatureIfTrunkIsEmpty();
       regenerating.current = regenerate;
       const handle = await startBootstrapPlanRun(project, state.settings, regenerate);
       runsApi.track(handle);

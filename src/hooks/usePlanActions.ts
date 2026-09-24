@@ -7,6 +7,7 @@ import {
   startPushFeatureRun,
   startSyncFeatureRun,
   startFeatureChangeRun,
+  isAmbientRun,
   makeRunId,
   startGitAuthRun,
   startRaisePrRun,
@@ -138,7 +139,13 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // anything — including stories of other features.
   const planBlocked = projectRuns.some(
     (r) =>
-      r.running && !['app-logs', 'plan-spec', 'plan-story', 'readiness'].includes(r.handle.kind)
+      r.running &&
+      // A followed log stream and a live share are not work in progress. This
+      // list had its own copy of that rule and only one of the two was ever
+      // updated, so sharing an app quietly disabled implementing on every
+      // feature — the same defect as before, in the second place it lived.
+      !isAmbientRun(r.handle.kind) &&
+      !['plan-spec', 'plan-story', 'readiness'].includes(r.handle.kind)
   );
   const processedPlanRuns = useRef(new Set<string>());
   // The feature being worked through story by story. Session-only on purpose:

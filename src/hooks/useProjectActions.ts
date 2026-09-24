@@ -9,6 +9,7 @@ import {
 import {
   startAppLogsRun,
   startSeedRun,
+  isAmbientRun,
   makeRunId,
   startBootstrapPlanRun,
   startBootstrapRun,
@@ -277,7 +278,7 @@ export function useProjectActions(
   // its config. None of those is a start that failed, and restarting through
   // one fights whatever is working.
   const somethingElseRunning = projectRuns.some(
-    (r) => r.running && r.handle.kind !== 'app-logs' && r.handle.kind !== 'docker-up'
+    (r) => r.running && !isAmbientRun(r.handle.kind) && r.handle.kind !== 'docker-up'
   );
   useEffect(() => {
     if (!unresponsive || !lastStartId || somethingElseRunning) return;

@@ -34,6 +34,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
   const [refine, setRefine] = useState('');
   const [bounce, setBounce] = useState<{ code: string; feedback: string } | null>(null);
   const [specOpen, setSpecOpen] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const [creatingNew, setCreatingNew] = useState(false);
   const [planMode, setPlanMode] = useState<'describe' | 'feature1'>('describe');
   const [featureRef, setFeatureRef] = useState('');
@@ -485,7 +486,14 @@ export default function PlanView({ c, onOpenTab }: Props) {
           <button onClick={() => setSpecOpen((v) => !v)} className="btn-secondary h-8 px-3.5">
             {specOpen ? 'Hide spec' : 'View spec'}
           </button>
-          <DeleteFeature c={c} plan={plan} />
+          <button
+            onClick={() => setDeleteArmed((v) => !v)}
+            className={`h-8 shrink-0 px-2.5 text-[13px] ${
+              deleteArmed ? 'text-danger' : 'text-muted hover:text-danger'
+            }`}
+          >
+            Delete
+          </button>
         </div>
       </div>
 
@@ -497,6 +505,21 @@ export default function PlanView({ c, onOpenTab }: Props) {
 
       {/* git and gh say why in several lines, not one. A truncated line here
           is the difference between a report and a screenshot of a dead end. */}
+      {/* A row of its own. Inlined in the header it had no room: the text ran
+          off the edge, the buttons went with it, and the feature's own title
+          collapsed to one word a line. */}
+      {deleteArmed && (
+        <ConfirmDeleteFeature
+          c={c}
+          plan={plan}
+          onCancel={() => setDeleteArmed(false)}
+          onConfirm={() => {
+            setDeleteArmed(false);
+            void c.deleteFeature();
+          }}
+        />
+      )}
+
       {/* Whatever a stopped run left behind, and the one way to pick it up. */}
       <ContinueFeature c={c} />
 
@@ -818,11 +841,13 @@ function Feature1Push({ c, plan }: { c: ProjectController; plan: ProjectPlan }) 
  * person sees is a feature that pulled nothing, for no stated reason.
  */
 function Feature1NotSignedIn({ c }: { c: ProjectController }) {
-  const run = c.runHistory
-    .filter((r) => needsFeature1SignIn(r.log))
-    .filter((r) => !r.running)
-    .pop();
-  if (!run) return null;
+  // The most recent finished run, not the most recent one that had the
+  // problem. Looking for any run that ever hit it meant the warning stayed up
+  // for good: signing in and running something successfully could not clear a
+  // run that had already happened, so the app went on saying it was not
+  // signed in while the top of the window said it was.
+  const run = c.runHistory.filter((r) => !r.running).pop();
+  if (!run || !needsFeature1SignIn(run.log)) return null;
   return (
     <section className="card mb-5 overflow-hidden border-warn-border">
       <div className="flex items-center gap-2 border-b border-line px-5 py-3">
@@ -892,56 +917,57 @@ function PrBadges({ pr }: { pr: PullRequestState }) {
 }
 
 /**
- * Removing a feature's board.
+ * Confirming the removal of a feature's board.
  *
- * What it removes and what it leaves is the whole question, so the
- * confirmation says both rather than asking "are you sure?" — which is a
- * question nobody can answer without already knowing the answer.
- *
- * Two clicks rather than a dialog: the first arms it, moving away disarms it,
- * and it never steals the screen.
+ * What it removes and what it leaves is the whole question, so this says both
+ * rather than asking "are you sure?" — a question nobody can answer without
+ * already knowing the answer. The commits and pull requests are counted,
+ * because deleting a feature with eleven commits behind it should read
+ * differently from deleting an empty one, and only the app knows which it is.
  */
-function DeleteFeature({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
-  const [armed, setArmed] = useState(false);
+function ConfirmDeleteFeature({
+  c,
+  plan,
+  onCancel,
+  onConfirm,
+}: {
+  c: ProjectController;
+  plan: ProjectPlan;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
   const built = c.featureGit.reduce((n, r) => n + r.ahead, 0);
   const prs = plan.prUrls?.length ?? 0;
-  if (!armed) {
-    return (
-      <button
-        onClick={() => setArmed(true)}
-        className="h-8 px-2.5 text-[13px] text-muted hover:text-danger"
-      >
-        Delete
-      </button>
-    );
-  }
+  const keeps =
+    built > 0 || prs > 0
+      ? `The branch keeps its ${built > 0 ? `${built} commit${built === 1 ? '' : 's'}` : 'work'}${
+          prs > 0 ? `, and ${prs} pull request${prs === 1 ? '' : 's'} stay open` : ''
+        }.`
+      : 'Nothing in git is touched.';
   return (
-    <span className="flex flex-wrap items-center gap-2">
-      <span className="max-w-[420px] text-[11.5px] leading-snug text-muted">
-        Removes the plan, the spec and the designs.{' '}
-        <strong className="font-medium text-ink">
-          {built > 0 || prs > 0
-            ? `The branch keeps its ${built > 0 ? `${built} commit${built === 1 ? '' : 's'}` : 'work'}${prs > 0 ? `, and ${prs} pull request${prs === 1 ? '' : 's'} stay open` : ''}.`
-            : 'Nothing in git is touched.'}
-        </strong>
-      </span>
-      <button
-        onClick={() => {
-          setArmed(false);
-          void c.deleteFeature();
-        }}
-        disabled={c.busy}
-        className="h-8 rounded-md bg-danger px-3 text-[13px] font-medium text-white disabled:opacity-50"
-      >
-        Delete this feature
-      </button>
-      <button
-        onClick={() => setArmed(false)}
-        className="h-8 px-2 text-[13px] text-muted hover:text-body"
-      >
-        Cancel
-      </button>
-    </span>
+    <section className="card mb-5 overflow-hidden border-danger/30">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="section-label text-danger">Delete this feature?</span>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <p className="max-w-[520px] text-[13px] text-body">
+          Removes the plan, the spec, the designs and this feature&apos;s checkouts.{' '}
+          <strong className="font-medium text-ink">{keeps}</strong>
+        </p>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={onConfirm}
+            disabled={c.busy}
+            className="h-8 rounded-md bg-danger px-3.5 text-[13px] font-medium text-white disabled:opacity-50"
+          >
+            Delete it
+          </button>
+          <button onClick={onCancel} className="h-8 px-2.5 text-[13px] text-muted hover:text-body">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 

@@ -1208,7 +1208,9 @@ function TrunkUpdate({ c }: { c: ProjectController }) {
               </span>{' '}
               Updating merges {trunk} into this feature&apos;s own checkout, so the rest of the work
               is built on what has landed and the conflicts are dealt with here rather than in the
-              pull request.
+              pull request. Anything that conflicts is resolved keeping both sides — this
+              feature&apos;s work and what landed on {trunk} — and if the two cannot be combined the
+              merge goes back and the feature is left exactly as it was.
             </>
           ) : (
             <>
@@ -1249,18 +1251,38 @@ function UnfinishedMerge({ c }: { c: ProjectController }) {
   const merging = c.featureGit.filter((r) => r.mergeInProgress);
   if (merging.length === 0) return null;
   const names = merging.map((r) => r.repo.split(/[/\\]/).pop()).join(', ');
+  const trunk = (merging.find((r) => r.trunk)?.trunk ?? 'main').replace(/^origin\//, '');
   return (
     <section className="card mb-5 overflow-hidden border-warn-border">
       <div className="flex items-center gap-2 border-b border-line px-5 py-3">
         <span className="section-label text-warn-text">A merge was left unfinished</span>
       </div>
-      <div className="px-5 py-3">
-        <p className="text-[13px] text-body">
-          {names} stopped part-way through a merge. Until it is finished or abandoned, every run in
-          that checkout fails on the merge rather than on what it was asked to do. Run{' '}
-          <code className="font-mono text-[12px]">git merge --abort</code> there, or ask for it in
-          Change this feature.
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <p className="max-w-[560px] text-[13px] text-body">
+          {names} stopped part-way through merging {trunk}. Until it is finished or abandoned, every
+          run in that checkout fails on the merge rather than on what it was asked to do. Resolving
+          works through the conflicted files in this feature&apos;s own checkout, keeping both what
+          the feature does and what has landed on {trunk}, and commits the merge only once git
+          reports nothing left conflicted. Abandoning puts the feature back to exactly what it was.{' '}
+          {trunk} itself is not touched either way.
         </p>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <button
+            onClick={() => void c.resolveMerge()}
+            disabled={c.busy}
+            className="btn-primary h-8 px-3.5 disabled:opacity-50"
+          >
+            Resolve conflicts
+          </button>
+          <button
+            onClick={() => void c.abandonMerge()}
+            disabled={c.busy}
+            title={`Undo the merge — this feature goes back to what it was before ${trunk} was merged in`}
+            className="text-[11.5px] text-muted hover:text-body disabled:opacity-50"
+          >
+            or abandon the merge
+          </button>
+        </div>
       </div>
     </section>
   );

@@ -332,6 +332,7 @@ const RUN_LABELS: Record<string, string> = {
   'sync-feature': 'Syncing the feature with Feature1',
   share: 'Sharing the app',
   'feature-change': 'Changing the feature',
+  'resolve-merge': 'Resolving merge conflicts',
   'install-tools': 'Installing the required tools',
   'git-auth': 'Connecting git to GitHub',
 };

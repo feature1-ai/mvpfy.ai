@@ -10,7 +10,9 @@ import {
   commitFeatureWorkCommand,
   deleteFeatureFiles,
   ensureInitialCommit,
+  featureConflicts,
   featureGitStatus,
+  finishMergeCommand,
   isRemoteUrl,
   checkoutFeatureCommand,
   featureCheckedOut,
@@ -571,5 +573,89 @@ describe('updating a feature from the trunk', () => {
     const [row] = featureGitStatus([dir], key, 'paging', 'mvpfy/paging');
     expect(row.mergeInProgress).toBe(false);
     expect(fs.readFileSync(path.join(tree, 'index.ts'), 'utf8')).toBe('feature\n');
+  }, 60_000);
+  /** A conflict the builder asked to have resolved, rather than one in passing. */
+  const conflicted = (): { dir: string; origin: string; key: string; tree: string } => {
+    const { dir, origin } = work();
+    setLinkedRoots([dir]);
+    const key = `test-${path.basename(dir)}`;
+    const tree = checkout(dir, key, 'paging', 'mvpfy/paging');
+    fs.writeFileSync(path.join(tree, 'index.ts'), 'feature\n');
+    git(tree, 'add', '-A');
+    git(tree, 'commit', '-m', 'feature');
+    landOnTrunk(origin, 'index.ts', 'trunk\n');
+    spawnShellSync(mergeTrunkCommand(key, 'paging', [dir], 'mvpfy/paging', 'keep'), {
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    return { dir, origin, key, tree };
+  };
+  const rev = (dir: string, ref: string) =>
+    execFileSync('git', ['rev-parse', ref], { cwd: dir, encoding: 'utf8' }).trim();
+
+  it('leaves the conflict open for whoever asked to have it resolved', () => {
+    const { dir, key, tree } = conflicted();
+    expect(featureConflicts([dir], key, 'paging')).toEqual([
+      { repo: dir, worktree: tree, files: ['index.ts'] },
+    ]);
+    // Nothing may be committed while git still calls a file unmerged: the
+    // resolution is the point, and a merge commit is what claims there was one.
+    expect(() => finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'commit')).toThrow(
+      /still conflict/i
+    );
+    // And the way back is always open.
+    spawnShellSync(finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'abort'), {
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    expect(featureConflicts([dir], key, 'paging')).toEqual([]);
+    expect(fs.readFileSync(path.join(tree, 'index.ts'), 'utf8')).toBe('feature\n');
+  }, 60_000);
+
+  it('refuses to record a resolution that still has the markers in it', () => {
+    // `git add` will mark a file resolved with the markers still in it, so
+    // "git reports nothing unmerged" is not on its own evidence of anything.
+    const { dir, key, tree } = conflicted();
+    fs.writeFileSync(
+      path.join(tree, 'index.ts'),
+      '<<<<<<< HEAD\nfeature\n=======\ntrunk\n>>>>>>> origin/main\n'
+    );
+    git(tree, 'add', 'index.ts');
+    expect(() => finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'commit')).toThrow(
+      /conflict markers/i
+    );
+  }, 60_000);
+
+  it('commits the resolution on the feature branch and leaves the trunk untouched', () => {
+    const { dir, origin, key, tree } = conflicted();
+    const trunkWas = rev(dir, 'origin/main');
+    const mainWas = rev(dir, 'main');
+    const originWas = rev(origin, 'main');
+    // Both sides kept, which is what resolving means here.
+    fs.writeFileSync(path.join(tree, 'index.ts'), 'feature\ntrunk\n');
+    git(tree, 'add', 'index.ts');
+
+    const cmd = finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'commit');
+    expect(spawnShellSync(cmd, { encoding: 'utf8', timeout: 60_000 }).status).toBe(0);
+
+    expect(featureConflicts([dir], key, 'paging')).toEqual([]);
+    expect(fs.readFileSync(path.join(tree, 'index.ts'), 'utf8')).toBe('feature\ntrunk\n');
+    // The merge commit is on the feature's own branch, with both histories
+    // behind it — and every copy of the trunk is exactly where it was.
+    expect(
+      execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+        cwd: tree,
+        encoding: 'utf8',
+      }).trim()
+    ).toBe('mvpfy/paging');
+    expect(rev(dir, 'origin/main')).toBe(trunkWas);
+    expect(rev(dir, 'main')).toBe(mainWas);
+    expect(rev(origin, 'main')).toBe(originWas);
+
+    const [row] = featureGitStatus([dir], key, 'paging', 'mvpfy/paging');
+    expect(row.behind).toBe(0);
+    expect(row.mergeInProgress).toBe(false);
+    // The feature's own work is still ahead of the trunk, not swallowed by it.
+    expect(row.ahead).toBeGreaterThan(0);
   }, 60_000);
 });

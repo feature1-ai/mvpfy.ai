@@ -1,7 +1,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { CreateProjectResult, RepoCloneOutcome, RepoFile } from '../../shared/types';
+import {
+  CreateProjectResult,
+  MergeConflicts,
+  RepoCloneOutcome,
+  RepoFile,
+} from '../../shared/types';
 import {
   BlankProjectRemote,
   designDirFor,
@@ -482,7 +487,16 @@ export function mergeTrunkCommand(
   projectKey: string,
   featureSlug: string,
   dirs: string[],
-  branch: string
+  branch: string,
+  /**
+   * What a conflict should leave behind. 'abort' puts the checkout back as it
+   * was, which is right when nobody asked for a merge in particular — syncing
+   * the workspace merges in passing, and a half-merged checkout nobody is
+   * looking at breaks the next run in it. 'keep' leaves the conflict open for
+   * whoever asked to resolve it, and is only ever used where something is
+   * waiting to do exactly that.
+   */
+  onConflict: 'abort' | 'keep' = 'abort'
 ): string {
   const parts: string[] = [];
   for (const d of dirs) {
@@ -505,18 +519,153 @@ export function mergeTrunkCommand(
           `${name}: could not reach the remote — merging ${base} as it stands here`
         )}) && `
       : '';
+    // Said in git's words above and in the feature's words here. A conflict is
+    // the usual reason a merge stops; loose files in the checkout are the other
+    // one, and neither is settled by the merge itself.
+    const stopped =
+      onConflict === 'abort'
+        ? `(git -C ${q} merge --abort ; echo ${shellQuote(
+            `${name}: could not merge ${ref} into ${branch} — git says why above. The checkout was left as it was; update the feature to have the conflicts resolved`
+          )})`
+        : `echo ${shellQuote(
+            `${name}: ${ref} conflicts with ${branch} — git says which files above. Left open, in this checkout only, to be resolved`
+          )}`;
     parts.push(
       `echo ${shellQuote(`── ${name}`)} && ` +
         fetch +
         // --no-edit: an editor opening on a merge message inside a spawned
         // shell is a run that never returns.
-        `(git -C ${q} merge --no-edit ${shellQuote(ref)} || ` +
-        // Said in git's words above and in the feature's words here. A conflict
-        // is the usual reason; loose files in the checkout are the other one,
-        // and "the checkout was left as it was" is true of both.
-        `(git -C ${q} merge --abort ; echo ${shellQuote(
-          `${name}: could not merge ${ref} into ${branch} — git says why above. The checkout was left as it was; merge it yourself, or ask for the change here`
-        )}))`
+        `(git -C ${q} merge --no-edit ${shellQuote(ref)} || ${stopped})`
+    );
+  }
+  if (parts.length === 0) return '';
+  return parts.join(' && ');
+}
+
+/**
+ * What is still conflicted in a feature's checkouts, read from git.
+ *
+ * A merge left open is not a state anything should be told about second-hand:
+ * whether files are still conflicted decides whether the resolution is finished
+ * or the merge has to be abandoned, and the only honest source for that is the
+ * index itself.
+ */
+export function featureConflicts(
+  dirs: string[],
+  projectKey: string,
+  featureSlug: string
+): MergeConflicts[] {
+  const out: MergeConflicts[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) continue;
+    const tree = worktreePathFor(projectKey, featureSlug, dir);
+    if (!fs.existsSync(tree)) continue;
+    const q = shellQuote(tree);
+    const ask = (command: string) =>
+      spawnShellSync(`git -C ${q} ${command}`, { encoding: 'utf8', timeout: 15_000 });
+    if (ask('rev-parse -q --verify MERGE_HEAD').status !== 0) continue;
+    const unmerged = ask('diff --name-only --diff-filter=U');
+    out.push({
+      repo: dir,
+      worktree: tree,
+      // A merge with nothing unmerged left is the finished-but-uncommitted
+      // state, and belongs in this list as much as a conflicted one does.
+      files:
+        unmerged.status === 0
+          ? unmerged.stdout
+              .split('\n')
+              .map((l) => l.trim())
+              .filter(Boolean)
+          : [],
+    });
+  }
+  return out;
+}
+
+/**
+ * Finish a merge that stopped on conflicts: commit the resolution, or abandon
+ * it and leave the feature exactly as it was.
+ *
+ * Committing is guarded rather than trusted. Everything that could make this
+ * commit land somewhere it does not belong, or record a resolution that is not
+ * one, is read from git first and refused by name:
+ *
+ * • the checkout must still be on the feature's own branch, so a resolution
+ *   can never be committed onto the trunk — the trunk is what everyone else is
+ *   working from, and this whole operation must leave it untouched;
+ * • nothing may still be unmerged, so "resolved" means git agrees;
+ * • no tracked file may still hold conflict markers, because `git add` will
+ *   happily mark a file resolved with them still in it.
+ *
+ * Only tracked files are staged (`add -u`): a resolution touches files that
+ * already exist, and whatever else is loose in the checkout is not part of it.
+ */
+export function finishMergeCommand(
+  projectKey: string,
+  featureSlug: string,
+  dirs: string[],
+  branch: string,
+  mode: 'commit' | 'abort'
+): string {
+  const parts: string[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Merging is restricted to managed and linked project directories');
+    }
+    const tree = worktreePathFor(projectKey, featureSlug, dir);
+    if (!fs.existsSync(tree)) continue;
+    const q = shellQuote(tree);
+    const name = path.basename(dir);
+    const ask = (command: string) =>
+      spawnShellSync(`git -C ${q} ${command}`, { encoding: 'utf8', timeout: 15_000 });
+    if (ask('rev-parse -q --verify MERGE_HEAD').status !== 0) continue;
+    const head = `echo ${shellQuote(`── ${name}`)} && `;
+
+    if (mode === 'abort') {
+      parts.push(
+        head +
+          `git -C ${q} merge --abort && echo ${shellQuote(
+            `${name}: merge abandoned — ${branch} is exactly as it was before it started`
+          )}`
+      );
+      continue;
+    }
+
+    const on = ask('rev-parse --abbrev-ref HEAD');
+    const at = on.status === 0 ? on.stdout.trim() : '';
+    if (at !== branch) {
+      throw new Error(
+        `${name}: its checkout is on ${at || 'no branch'}, not ${branch} — refusing to commit a merge anywhere but the feature's own branch`
+      );
+    }
+    const unmerged = ask('diff --name-only --diff-filter=U');
+    const left =
+      unmerged.status === 0
+        ? unmerged.stdout
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)
+        : [];
+    if (left.length > 0) {
+      const named = left.slice(0, 3).join(', ');
+      throw new Error(
+        `${name}: ${left.length} file${left.length === 1 ? '' : 's'} still conflict (${named}${
+          left.length > 3 ? ', …' : ''
+        }) — nothing was committed`
+      );
+    }
+    const markers = ask(`grep -l -e ${shellQuote('^<<<<<<< ')} -e ${shellQuote('^>>>>>>> ')} -- .`);
+    if (markers.status === 0) {
+      const file = markers.stdout.trim().split('\n')[0] ?? '';
+      throw new Error(`${name}: ${file} still has conflict markers in it — nothing was committed`);
+    }
+    parts.push(
+      head +
+        `git -C ${q} add -u && git -C ${q} commit --no-edit && echo ${shellQuote(
+          `${name}: merge committed on ${branch}`
+        )}`
     );
   }
   if (parts.length === 0) return '';

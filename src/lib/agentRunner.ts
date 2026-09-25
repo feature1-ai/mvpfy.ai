@@ -15,12 +15,14 @@ import pullFeatureTemplate from '../prompts/pull-feature.txt?raw';
 import pushFeatureTemplate from '../prompts/push-feature.txt?raw';
 import syncFeatureTemplate from '../prompts/sync-feature.txt?raw';
 import featureChangeTemplate from '../prompts/feature-change.txt?raw';
+import resolveConflictsTemplate from '../prompts/resolve-conflicts.txt?raw';
 import installToolsTemplate from '../prompts/install-tools.txt?raw';
 import {
   AgentKind,
   BOOTSTRAP_FILE,
   ComposeAction,
   LAUNCH_FILE,
+  MergeConflicts,
   Project,
   READINESS_FILE,
   RunAgentMcp,
@@ -142,6 +144,7 @@ export type RunKind =
   | 'push-feature'
   | 'sync-feature'
   | 'feature-change'
+  | 'resolve-merge'
   | 'install-tools'
   | 'seed'
   | 'git-auth';
@@ -773,6 +776,51 @@ export async function startFeatureChangeRun(
     ...(art.imagePaths.length > 0 ? { images: art.imagePaths } : {}),
   });
   return { runId, kind: 'feature-change', projectId: project.id, planSlug };
+}
+
+/**
+ * Hand a merge that stopped on conflicts to the agent, in the feature's own
+ * checkouts.
+ *
+ * Given to an agent rather than to the product manager because the two sides of
+ * a conflict are both code, and the person who owns this screen reads plain
+ * language. Given as a run of its own rather than as part of the merge because
+ * what it does — rewrite files somebody else's work is in — deserves its own
+ * log, and because it must be possible to finish or abandon what it leaves.
+ */
+export async function startResolveMergeRun(
+  project: Project,
+  settings: Settings,
+  planSlug: string,
+  featureName: string,
+  trunk: string,
+  conflicts: MergeConflicts[],
+  session?: RunSession
+): Promise<RunHandle> {
+  const runId = makeRunId('resolvemerge');
+  const cfg = configDirFor(project.mode);
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(resolveConflictsTemplate, {
+      resumeNote: resumeNoteFor(session),
+      repoPath: project.localPath,
+      featureName,
+      branch: `mvpfy/${planSlug || 'feature'}`,
+      trunk,
+      planFile: cfg + planFileFor(planSlug),
+      specFile: cfg + specFileFor(planSlug),
+      conflicts: conflicts
+        .map(
+          (c) =>
+            `   • ${c.worktree}\n${c.files.map((f) => `       - ${f}`).join('\n') || '       - (nothing unmerged left)'}`
+        )
+        .join('\n'),
+    }),
+    ...agentFor(settings),
+    ...(session ? { session } : {}),
+  });
+  return { runId, kind: 'resolve-merge', projectId: project.id, planSlug };
 }
 
 /** Fast-forward pull each repo of the workspace from its remote. */

@@ -240,6 +240,21 @@ export interface FeatureRepoGit {
 }
 
 /**
+ * A feature checkout with a merge left open in it.
+ *
+ * `files` is what git still calls unmerged; an empty list with the merge still
+ * open is the other half of the same state — resolved, not yet committed.
+ */
+export interface MergeConflicts {
+  /** Repository directory in the workspace. */
+  repo: string;
+  /** The feature's checkout, where the merge is open. */
+  worktree: string;
+  /** Paths git still reports as unmerged. */
+  files: string[];
+}
+
+/**
  * What GitHub says about one pull request mvpfy raised.
  *
  * The board records that a pull request was opened and then stops knowing
@@ -548,14 +563,32 @@ export interface MvpfyApi {
     branch: string,
     message: string
   ): Promise<void>;
-  /** Merge the freshly pulled trunk into a feature's branch, in its worktree. */
+  /** What is still conflicted in a feature's checkouts, read from git. */
+  featureConflicts(
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string
+  ): Promise<MergeConflicts[]>;
+  /** Commit a resolved merge, or abandon it and leave the feature as it was. */
+  finishMerge(
+    runId: string,
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string,
+    mode: 'commit' | 'abort'
+  ): Promise<void>;
+  /** Merge the trunk into a feature's branch, in its worktree. */
   mergeTrunk(
     runId: string,
     workspacePath: string,
     dirs: string[],
     projectKey: string,
     featureSlug: string,
-    branch: string
+    branch: string,
+    onConflict: 'abort' | 'keep'
   ): Promise<void>;
   /** Hand what is still missing to the coding agent to finish. */
   installToolsAgent(req: RunAgentRequest): Promise<void>;

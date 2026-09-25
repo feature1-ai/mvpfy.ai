@@ -408,7 +408,11 @@ export function useProjectActions(
         dirs,
         `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
         slug,
-        `mvpfy/${slug || 'feature'}`
+        `mvpfy/${slug || 'feature'}`,
+        // Syncing merges in passing, so a conflict here goes back rather than
+        // waiting for somebody who did not ask for a merge to deal with it.
+        // The feature's own Update is where a conflict gets resolved.
+        'abort'
       );
       await runsApi.completed(merge.runId);
       // Back onto the feature last, so what comes up is the merged commit and

@@ -87,9 +87,44 @@ const api: MvpfyApi = {
     dirs: string[],
     projectKey: string,
     featureSlug: string,
-    branch: string
+    branch: string,
+    onConflict: 'abort' | 'keep'
   ) =>
-    ipcRenderer.invoke('merge-trunk', runId, workspacePath, dirs, projectKey, featureSlug, branch),
+    ipcRenderer.invoke(
+      'merge-trunk',
+      runId,
+      workspacePath,
+      dirs,
+      projectKey,
+      featureSlug,
+      branch,
+      onConflict
+    ),
+  featureConflicts: (
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string
+  ) => ipcRenderer.invoke('feature-conflicts', workspacePath, dirs, projectKey, featureSlug),
+  finishMerge: (
+    runId: string,
+    workspacePath: string,
+    dirs: string[],
+    projectKey: string,
+    featureSlug: string,
+    branch: string,
+    mode: 'commit' | 'abort'
+  ) =>
+    ipcRenderer.invoke(
+      'finish-merge',
+      runId,
+      workspacePath,
+      dirs,
+      projectKey,
+      featureSlug,
+      branch,
+      mode
+    ),
   installToolsAgent: (req: RunAgentRequest) => ipcRenderer.invoke('install-tools-agent', req),
   readRepoFiles: (repoPath: string, relativePaths: string[]) =>
     ipcRenderer.invoke('read-repo-files', repoPath, relativePaths),

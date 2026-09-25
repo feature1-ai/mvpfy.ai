@@ -7,6 +7,7 @@ import {
   startPushFeatureRun,
   startSyncFeatureRun,
   startFeatureChangeRun,
+  startResolveMergeRun,
   isAmbientRun,
   lostConversation,
   makeRunId,
@@ -106,6 +107,10 @@ export interface PlanActions {
   commitFeatureWork(): Promise<boolean>;
   /** Merge the trunk into this feature's branch, so it builds on what landed. */
   updateFeature(): Promise<boolean>;
+  /** Resolve a merge left open in this feature's checkouts, and commit it. */
+  resolveMerge(): Promise<boolean>;
+  /** Abandon a merge left open, putting the feature back as it was. */
+  abandonMerge(): Promise<boolean>;
   /** Implement every remaining story in the active feature, in order. */
   implementFeature(): Promise<boolean>;
   /** The feature whose stories are being worked through, if any. */
@@ -639,26 +644,155 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
    * detached at the commit from before the merge and has to be moved to the
    * new tip, or what is running is still the old code.
    */
+  const projectKey = () =>
+    `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`;
+
+  /**
+   * Put the workspace back on the feature it is testing, after its branch has
+   * moved. The workspace copy is detached at a commit, so a merge leaves it
+   * standing on the code as it was before — what is running would still be the
+   * old product with the log saying it was updated.
+   */
+  const restandIfTesting = async (slug: string) => {
+    if (project.testingSlug !== slug) return;
+    await window.mvpfy.checkoutFeature(
+      project.localPath,
+      project.repos.map((r) => r.dir),
+      slug
+    );
+  };
+
+  /**
+   * Take a merge that stopped on conflicts as far as it can honestly go.
+   *
+   * The agent rewrites the conflicted files in the feature's own checkouts —
+   * both sides are code, and the person who owns this screen reads plain
+   * language. Then git is asked, not the agent: mvpfy commits only when nothing
+   * is left unmerged and no file still holds a conflict marker, and only onto
+   * the feature's own branch. Anything else abandons the merge, which puts the
+   * feature back to exactly what it was.
+   *
+   * The trunk is never checked out, committed to, moved or pushed by any of
+   * this. A conflict is resolved on the feature's side, where it belongs: the
+   * trunk is what the rest of the team is working from, and it ends this
+   * operation byte for byte as it started it.
+   */
+  const resolveOpenMerge = async (slug: string, featureName: string): Promise<void> => {
+    const dirs = project.repos.map((r) => r.dir);
+    const key = projectKey();
+    const branch = `mvpfy/${slug || 'feature'}`;
+    const trunk = featureGit.find((r) => r.trunk)?.trunk ?? 'the trunk';
+    const open = await window.mvpfy.featureConflicts(project.localPath, dirs, key, slug);
+    if (open.length === 0) return;
+
+    if (open.some((c) => c.files.length > 0)) {
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const handle = await startResolveMergeRun(
+        project,
+        state.settings,
+        slug,
+        featureName,
+        trunk,
+        open,
+        sessionFor(slug, false)
+      );
+      runsApi.track(handle);
+      await runsApi.completed(handle.runId);
+    }
+
+    // git's account of it, not the agent's: a run can exit zero having left
+    // half the markers in place.
+    const left = await window.mvpfy.featureConflicts(project.localPath, dirs, key, slug);
+    const stuck = left.some((c) => c.files.length > 0);
+    const finish = async (mode: 'commit' | 'abort') => {
+      const runId = makeRunId(mode === 'commit' ? 'mergedone' : 'mergeabort');
+      runsApi.track({ runId, kind: 'sync', projectId: project.id, planSlug: slug });
+      await window.mvpfy.finishMerge(runId, project.localPath, dirs, key, slug, branch, mode);
+      await runsApi.completed(runId);
+    };
+
+    if (!stuck) {
+      try {
+        await finish('commit');
+        return;
+      } catch (err) {
+        // A guard refused — markers still in a file, or the checkout no longer
+        // on this feature's branch. Refusing and then leaving the merge open
+        // would be the worst of both, so it goes back.
+        await finish('abort').catch(() => {});
+        throw new Error(
+          `${err instanceof Error ? err.message : String(err)}. The merge was abandoned, so this feature is exactly as it was.`,
+          { cause: err }
+        );
+      }
+    }
+    await finish('abort');
+    const names = left
+      .flatMap((c) => c.files)
+      .slice(0, 3)
+      .join(', ');
+    throw new Error(
+      `${trunk} and this feature both changed ${names || 'the same code'} in ways that could not be combined automatically, so the merge was abandoned — the feature is exactly as it was, and nothing on ${trunk} was touched. Describe how the two should fit together in "Change this feature", then update again.`
+    );
+  };
+
   const updateFeature = () =>
     guarded(async () => {
       const active = activePlan;
       if (!active) throw new Error('Open a feature first.');
       const slug = active.slug;
-      const dirs = project.repos.map((r) => r.dir);
       const runId = makeRunId('merge');
       runsApi.track({ runId, kind: 'sync', projectId: project.id, planSlug: slug });
       await window.mvpfy.mergeTrunk(
         runId,
         project.localPath,
-        dirs,
-        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+        project.repos.map((r) => r.dir),
+        projectKey(),
         slug,
-        `mvpfy/${slug || 'feature'}`
+        `mvpfy/${slug || 'feature'}`,
+        // Left open on purpose: what comes next is the thing that resolves it.
+        'keep'
       );
       await runsApi.completed(runId);
-      if (project.testingSlug === slug) {
-        await window.mvpfy.checkoutFeature(project.localPath, dirs, slug);
+      try {
+        await resolveOpenMerge(slug, active.plan?.spec.feature || slug);
+      } finally {
+        // Whether it merged, resolved or went back, the workspace must end up
+        // standing on what the branch is now.
+        await restandIfTesting(slug);
       }
+    });
+
+  const resolveMerge = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active) throw new Error('Open a feature first.');
+      try {
+        await resolveOpenMerge(active.slug, active.plan?.spec.feature || active.slug);
+      } finally {
+        await restandIfTesting(active.slug);
+      }
+    });
+
+  const abandonMerge = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active) throw new Error('Open a feature first.');
+      const slug = active.slug;
+      const runId = makeRunId('mergeabort');
+      runsApi.track({ runId, kind: 'sync', projectId: project.id, planSlug: slug });
+      await window.mvpfy.finishMerge(
+        runId,
+        project.localPath,
+        project.repos.map((r) => r.dir),
+        projectKey(),
+        slug,
+        `mvpfy/${slug || 'feature'}`,
+        'abort'
+      );
+      await runsApi.completed(runId);
+      await restandIfTesting(slug);
     });
 
   // What a stopped run left behind, in whatever shape it left it: a story
@@ -1172,6 +1306,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     refreshPrStates,
     commitFeatureWork,
     updateFeature,
+    resolveMerge,
+    abandonMerge,
     changingFeature: projectRuns.some(
       (r) =>
         r.handle.kind === 'feature-change' && r.running && r.handle.planSlug === activePlan?.slug

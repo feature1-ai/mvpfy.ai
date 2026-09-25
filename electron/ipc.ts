@@ -54,6 +54,8 @@ import {
   featureCheckedOut,
   featureGitStatus,
   mergeTrunkCommand,
+  featureConflicts,
+  finishMergeCommand,
   raisePrCommand,
   removeWorktrees,
   repoSyncCommand,
@@ -274,18 +276,56 @@ export function registerIpc(): void {
       dirs: string[],
       projectKey: string,
       featureSlug: string,
-      branch: string
+      branch: string,
+      onConflict: 'abort' | 'keep'
     ) => {
       const resolved = path.resolve(workspacePath);
       if (!isAllowedWorkspace(resolved)) {
         throw new Error('Merge is restricted to managed and linked project directories');
       }
-      const command = mergeTrunkCommand(projectKey, featureSlug, dirs, branch);
+      const command = mergeTrunkCommand(projectKey, featureSlug, dirs, branch, onConflict);
       // Nothing to merge is not a failure — the feature may have no checkout in
       // any repository yet. Still a run, so the caller settles either way.
       startRun(
         runId,
         command || `echo ${JSON.stringify('Nothing to merge — this feature has no checkout yet.')}`,
+        resolved
+      );
+    }
+  );
+  ipcMain.handle(
+    'feature-conflicts',
+    (_ev, workspacePath: string, dirs: string[], projectKey: string, featureSlug: string) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Reading is restricted to managed and linked project directories');
+      }
+      return featureConflicts(dirs, projectKey, featureSlug);
+    }
+  );
+  ipcMain.handle(
+    'finish-merge',
+    (
+      _ev,
+      runId: string,
+      workspacePath: string,
+      dirs: string[],
+      projectKey: string,
+      featureSlug: string,
+      branch: string,
+      mode: 'commit' | 'abort'
+    ) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Merge is restricted to managed and linked project directories');
+      }
+      // The guards live in the command builder, which reads git before it
+      // writes anything; a refusal reaches the caller as a thrown error rather
+      // than as a run that failed halfway.
+      const command = finishMergeCommand(projectKey, featureSlug, dirs, branch, mode);
+      startRun(
+        runId,
+        command || `echo ${JSON.stringify('No merge is open in this feature.')}`,
         resolved
       );
     }

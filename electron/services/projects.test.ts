@@ -13,6 +13,7 @@ import {
   featureConflicts,
   featureGitStatus,
   finishMergeCommand,
+  pushFeatureBranchCommand,
   isRemoteUrl,
   checkoutFeatureCommand,
   featureCheckedOut,
@@ -658,4 +659,52 @@ describe('updating a feature from the trunk', () => {
     // The feature's own work is still ahead of the trunk, not swallowed by it.
     expect(row.ahead).toBeGreaterThan(0);
   }, 60_000);
+  it('sends the updated branch to the remote that already has it', () => {
+    const { dir, origin } = work();
+    setLinkedRoots([dir]);
+    const key = `test-${path.basename(dir)}`;
+    const tree = checkout(dir, key, 'paging', 'mvpfy/paging');
+    fs.writeFileSync(path.join(tree, 'paging.ts'), 'feature\n');
+    git(tree, 'add', '-A');
+    git(tree, 'commit', '-m', 'feature');
+    // Published, as raising its pull request would have done.
+    git(tree, 'push', '-u', 'origin', 'mvpfy/paging');
+    landOnTrunk(origin, 'pricing.ts', 'landed\n');
+    spawnShellSync(mergeTrunkCommand(key, 'paging', [dir], 'mvpfy/paging', 'keep'), {
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+
+    const cmd = pushFeatureBranchCommand([dir], 'mvpfy/paging');
+    expect(spawnShellSync(cmd, { encoding: 'utf8', timeout: 60_000 }).status).toBe(0);
+
+    // The remote's copy of the feature now holds the merge, and its trunk is
+    // untouched by any of it.
+    expect(rev(origin, 'mvpfy/paging')).toBe(rev(dir, 'mvpfy/paging'));
+    expect(rev(origin, 'main')).not.toBe(rev(dir, 'mvpfy/paging'));
+    // Nothing left to send, so there is nothing to run.
+    expect(pushFeatureBranchCommand([dir], 'mvpfy/paging')).toBe('');
+  }, 60_000);
+
+  it('does not publish a branch the remote has never seen', () => {
+    // Publishing a feature is what raising its pull request does. A branch
+    // appearing on the team's remote with no pull request behind it is noise
+    // nobody asked for, so an update stays local until there is something to
+    // update.
+    const { dir } = work();
+    setLinkedRoots([dir]);
+    const key = `test-${path.basename(dir)}`;
+    const tree = checkout(dir, key, 'paging', 'mvpfy/paging');
+    fs.writeFileSync(path.join(tree, 'paging.ts'), 'feature\n');
+    git(tree, 'add', '-A');
+    git(tree, 'commit', '-m', 'feature');
+    expect(pushFeatureBranchCommand([dir], 'mvpfy/paging')).toBe('');
+  }, 60_000);
+
+  it('refuses to push from a directory outside a managed or linked workspace', () => {
+    setLinkedRoots([]);
+    expect(() => pushFeatureBranchCommand(['/etc'], 'mvpfy/paging')).toThrow(
+      /restricted to managed and linked/
+    );
+  });
 });

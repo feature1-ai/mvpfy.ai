@@ -672,6 +672,56 @@ export function finishMergeCommand(
   return parts.join(' && ');
 }
 
+/**
+ * Push a feature's branch, for repositories whose remote already has it.
+ *
+ * Only ever an update of something already published. A branch the remote has
+ * never seen is not pushed here: publishing a feature is what raising its pull
+ * request does, and a branch appearing on the team's remote with no pull
+ * request behind it is noise nobody asked for. Where the remote does have it,
+ * leaving it behind is the opposite problem — an open pull request that still
+ * shows the feature as it was before the trunk was merged into it, with its
+ * checks run against a merge that no longer describes anything.
+ *
+ * Refs are shared with every worktree, so this runs in the workspace copy and
+ * needs no checkout of its own. A refusal is reported and not retried: the
+ * remote having commits this repository does not is a real answer, and forcing
+ * past it would throw away somebody's work.
+ */
+export function pushFeatureBranchCommand(dirs: string[], branch: string): string {
+  const parts: string[] = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Pushing is restricted to managed and linked project directories');
+    }
+    if (!hasBranch(dir, branch)) continue;
+    if (!hasOrigin(dir)) continue;
+    // The remote's copy has to exist for this to be an update of it.
+    const known = spawnShellSync(
+      `git -C ${shellQuote(dir)} rev-parse --verify --quiet ${shellQuote(`refs/remotes/origin/${branch}`)}`,
+      { encoding: 'utf8', timeout: 10_000 }
+    );
+    if (known.status !== 0) continue;
+    // And there has to be something in it the remote has not got.
+    const count = spawnShellSync(
+      `git -C ${shellQuote(dir)} rev-list --count ${shellQuote(`origin/${branch}..${branch}`)}`,
+      { encoding: 'utf8', timeout: 10_000 }
+    );
+    if (count.status !== 0 || (Number(count.stdout.trim()) || 0) === 0) continue;
+    const name = path.basename(dir);
+    const q = shellQuote(dir);
+    parts.push(
+      `echo ${shellQuote(`── ${name}`)} && ` +
+        `(git -C ${q} push origin ${shellQuote(branch)} || echo ${shellQuote(
+          `${name}: the remote copy of ${branch} would not take this push — git says why above. Nothing here was changed or lost`
+        )})`
+    );
+  }
+  if (parts.length === 0) return '';
+  return parts.join(' && ');
+}
+
 export function repoSyncCommand(dirs: string[]): string {
   return dirs
     .map((d) => {

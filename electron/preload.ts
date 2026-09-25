@@ -81,6 +81,8 @@ const api: MvpfyApi = {
       branch,
       message
     ),
+  pushFeatureBranch: (runId: string, workspacePath: string, dirs: string[], branch: string) =>
+    ipcRenderer.invoke('push-feature-branch', runId, workspacePath, dirs, branch),
   mergeTrunk: (
     runId: string,
     workspacePath: string,

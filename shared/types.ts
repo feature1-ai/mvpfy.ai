@@ -580,6 +580,13 @@ export interface MvpfyApi {
     branch: string,
     mode: 'commit' | 'abort'
   ): Promise<void>;
+  /** Push a feature's branch where the remote already has it, after an update. */
+  pushFeatureBranch(
+    runId: string,
+    workspacePath: string,
+    dirs: string[],
+    branch: string
+  ): Promise<void>;
   /** Merge the trunk into a feature's branch, in its worktree. */
   mergeTrunk(
     runId: string,

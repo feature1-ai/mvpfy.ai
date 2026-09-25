@@ -56,6 +56,7 @@ import {
   mergeTrunkCommand,
   featureConflicts,
   finishMergeCommand,
+  pushFeatureBranchCommand,
   raisePrCommand,
   removeWorktrees,
   repoSyncCommand,
@@ -289,6 +290,24 @@ export function registerIpc(): void {
       startRun(
         runId,
         command || `echo ${JSON.stringify('Nothing to merge — this feature has no checkout yet.')}`,
+        resolved
+      );
+    }
+  );
+  ipcMain.handle(
+    'push-feature-branch',
+    (_ev, runId: string, workspacePath: string, dirs: string[], branch: string) => {
+      const resolved = path.resolve(workspacePath);
+      if (!isAllowedWorkspace(resolved)) {
+        throw new Error('Pushing is restricted to managed and linked project directories');
+      }
+      const command = pushFeatureBranchCommand(dirs, branch);
+      startRun(
+        runId,
+        command ||
+          `echo ${JSON.stringify(
+            'Nothing to push — the remote is level with this feature, or has never seen its branch.'
+          )}`,
         resolved
       );
     }

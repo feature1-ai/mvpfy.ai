@@ -663,6 +663,28 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   };
 
   /**
+   * Send the updated branch to the remote, where the remote already has it.
+   *
+   * An open pull request is the reason this matters: until the merge reaches
+   * GitHub, the pull request still shows the feature as it was before the trunk
+   * went into it, and its checks were run against a merge that no longer
+   * describes anything. Only the feature's own branch is ever pushed, and only
+   * when the remote has it already — publishing a branch is what raising the
+   * pull request does, not something an update does behind your back.
+   */
+  const pushUpdatedBranch = async (slug: string) => {
+    const runId = makeRunId('pushbranch');
+    runsApi.track({ runId, kind: 'sync', projectId: project.id, planSlug: slug });
+    await window.mvpfy.pushFeatureBranch(
+      runId,
+      project.localPath,
+      project.repos.map((r) => r.dir),
+      `mvpfy/${slug || 'feature'}`
+    );
+    await runsApi.completed(runId);
+  };
+
+  /**
    * Take a merge that stopped on conflicts as far as it can honestly go.
    *
    * The agent rewrites the conflicted files in the feature's own checkouts —
@@ -757,6 +779,10 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       await runsApi.completed(runId);
       try {
         await resolveOpenMerge(slug, active.plan?.spec.feature || slug);
+        // Only on the way out of a merge that worked: a merge that went back
+        // has nothing new to send, and saying so in a run of its own would
+        // read as a second failure.
+        await pushUpdatedBranch(slug);
       } finally {
         // Whether it merged, resolved or went back, the workspace must end up
         // standing on what the branch is now.
@@ -770,6 +796,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       if (!active) throw new Error('Open a feature first.');
       try {
         await resolveOpenMerge(active.slug, active.plan?.spec.feature || active.slug);
+        await pushUpdatedBranch(active.slug);
       } finally {
         await restandIfTesting(active.slug);
       }

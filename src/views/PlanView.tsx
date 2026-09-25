@@ -1210,12 +1210,16 @@ function TrunkUpdate({ c }: { c: ProjectController }) {
               is built on what has landed and the conflicts are dealt with here rather than in the
               pull request. Anything that conflicts is resolved keeping both sides — this
               feature&apos;s work and what landed on {trunk} — and if the two cannot be combined the
-              merge goes back and the feature is left exactly as it was.
+              merge goes back and the feature is left exactly as it was. If this feature&apos;s
+              branch is already on GitHub, the update is pushed to it, so an open pull request shows
+              the merge and runs its checks against it.
             </>
           ) : (
             <>
-              Level with {trunk} as of the last fetch. Updating asks the remote again and merges
-              anything new into this feature&apos;s checkout — nothing else in the workspace moves.
+              Level with {trunk} as of the last fetch. Updating asks the remote again, merges
+              anything new into this feature&apos;s checkout, and pushes the result if this
+              feature&apos;s branch is already on GitHub — nothing else in the workspace moves, and
+              {trunk} is never written to.
             </>
           )}
         </p>

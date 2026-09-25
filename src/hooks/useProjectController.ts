@@ -238,6 +238,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   commitFeatureWork(): Promise<boolean>;
   /** Merge the trunk into the active feature's branch, in its own checkout. */
   updateFeature(): Promise<boolean>;
+  /** True when the active feature was updated with the trunk in this sitting. */
+  justUpdated: boolean;
   /** Resolve a merge left open in the active feature's checkouts, and commit it. */
   resolveMerge(): Promise<boolean>;
   /** Abandon a merge left open, putting the feature back as it was. */

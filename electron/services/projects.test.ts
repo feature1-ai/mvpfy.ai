@@ -601,9 +601,11 @@ describe('updating a feature from the trunk', () => {
     ]);
     // Nothing may be committed while git still calls a file unmerged: the
     // resolution is the point, and a merge commit is what claims there was one.
-    expect(() => finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'commit')).toThrow(
-      /still conflict/i
-    );
+    // The repository puts itself back instead, and says why.
+    const refused = finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'commit');
+    expect(refused).toContain('merge --abort');
+    expect(refused).toContain('could not be resolved');
+    expect(refused).not.toContain('commit --no-edit');
     // And the way back is always open.
     spawnShellSync(finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'abort'), {
       encoding: 'utf8',
@@ -613,7 +615,7 @@ describe('updating a feature from the trunk', () => {
     expect(fs.readFileSync(path.join(tree, 'index.ts'), 'utf8')).toBe('feature\n');
   }, 60_000);
 
-  it('refuses to record a resolution that still has the markers in it', () => {
+  it('puts a repository back rather than recording a resolution with markers in it', () => {
     // `git add` will mark a file resolved with the markers still in it, so
     // "git reports nothing unmerged" is not on its own evidence of anything.
     const { dir, key, tree } = conflicted();
@@ -622,9 +624,14 @@ describe('updating a feature from the trunk', () => {
       '<<<<<<< HEAD\nfeature\n=======\ntrunk\n>>>>>>> origin/main\n'
     );
     git(tree, 'add', 'index.ts');
-    expect(() => finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'commit')).toThrow(
-      /conflict markers/i
-    );
+    const refused = finishMergeCommand(key, 'paging', [dir], 'mvpfy/paging', 'commit');
+    expect(refused).toContain('conflict markers');
+    expect(refused).toContain('merge --abort');
+    expect(refused).not.toContain('commit --no-edit');
+    // And it goes back for real, rather than only saying so.
+    expect(spawnShellSync(refused, { encoding: 'utf8', timeout: 60_000 }).status).toBe(0);
+    expect(featureConflicts([dir], key, 'paging')).toEqual([]);
+    expect(fs.readFileSync(path.join(tree, 'index.ts'), 'utf8')).toBe('feature\n');
   }, 60_000);
 
   it('commits the resolution on the feature branch and leaves the trunk untouched', () => {
@@ -707,4 +714,59 @@ describe('updating a feature from the trunk', () => {
       /restricted to managed and linked/
     );
   });
+  it('pushes every other repository when one of them fails', () => {
+    // The reported failure: repositories were joined with && , so the first
+    // one git refused took the rest of them down with it and their commits
+    // never reached the remote at all.
+    const a = work();
+    const b = work();
+    setLinkedRoots([a.dir, b.dir]);
+    const key = `test-${path.basename(a.dir)}`;
+    for (const r of [a, b]) {
+      const tree = checkout(r.dir, key, 'paging', 'mvpfy/paging');
+      fs.writeFileSync(path.join(tree, 'paging.ts'), 'feature\n');
+      git(tree, 'add', '-A');
+      git(tree, 'commit', '-m', 'feature');
+      git(tree, 'push', '-u', 'origin', 'mvpfy/paging');
+      fs.writeFileSync(path.join(tree, 'paging.ts'), 'more\n');
+      git(tree, 'add', '-A');
+      git(tree, 'commit', '-m', 'more');
+    }
+    // The first repository's remote is gone, so its push cannot work.
+    fs.rmSync(a.origin, { recursive: true, force: true });
+
+    const cmd = pushFeatureBranchCommand([a.dir, b.dir], 'mvpfy/paging');
+    expect(spawnShellSync(cmd, { encoding: 'utf8', timeout: 60_000 }).status).toBe(0);
+
+    // The one that could be pushed was pushed, and said so; the one that could
+    // not says why in its own words rather than silently taking the rest with it.
+    expect(rev(b.origin, 'mvpfy/paging')).toBe(rev(b.dir, 'mvpfy/paging'));
+    expect(pushFeatureBranchCommand([b.dir], 'mvpfy/paging')).toBe('');
+    expect(cmd).toContain('would not take this push');
+  }, 120_000);
+
+  it('merges every other repository when one of them conflicts', () => {
+    const a = work();
+    const b = work();
+    setLinkedRoots([a.dir, b.dir]);
+    const key = `test-${path.basename(a.dir)}`;
+    const treeA = checkout(a.dir, key, 'paging', 'mvpfy/paging');
+    const treeB = checkout(b.dir, key, 'paging', 'mvpfy/paging');
+    // The first conflicts with its trunk; the second has nothing in the way.
+    fs.writeFileSync(path.join(treeA, 'index.ts'), 'feature\n');
+    git(treeA, 'add', '-A');
+    git(treeA, 'commit', '-m', 'feature');
+    landOnTrunk(a.origin, 'index.ts', 'trunk\n');
+    landOnTrunk(b.origin, 'pricing.ts', 'landed\n');
+
+    const cmd = mergeTrunkCommand(key, 'paging', [a.dir, b.dir], 'mvpfy/paging', 'keep');
+    expect(spawnShellSync(cmd, { encoding: 'utf8', timeout: 60_000 }).status).toBe(0);
+
+    // The conflict is left open where it happened, and the repository behind
+    // it is up to date rather than untouched.
+    expect(featureConflicts([a.dir, b.dir], key, 'paging').map((c) => c.repo)).toEqual([a.dir]);
+    expect(fs.existsSync(path.join(treeB, 'pricing.ts'))).toBe(true);
+    const [, rowB] = featureGitStatus([a.dir, b.dir], key, 'paging', 'mvpfy/paging');
+    expect(rowB.behind).toBe(0);
+  }, 120_000);
 });

@@ -1193,7 +1193,9 @@ function TrunkUpdate({ c }: { c: ProjectController }) {
   const detail = behind.map((r) => `${r.repo.split(/[/\\]/).pop()} by ${r.behind}`).join(', ');
   return (
     <section
-      className={`card mb-5 overflow-hidden ${worst > 0 ? 'border-warn-border' : 'border-line'}`}
+      className={`card mb-5 overflow-hidden ${
+        worst > 0 ? 'border-warn-border' : c.justUpdated ? 'border-go/30' : 'border-line'
+      }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
         <p className="max-w-[560px] text-[13px] text-body">
@@ -1216,10 +1218,16 @@ function TrunkUpdate({ c }: { c: ProjectController }) {
             </>
           ) : (
             <>
-              Level with {trunk} as of the last fetch. Updating asks the remote again, merges
-              anything new into this feature&apos;s checkout, and pushes the result if this
-              feature&apos;s branch is already on GitHub — nothing else in the workspace moves, and
-              {trunk} is never written to.
+              <span className="inline-flex items-center gap-1.5 font-medium text-go">
+                <span className="h-1.5 w-1.5 rounded-full bg-go" />
+                Updated with {trunk}.
+              </span>{' '}
+              {c.justUpdated
+                ? `Everything on ${trunk} is in this feature, and the branch on GitHub has it too if it was already there.`
+                : `This feature has everything on ${trunk} as of the last fetch.`}{' '}
+              Updating again asks the remote, merges anything new into this feature&apos;s own
+              checkout and pushes the result if its branch is already on GitHub — nothing else in
+              the workspace moves, and {trunk} is never written to.
             </>
           )}
         </p>

@@ -107,6 +107,8 @@ export interface PlanActions {
   commitFeatureWork(): Promise<boolean>;
   /** Merge the trunk into this feature's branch, so it builds on what landed. */
   updateFeature(): Promise<boolean>;
+  /** True when this feature was updated with the trunk in this sitting. */
+  justUpdated: boolean;
   /** Resolve a merge left open in this feature's checkouts, and commit it. */
   resolveMerge(): Promise<boolean>;
   /** Abandon a merge left open, putting the feature back as it was. */
@@ -644,6 +646,12 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
    * detached at the commit from before the merge and has to be moved to the
    * new tip, or what is running is still the old code.
    */
+  // Said once it is true and kept for as long as the feature is open: an
+  // update that did everything asked of it used to end in silence, and silence
+  // is what a failure looks like too.
+  const [updated, setUpdated] = useState<{ slug: string; at: number } | null>(null);
+  const justUpdated = updated !== null && updated.slug === (activePlan?.slug ?? '');
+
   const projectKey = () =>
     `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`;
 
@@ -699,17 +707,20 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
    * trunk is what the rest of the team is working from, and it ends this
    * operation byte for byte as it started it.
    */
-  const resolveOpenMerge = async (slug: string, featureName: string): Promise<void> => {
+  const resolveOpenMerge = async (slug: string, featureName: string): Promise<string | null> => {
     const dirs = project.repos.map((r) => r.dir);
     const key = projectKey();
     const branch = `mvpfy/${slug || 'feature'}`;
     const trunk = featureGit.find((r) => r.trunk)?.trunk ?? 'the trunk';
+    const shortName = (dir: string) => dir.split(/[/\\]/).pop() ?? dir;
     const open = await window.mvpfy.featureConflicts(project.localPath, dirs, key, slug);
-    if (open.length === 0) return;
+    if (open.length === 0) return null;
 
     if (open.some((c) => c.files.length > 0)) {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
-      if (authProblem) throw new Error(authProblem);
+      // Returned rather than thrown: repositories that merged cleanly are
+      // already committed, and they still have to be pushed.
+      if (authProblem) return authProblem;
       const handle = await startResolveMergeRun(
         project,
         state.settings,
@@ -726,37 +737,23 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     // git's account of it, not the agent's: a run can exit zero having left
     // half the markers in place.
     const left = await window.mvpfy.featureConflicts(project.localPath, dirs, key, slug);
-    const stuck = left.some((c) => c.files.length > 0);
-    const finish = async (mode: 'commit' | 'abort') => {
-      const runId = makeRunId(mode === 'commit' ? 'mergedone' : 'mergeabort');
-      runsApi.track({ runId, kind: 'sync', projectId: project.id, planSlug: slug });
-      await window.mvpfy.finishMerge(runId, project.localPath, dirs, key, slug, branch, mode);
-      await runsApi.completed(runId);
-    };
+    const unresolved = left.filter((c) => c.files.length > 0).map((c) => shortName(c.repo));
+    // Every repository takes its own path here: the ones whose resolution git
+    // agrees with are committed, and the ones it does not are put back.
+    const runId = makeRunId('mergedone');
+    runsApi.track({ runId, kind: 'sync', projectId: project.id, planSlug: slug });
+    await window.mvpfy.finishMerge(runId, project.localPath, dirs, key, slug, branch, 'commit');
+    await runsApi.completed(runId);
 
-    if (!stuck) {
-      try {
-        await finish('commit');
-        return;
-      } catch (err) {
-        // A guard refused — markers still in a file, or the checkout no longer
-        // on this feature's branch. Refusing and then leaving the merge open
-        // would be the worst of both, so it goes back.
-        await finish('abort').catch(() => {});
-        throw new Error(
-          `${err instanceof Error ? err.message : String(err)}. The merge was abandoned, so this feature is exactly as it was.`,
-          { cause: err }
-        );
-      }
+    const after = await window.mvpfy.featureConflicts(project.localPath, dirs, key, slug);
+    const stillOpen = after.map((c) => shortName(c.repo));
+    if (stillOpen.length > 0) {
+      return `A merge is still open in ${stillOpen.join(', ')} and could not be undone — see the log. Every other repository was finished.`;
     }
-    await finish('abort');
-    const names = left
-      .flatMap((c) => c.files)
-      .slice(0, 3)
-      .join(', ');
-    throw new Error(
-      `${trunk} and this feature both changed ${names || 'the same code'} in ways that could not be combined automatically, so the merge was abandoned — the feature is exactly as it was, and nothing on ${trunk} was touched. Describe how the two should fit together in "Change this feature", then update again.`
-    );
+    if (unresolved.length > 0) {
+      return `${trunk} and this feature changed the same code in ${unresolved.join(', ')} in ways that could not be combined, so the merge went back there — those repositories are exactly as they were, and nothing on ${trunk} was touched. Describe how the two should fit together in "Change this feature", then update again.`;
+    }
+    return null;
   };
 
   const updateFeature = () =>
@@ -777,29 +774,27 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         'keep'
       );
       await runsApi.completed(runId);
-      try {
-        await resolveOpenMerge(slug, active.plan?.spec.feature || slug);
-        // Only on the way out of a merge that worked: a merge that went back
-        // has nothing new to send, and saying so in a run of its own would
-        // read as a second failure.
-        await pushUpdatedBranch(slug);
-      } finally {
-        // Whether it merged, resolved or went back, the workspace must end up
-        // standing on what the branch is now.
-        await restandIfTesting(slug);
-      }
+      // One repository having trouble is not the others' problem: whatever did
+      // merge is committed, pushed and stood on, and the trouble is reported
+      // after all of that rather than instead of it.
+      const problem = await resolveOpenMerge(slug, active.plan?.spec.feature || slug);
+      await pushUpdatedBranch(slug);
+      await restandIfTesting(slug);
+      // Only when it is true of every repository: a feature that took the
+      // trunk in one place and went back in another is not updated, and the
+      // error says which.
+      if (problem) throw new Error(problem);
+      setUpdated({ slug, at: Date.now() });
     });
 
   const resolveMerge = () =>
     guarded(async () => {
       const active = activePlan;
       if (!active) throw new Error('Open a feature first.');
-      try {
-        await resolveOpenMerge(active.slug, active.plan?.spec.feature || active.slug);
-        await pushUpdatedBranch(active.slug);
-      } finally {
-        await restandIfTesting(active.slug);
-      }
+      const problem = await resolveOpenMerge(active.slug, active.plan?.spec.feature || active.slug);
+      await pushUpdatedBranch(active.slug);
+      await restandIfTesting(active.slug);
+      if (problem) throw new Error(problem);
     });
 
   const abandonMerge = () =>
@@ -1333,6 +1328,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     refreshPrStates,
     commitFeatureWork,
     updateFeature,
+    justUpdated,
     resolveMerge,
     abandonMerge,
     changingFeature: projectRuns.some(

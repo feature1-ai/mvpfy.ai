@@ -104,6 +104,8 @@ export interface PlanActions {
   featureGit: FeatureRepoGit[];
   /** Commit whatever an agent left uncommitted in this feature's checkouts. */
   commitFeatureWork(): Promise<boolean>;
+  /** Merge the trunk into this feature's branch, so it builds on what landed. */
+  updateFeature(): Promise<boolean>;
   /** Implement every remaining story in the active feature, in order. */
   implementFeature(): Promise<boolean>;
   /** The feature whose stories are being worked through, if any. */
@@ -622,6 +624,43 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       );
     });
 
+  /**
+   * Bring this feature up to date with the trunk.
+   *
+   * A feature branches once and then stands still while the trunk moves: by
+   * the time it is tested, what it is being tested on is the product as it was
+   * weeks ago, and the conflicts it will hit at the pull request are all still
+   * ahead of it. Syncing the workspace already does this for the feature being
+   * tested, as part of the same sequence; this is the same merge for any
+   * feature, on its own, without putting anything down first.
+   *
+   * It happens in the feature's own checkout, so the workspace is untouched —
+   * unless the workspace is standing on this very feature, in which case it is
+   * detached at the commit from before the merge and has to be moved to the
+   * new tip, or what is running is still the old code.
+   */
+  const updateFeature = () =>
+    guarded(async () => {
+      const active = activePlan;
+      if (!active) throw new Error('Open a feature first.');
+      const slug = active.slug;
+      const dirs = project.repos.map((r) => r.dir);
+      const runId = makeRunId('merge');
+      runsApi.track({ runId, kind: 'sync', projectId: project.id, planSlug: slug });
+      await window.mvpfy.mergeTrunk(
+        runId,
+        project.localPath,
+        dirs,
+        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+        slug,
+        `mvpfy/${slug || 'feature'}`
+      );
+      await runsApi.completed(runId);
+      if (project.testingSlug === slug) {
+        await window.mvpfy.checkoutFeature(project.localPath, dirs, slug);
+      }
+    });
+
   // What a stopped run left behind, in whatever shape it left it: a story
   // halfway through, or work in the checkout belonging to no story at all —
   // a change that ran out of allowance leaves the second and not the first.
@@ -1132,6 +1171,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     prStatesLoading,
     refreshPrStates,
     commitFeatureWork,
+    updateFeature,
     changingFeature: projectRuns.some(
       (r) =>
         r.handle.kind === 'feature-change' && r.running && r.handle.planSlug === activePlan?.slug

@@ -229,6 +229,10 @@ export interface FeatureRepoGit {
   uncommitted: string[];
   /** Commits on the branch that the trunk does not have — the pull request. */
   ahead: number;
+  /** Commits the trunk has that the branch has not — what updating brings in. */
+  behind: number;
+  /** The trunk it was measured against: origin/main, or main with no remote. */
+  trunk: string;
   /** Commits the remote has not got. -1 when the branch was never pushed. */
   unpushed: number;
   /** A merge was started and never finished — the next run would fail on it. */

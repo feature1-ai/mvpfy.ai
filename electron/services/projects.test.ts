@@ -22,7 +22,7 @@ import {
   worktreePathFor,
   worktreeRemoveCommand,
 } from './projects';
-import { IS_WIN, shellQuote } from './shell';
+import { IS_WIN, shellQuote, spawnShellSync } from './shell';
 
 afterEach(() => setLinkedRoots([]));
 
@@ -462,4 +462,114 @@ describe('deleteFeatureFiles', () => {
   it('says nothing was there rather than failing on a feature already gone', () => {
     expect(deleteFeatureFiles(workspace(), '', 'paging').removed).toEqual([]);
   });
+});
+
+/**
+ * The whole point of updating a feature: work that landed on the trunk after
+ * the feature branched ends up in the feature's checkout, without the builder
+ * pulling anything first and without the workspace moving.
+ */
+describe('updating a feature from the trunk', () => {
+  const made: string[] = [];
+  const git = (dir: string, ...args: string[]) =>
+    execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+  const work = (): { dir: string; origin: string } => {
+    const origin = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-origin-'));
+    execFileSync('git', ['init', '--bare', '-b', 'main'], { cwd: origin, stdio: 'ignore' });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-trunk-'));
+    execFileSync('git', ['init', '-b', 'main'], { cwd: dir, stdio: 'ignore' });
+    git(dir, 'config', 'user.email', 'pm@example.com');
+    git(dir, 'config', 'user.name', 'PM');
+    fs.writeFileSync(path.join(dir, 'index.ts'), 'start\n');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-m', 'start');
+    git(dir, 'remote', 'add', 'origin', origin);
+    git(dir, 'push', '-u', 'origin', 'main');
+    made.push(origin, dir);
+    return { dir, origin };
+  };
+  /** Somebody else lands a commit on the trunk, elsewhere. */
+  const landOnTrunk = (origin: string, file: string, body: string) => {
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-other-'));
+    execFileSync('git', ['clone', origin, other], { stdio: 'ignore' });
+    git(other, 'config', 'user.email', 'dev@example.com');
+    git(other, 'config', 'user.name', 'Dev');
+    fs.writeFileSync(path.join(other, file), body);
+    git(other, 'add', '-A');
+    git(other, 'commit', '-m', file);
+    git(other, 'push', 'origin', 'main');
+    made.push(other);
+  };
+  const checkout = (dir: string, key: string, slug: string, branch: string): string => {
+    const tree = worktreePathFor(key, slug, dir);
+    fs.mkdirSync(path.dirname(tree), { recursive: true });
+    git(dir, 'worktree', 'add', tree, '-b', branch);
+    made.push(path.join(WORKTREES_DIR, key));
+    return tree;
+  };
+
+  afterEach(() => {
+    for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('brings in what landed on the trunk after the feature branched', () => {
+    const { dir, origin } = work();
+    setLinkedRoots([dir]);
+    const key = `test-${path.basename(dir)}`;
+    const tree = checkout(dir, key, 'paging', 'mvpfy/paging');
+    landOnTrunk(origin, 'pricing.ts', 'landed\n');
+
+    // Nobody has fetched, so the feature does not know it is behind yet — the
+    // merge asks the remote itself rather than trusting the last pull.
+    const cmd = mergeTrunkCommand(key, 'paging', [dir], 'mvpfy/paging');
+    expect(cmd).toContain('fetch origin');
+    expect(spawnShellSync(cmd, { encoding: 'utf8', timeout: 60_000 }).status).toBe(0);
+
+    expect(fs.existsSync(path.join(tree, 'pricing.ts'))).toBe(true);
+    const [row] = featureGitStatus([dir], key, 'paging', 'mvpfy/paging');
+    expect(row.behind).toBe(0);
+    expect(row.trunk).toBe('origin/main');
+    expect(row.mergeInProgress).toBe(false);
+  }, 60_000);
+
+  it('counts how far behind the trunk the feature has fallen', () => {
+    const { dir, origin } = work();
+    setLinkedRoots([dir]);
+    const key = `test-${path.basename(dir)}`;
+    checkout(dir, key, 'paging', 'mvpfy/paging');
+    landOnTrunk(origin, 'pricing.ts', 'landed\n');
+    landOnTrunk(origin, 'tax.ts', 'landed\n');
+    // Measured against the remote's trunk, which is what everyone else has
+    // pushed — so it has to be fetched to be seen.
+    git(dir, 'fetch', 'origin', 'main');
+
+    const [row] = featureGitStatus([dir], key, 'paging', 'mvpfy/paging');
+    expect(row.behind).toBe(2);
+    expect(row.ahead).toBe(0);
+  }, 60_000);
+
+  it('leaves the checkout as it was when the trunk conflicts with the feature', () => {
+    const { dir, origin } = work();
+    setLinkedRoots([dir]);
+    const key = `test-${path.basename(dir)}`;
+    const tree = checkout(dir, key, 'paging', 'mvpfy/paging');
+    // The same line, changed both here and on the trunk.
+    fs.writeFileSync(path.join(tree, 'index.ts'), 'feature\n');
+    git(tree, 'config', 'user.email', 'pm@example.com');
+    git(tree, 'config', 'user.name', 'PM');
+    git(tree, 'add', '-A');
+    git(tree, 'commit', '-m', 'feature');
+    landOnTrunk(origin, 'index.ts', 'trunk\n');
+
+    const res = spawnShellSync(mergeTrunkCommand(key, 'paging', [dir], 'mvpfy/paging'), {
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    expect(`${res.stdout}${res.stderr}`).toContain('could not merge');
+    // Half-merged is worse than not merged: every later run in the checkout
+    // would fail on the merge instead of on what it was asked to do.
+    const [row] = featureGitStatus([dir], key, 'paging', 'mvpfy/paging');
+    expect(row.mergeInProgress).toBe(false);
+    expect(fs.readFileSync(path.join(tree, 'index.ts'), 'utf8')).toBe('feature\n');
+  }, 60_000);
 });

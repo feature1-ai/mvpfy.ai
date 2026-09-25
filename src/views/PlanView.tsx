@@ -526,6 +526,9 @@ export default function PlanView({ c, onOpenTab }: Props) {
       {/* Read from git, not from any run's account of what it did. */}
       <UnfinishedMerge c={c} />
 
+      {/* Where this feature stands against the trunk, and the way to close it. */}
+      <TrunkUpdate c={c} />
+
       <FailedRaise c={c} plan={plan} />
 
       {/* A run that reached Feature1 and was turned away says so only in its
@@ -1162,6 +1165,72 @@ function ContinueFeature({ c }: { c: ProjectController }) {
             </button>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * How far this feature has drifted from the trunk, and the one way to close it.
+ *
+ * A feature branches once and then stands still while everyone else lands work.
+ * By the time it is tested it is being tested against the product as it was the
+ * day it started, and every conflict it will hit at the pull request is still
+ * ahead of it. Syncing the workspace merges the trunk into the feature being
+ * tested; every other feature had no way to ask for the same thing.
+ *
+ * Shown whether or not it is behind, because the count is only as fresh as the
+ * last fetch — a feature that says it is level may simply not have asked
+ * lately, and the button is what asks.
+ */
+function TrunkUpdate({ c }: { c: ProjectController }) {
+  const rows = c.featureGit.filter((r) => r.worktree);
+  if (rows.length === 0) return null;
+  const behind = rows.filter((r) => r.behind > 0);
+  const worst = rows.reduce((n, r) => Math.max(n, r.behind), 0);
+  const trunk = (rows.find((r) => r.trunk)?.trunk ?? 'main').replace(/^origin\//, '');
+  const halfMerged = rows.some((r) => r.mergeInProgress);
+  const detail = behind.map((r) => `${r.repo.split(/[/\\]/).pop()} by ${r.behind}`).join(', ');
+  return (
+    <section
+      className={`card mb-5 overflow-hidden ${worst > 0 ? 'border-warn-border' : 'border-line'}`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <p className="max-w-[560px] text-[13px] text-body">
+          {worst > 0 ? (
+            <>
+              <span className="font-medium text-warn-text">
+                This feature is behind {trunk}
+                {behind.length > 1
+                  ? ` — ${detail}`
+                  : ` by ${worst} commit${worst === 1 ? '' : 's'}`}
+                .
+              </span>{' '}
+              Updating merges {trunk} into this feature&apos;s own checkout, so the rest of the work
+              is built on what has landed and the conflicts are dealt with here rather than in the
+              pull request.
+            </>
+          ) : (
+            <>
+              Level with {trunk} as of the last fetch. Updating asks the remote again and merges
+              anything new into this feature&apos;s checkout — nothing else in the workspace moves.
+            </>
+          )}
+        </p>
+        <button
+          onClick={() => void c.updateFeature()}
+          disabled={c.busy || halfMerged}
+          title={
+            halfMerged
+              ? 'Finish or abandon the merge already in progress first'
+              : `Merge ${trunk} into this feature's branch, in its own checkout`
+          }
+          className={`h-8 shrink-0 px-3.5 disabled:opacity-50 ${
+            worst > 0 ? 'btn-primary' : 'btn-secondary'
+          }`}
+        >
+          Update from {trunk}
+        </button>
       </div>
     </section>
   );

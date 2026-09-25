@@ -236,6 +236,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   featureGit: FeatureRepoGit[];
   /** Commit whatever an agent left uncommitted in this feature's checkouts. */
   commitFeatureWork(): Promise<boolean>;
+  /** Merge the trunk into the active feature's branch, in its own checkout. */
+  updateFeature(): Promise<boolean>;
   /** Implement every remaining story in the active feature, in order. */
   implementFeature(): Promise<boolean>;
   /** The feature whose stories are being worked through, if any. */

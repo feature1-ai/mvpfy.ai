@@ -396,7 +396,10 @@ export function featureGitStatus(
             .filter(Boolean)
         : [];
     const base = defaultBranchOf(dir);
-    const ahead = hasBranch(dir, branch) ? commitsAhead(dir, base, branch) : 0;
+    const onBranch = hasBranch(dir, branch);
+    const trunk = trunkRefFor(dir, base);
+    const ahead = onBranch ? commitsAhead(dir, base, branch) : 0;
+    const behind = onBranch ? commitsBehind(dir, branch, trunk) : 0;
     // -1 rather than 0: a branch that was never pushed is a different answer
     // from one whose commits are all on the remote already.
     const pushedRange = ask(`rev-list --count ${shellQuote(`origin/${branch}..${branch}`)}`);
@@ -408,6 +411,8 @@ export function featureGitStatus(
       worktree: has ? tree : '',
       uncommitted,
       ahead: ahead < 0 ? 0 : ahead,
+      behind,
+      trunk,
       unpushed,
       mergeInProgress: merge?.status === 0,
     });
@@ -455,14 +460,19 @@ export function commitFeatureWorkCommand(
 }
 
 /**
- * Merge the freshly pulled trunk into a feature's branch, in the feature's own
- * checkout.
+ * Merge the trunk into a feature's branch, in the feature's own checkout.
  *
  * The branch is checked out in the worktree, so the merge has to happen there —
- * the workspace copy is detached at one of its commits and cannot move it. Done
- * after the pull and before the workspace is put back on the feature, so what
- * the builder tests is the feature ON TOP of what everyone else has landed,
- * rather than the feature as it was the day it was branched.
+ * the workspace copy is detached at one of its commits and cannot move it. What
+ * the builder then tests is the feature ON TOP of what everyone else has
+ * landed, rather than the feature as it was the day it was branched.
+ *
+ * The trunk is fetched first. Syncing the workspace pulls it, but a feature
+ * that is not the one being tested can sit for a week while the trunk moves
+ * underneath it, and "update this feature" has to mean the trunk as it is now —
+ * not as it was when somebody last pulled. A repository with no remote, or a
+ * remote that cannot be reached, still merges the local trunk: being unable to
+ * ask is not a reason to do nothing.
  *
  * A conflict aborts. A worktree left half-merged breaks the next story run with
  * an error about an unfinished merge, which is a worse place to be than simply
@@ -484,14 +494,28 @@ export function mergeTrunkCommand(
     const tree = worktreePathFor(projectKey, featureSlug, dir);
     if (!fs.existsSync(tree)) continue;
     const base = defaultBranchOf(dir);
+    const ref = trunkRefFor(dir, base);
     const q = shellQuote(tree);
+    const name = path.basename(dir);
+    // A worktree shares its repository's object store and refs, so fetching
+    // here updates origin/<base> for the workspace too, and neither the
+    // workspace nor the branch it is standing on has to move for any of this.
+    const fetch = hasOrigin(dir)
+      ? `(git -C ${q} fetch origin ${shellQuote(base)} || echo ${shellQuote(
+          `${name}: could not reach the remote — merging ${base} as it stands here`
+        )}) && `
+      : '';
     parts.push(
-      `echo ${shellQuote(`── ${path.basename(dir)}`)} && ` +
+      `echo ${shellQuote(`── ${name}`)} && ` +
+        fetch +
         // --no-edit: an editor opening on a merge message inside a spawned
         // shell is a run that never returns.
-        `(git -C ${q} merge --no-edit ${shellQuote(base)} || ` +
+        `(git -C ${q} merge --no-edit ${shellQuote(ref)} || ` +
+        // Said in git's words above and in the feature's words here. A conflict
+        // is the usual reason; loose files in the checkout are the other one,
+        // and "the checkout was left as it was" is true of both.
         `(git -C ${q} merge --abort ; echo ${shellQuote(
-          `${path.basename(dir)}: ${base} conflicts with ${branch} — merge it yourself, or ask for the change here`
+          `${name}: could not merge ${ref} into ${branch} — git says why above. The checkout was left as it was; merge it yourself, or ask for the change here`
         )}))`
     );
   }
@@ -665,6 +689,43 @@ function defaultBranchOf(dir: string): string {
 function hasBranch(dir: string, branch: string): boolean {
   return (
     spawnShellSync(`git -C ${shellQuote(dir)} rev-parse --verify ${shellQuote(branch)}`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    }).status === 0
+  );
+}
+
+/**
+ * The trunk to measure against and merge: the remote's copy of it when this
+ * repository has one fetched, and the local branch when it has not.
+ *
+ * The local trunk only moves when somebody pulls. A feature can be six commits
+ * behind what everyone else has pushed while the local `main` says it is level,
+ * and that is the number a PM is asking about.
+ */
+function trunkRefFor(dir: string, base: string): string {
+  const res = spawnShellSync(
+    `git -C ${shellQuote(dir)} rev-parse --verify --quiet ${shellQuote(`refs/remotes/origin/${base}`)}`,
+    { encoding: 'utf8', timeout: 10_000 }
+  );
+  return res.status === 0 ? `origin/${base}` : base;
+}
+
+/** Commits `trunk` has that `branch` has not — what a merge would bring in. */
+function commitsBehind(dir: string, branch: string, trunk: string): number {
+  const res = spawnShellSync(
+    `git -C ${shellQuote(dir)} rev-list --count ${shellQuote(`${branch}..${trunk}`)}`,
+    { encoding: 'utf8', timeout: 10_000 }
+  );
+  // Unknown reads as level rather than as behind: offering to merge something
+  // that could not be counted would be a button with nothing behind it.
+  return res.status === 0 ? Number(res.stdout.trim()) || 0 : 0;
+}
+
+/** True when this repository has somewhere to fetch from. */
+function hasOrigin(dir: string): boolean {
+  return (
+    spawnShellSync(`git -C ${shellQuote(dir)} remote get-url origin`, {
       encoding: 'utf8',
       timeout: 10_000,
     }).status === 0

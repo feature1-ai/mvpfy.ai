@@ -99,6 +99,19 @@ npm run dev
 
 Starts the Vite dev server and launches Electron against it.
 
+### The walkthrough GIF
+
+The GIF in this README is built from captures of the running app, so it can be
+remade whenever the UI moves:
+
+```bash
+# screenshots in docs/media/frames/ (01-…, 02-…), or a recording at docs/media/source.mov
+npm run media:gif
+```
+
+It scales and palettises through ffmpeg — `--width 960` for a smaller file,
+`--hold 1.6` for a quicker cut between stills — and writes `docs/media/mvpfy.gif`.
+
 ## Build & package
 
 To check the Codex backend with a real model run, sign in with `codex login`, then run:
@@ -175,7 +188,27 @@ docker-compose.mvpfy.yml up -d`) — unless the agent left you questions, in whi
    agent re-runs with your notes. The agent never moves a story to Done — shipping is a
    human decision.
 
-6. **Launch readiness** — a feature like any other, sitting in the Plan tab beside the ones
+6. **Keep the feature current** — a feature branches once, and the product keeps moving
+   underneath it. Every feature's board carries **Update from main**: it says how far behind
+   the trunk that feature is, per repository, and merges the trunk into the feature's **own
+   checkout** — nothing else in your workspace moves, and the trunk itself is never checked
+   out, committed to or pushed. The count and the merge both fetch first, so "behind" means
+   behind what your team has actually pushed rather than behind your last pull.
+   Anything that conflicts goes to the agent, told that **both sides are real work**: the
+   feature's side is why the branch exists and nobody else has a copy of it, the trunk's side
+   is what the team has already landed and built on. It keeps both, takes one side only where
+   they genuinely cannot be combined, and says which and why in plain language. mvpfy then
+   asks git rather than the agent: the merge is committed only when nothing is left unmerged,
+   no file still carries a conflict marker, and the checkout is still on the feature's own
+   branch. Anything else **abandons the merge**, and that repository goes back to exactly what
+   it was — the one outcome that loses nothing. Repositories are independent throughout: one
+   conflicting does not stop the others merging, committing or pushing.
+   If the feature's branch is already on GitHub, the update is **pushed** to it, so the open
+   pull request shows the merge and runs its checks against it. What GitHub says about those
+   pull requests — open, merged, checks passing or failing, review decision — is reported on
+   the feature's board, and **Refresh** asks it again.
+
+7. **Launch readiness** — a feature like any other, sitting in the Plan tab beside the ones
    you plan yourself, and mvpfy **starts it with the project**: it runs off the back of
    bootstrap, so a freshly added product opens on it. A prototype that runs on your machine
    is not a product strangers can use, and mvpfy is unusually well placed to say why: it built the
@@ -212,7 +245,7 @@ docker-compose.mvpfy.yml up -d`) — unless the agent left you questions, in whi
    can get — a real payment account, a managed database, a domain — are marked _needs you_
    rather than offered a button that couldn't finish the job.
 
-7. **Going live** — once nothing dangerous is left, the same feature works out what hosting
+8. **Going live** — once nothing dangerous is left, the same feature works out what hosting
    the product actually involves on **AWS Lightsail, Fly, Render or Railway**: every piece that gets created,
    the provider's own size name for each one so you can check it, an estimated monthly cost,
    the keys you have to go and get yourself, and what would happen in order. **mvpfy totals

@@ -20,7 +20,8 @@
     "test": "vitest run",
     "test:codex": "npm run build:electron && node scripts/test-codex.mjs",
     "lint": "eslint . && prettier --check \"{src,electron,shared}/**/*.{ts,tsx}\"",
-    "format": "prettier --write \"{src,electron,shared}/**/*.{ts,tsx}\""
+    "format": "prettier --write \"{src,electron,shared}/**/*.{ts,tsx}\"",
+    "media:gif": "node scripts/make-gif.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

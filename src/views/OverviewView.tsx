@@ -146,6 +146,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
     });
   }
 
+  // A finished diagnosis waiting to be retried or dismissed. The panel below
+  // is the current answer, so the states above it defer to it rather than
+  // offering to start the same work again.
+  const diagnosed = Boolean(c.triageContent) && !c.busy;
   const strip: Record<
     EnvState['kind'],
     { title: string; bodyText: string; green?: boolean; red?: boolean }
@@ -191,10 +195,14 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
       bodyText: `Everything is configured. Start it to bring the app back up on localhost:${project.basePort}.`,
     },
     error: {
-      title: 'Something failed',
-      bodyText:
-        'The last run did not finish. mvpfy can look at what happened, explain it in plain language, and fix it.',
-      red: true,
+      // A diagnosis on screen has already answered this. Repeating the offer
+      // to look at it, in red, above the panel saying it was looked at and
+      // fixed, is the app arguing with itself about what just happened.
+      title: diagnosed ? 'Something failed — mvpfy has already looked at it' : 'Something failed',
+      bodyText: diagnosed
+        ? 'What it found, and the way to try again, are right below. Nothing is running until you do.'
+        : 'The last run did not finish. mvpfy can look at what happened, explain it in plain language, and fix it.',
+      red: !diagnosed,
     },
   };
   const s = strip[env.kind];
@@ -351,12 +359,18 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     >
                       View logs
                     </button>
-                    <button
-                      onClick={() => void c.diagnose()}
-                      className="btn-primary h-[34px] px-3.5"
-                    >
-                      Diagnose & fix
-                    </button>
+                    {/* Diagnosing again is a real thing to want — after the
+                        retry fails — but not while the last diagnosis is still
+                        on screen unanswered. Retry is the next step there, and
+                        it has its own button. */}
+                    {!diagnosed && (
+                      <button
+                        onClick={() => void c.diagnose()}
+                        className="btn-primary h-[34px] px-3.5"
+                      >
+                        Diagnose &amp; fix
+                      </button>
+                    )}
                   </>
                 )}
               </div>

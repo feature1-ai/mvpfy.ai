@@ -224,8 +224,22 @@ export function composeCommand(action: ComposeAction, linked = false): string {
   // that are already there. For a stack whose images were deleted, or one
   // whose containers no longer match what the compose file says. Volumes are
   // untouched, as everywhere else — this rebuilds the setup, not the data.
+  //
+  // Built BEFORE anything is stopped. A from-scratch build is the part most
+  // likely to fail — a registry that times out, a package server that answers
+  // 404, a laptop that went to sleep — and taking the app down first meant
+  // that failure cost the PM the app that was working as well as the rebuild,
+  // leaving nothing running while they worked out why. Building first costs
+  // nothing when it succeeds (images are built either way) and costs nothing
+  // when it fails either: the containers are still up on the old images.
+  // Each step says what it is, because the log is what a PM sends us.
+  const step = (text: string) => `echo ${shellQuote(`── ${text}`)}`;
   const rebuild =
-    `${down} && ${base} build --no-cache && ` + `${base} up -d --force-recreate --remove-orphans`;
+    `${step('Building the images from scratch — this takes a few minutes')} && ` +
+    `${base} build --no-cache && ` +
+    `${step('Stopping the old containers')} && ${down} && ` +
+    `${step('Starting the rebuilt app')} && ` +
+    `${base} up -d --force-recreate --remove-orphans`;
   const compose =
     action === 'up'
       ? up

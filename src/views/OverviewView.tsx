@@ -359,6 +359,20 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     >
                       View logs
                     </button>
+                    {/* A failed run is something that happened, not a state the
+                        project has to stay in. This offered Diagnose & fix and
+                        nothing else, so a run that failed on its way to
+                        starting the app — a rebuild, most of all — left the PM
+                        with the containers down and no button that starts
+                        them: the app was gone until an agent run they might
+                        not even be able to make could bring it back. The way
+                        back stays reachable. */}
+                    {env.kind === 'error' && (
+                      <>
+                        <RebuildButton c={c} />
+                        <StartButton c={c} label="Start environment" />
+                      </>
+                    )}
                     {/* Diagnosing again is a real thing to want — after the
                         retry fails — but not while the last diagnosis is still
                         on screen unanswered. Retry is the next step there, and

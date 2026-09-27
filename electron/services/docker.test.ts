@@ -166,8 +166,19 @@ describe('composeCommand rebuild', () => {
     const rebuild = composeCommand('rebuild');
     expect(rebuild).toContain('build --no-cache');
     expect(rebuild).toContain('--force-recreate');
-    // Down first, so nothing is left from the old containers.
-    expect(rebuild.indexOf(' down ')).toBeLessThan(rebuild.indexOf('build --no-cache'));
+    // Nothing is stopped until there is something to start. A build that
+    // fails — a registry timing out, a package server answering 404 — used to
+    // take the running app with it, because the app was stopped first and the
+    // chain then never reached the start.
+    expect(rebuild.indexOf('build --no-cache')).toBeLessThan(rebuild.indexOf(' down '));
+    expect(rebuild.indexOf(' down ')).toBeLessThan(rebuild.indexOf('up -d'));
+  });
+
+  it('says which step it is on, because the log is what gets sent to us', () => {
+    const rebuild = composeCommand('rebuild');
+    expect(rebuild).toContain('Building the images from scratch');
+    expect(rebuild).toContain('Stopping the old containers');
+    expect(rebuild).toContain('Starting the rebuilt app');
   });
 
   it('still refuses to delete volumes — this rebuilds the setup, not the data', () => {

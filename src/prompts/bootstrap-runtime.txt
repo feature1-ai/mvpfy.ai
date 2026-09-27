@@ -138,6 +138,25 @@ Rules:
   virtualenv) so the host checkout cannot shadow them. This matters beyond convenience: the
   product manager tests whatever is checked out, and mvpfy implements each story on its own
   branch, so without a watcher they would be reviewing the previous build.
+• The image MUST contain the dev dependencies that watcher needs. nodemon, vite, ts-node,
+  nest, uvicorn's reloader, rails' development gems — every one of them is a dev
+  dependency, and the command you put in the compose file cannot run without them. So the
+  generated image must NOT install production-only: no `npm ci --omit=dev`, no `npm install
+  --production`, no `NODE_ENV=production` at build time, no `poetry install --no-dev`, no
+  `pip install` from a requirements file that drops the dev set, no `bundle install
+  --without development test`. This is the failure that looks like nothing at all: the
+  container exits the instant it starts with "nodemon: not found", the proxy in front of it
+  answers 502, and the app simply never comes up.
+• This matters most when REUSING the repository's own Dockerfile, which is usually written
+  to ship the product and therefore installs production dependencies only. Reuse it, and
+  then make it right for running here: add a build stage or an override that installs the
+  full dependency set, and set NODE_ENV (or its equivalent) to development in the compose
+  file. Never leave a production install underneath a development command.
+• Prove it before you finish: run the exact command the compose file will run, in the image
+  you built, and see the app bind its port. `docker compose up` followed by the service
+  still being up thirty seconds later is the evidence — a container that exits immediately
+  is not a slow start, and it is not something a rebuild will fix, because a rebuild builds
+  the same image again.
 • Say plainly in mvpfy-run.md which changes appear on their own and which need a restart —
   new dependencies, changed env vars and database migrations always need one.
 • Use a named Docker volume for each database so data persists between restarts.
@@ -157,7 +176,9 @@ Rules:
   replaying the full migration history — old migration chains are often broken when run from
   scratch. Guard the load so it only runs on an empty database and never wipes data on a
   container restart, and never auto-run pending migrations at startup.
-• Reuse the existing Dockerfile/docker-compose.yml if present.
+• Reuse the existing Dockerfile/docker-compose.yml if present — subject to the dev
+  dependency rule above: a Dockerfile written to ship the product installs production
+  dependencies only, and the watcher will not be in it.
 • Use official base images only.
 • Keep images SLIM — builds run on a PM's laptop and network. Do not apt-get compiler
   toolchains or large packages (chromium, g++, libvips-dev, …) unless the app provably

@@ -135,7 +135,10 @@ Rules:
   dev`, `vite`, `nest start --watch` for Node; `uvicorn --reload`, `flask --debug`,
   `manage.py runserver` for Python; `rails server` for Rails; `air` for Go. Keep installed
   dependencies inside the image by mounting an anonymous volume over node_modules/ (or the
-  virtualenv) so the host checkout cannot shadow them. This matters beyond convenience: the
+  virtualenv) so the host checkout cannot shadow them. The image must therefore CONTAIN the
+  full installed tree: that volume is filled from the image, and mvpfy refills it from the
+  image every time a container is created, so a service must never need the network to
+  start. Do not write a start command that installs dependencies at run time. This matters beyond convenience: the
   product manager tests whatever is checked out, and mvpfy implements each story on its own
   branch, so without a watcher they would be reviewing the previous build.
 • The image MUST contain the dev dependencies that watcher needs. nodemon, vite, ts-node,

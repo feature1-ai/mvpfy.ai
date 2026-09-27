@@ -212,7 +212,24 @@ export function composeCommand(action: ComposeAction, linked = false): string {
   // drops between runs is left running forever — still holding its port, so
   // the next `up` cannot bind it. Never --volumes here: Stop must not delete
   // the database. That belongs to deleting the project, and lives there.
-  const up = `${base} up -d --build --remove-orphans`;
+  // --renew-anon-volumes: every generated stack mounts an anonymous volume over
+  // node_modules (or the virtualenv) so the host checkout cannot shadow the
+  // dependencies installed in the image. Compose fills that volume ONCE and
+  // then hands it to each replacement container — "instead of retrieving data
+  // from the previous containers" is precisely what this flag turns off — so
+  // the moment a story adds a dependency, every later container starts against
+  // the tree from the day the volume was created. The service exits on a
+  // missing package, or worse: a web app whose own build tool is in that tree
+  // finds no local copy, goes to the registry for one, and sits there
+  // "running" with nothing behind the front door. The proxy answers 502, every
+  // container reports up, and nothing a PM can press fixes it, because each
+  // start hands back the same stale volume.
+  //
+  // Safe to do every time: an anonymous volume here is a copy of image
+  // content, never data. Data lives in named volumes — the database — and this
+  // flag does not touch those. Refilling from the image is a local copy of
+  // files the build already produced.
+  const up = `${base} up -d --build --renew-anon-volumes --remove-orphans`;
   const down = `${base} down --remove-orphans`;
   // Force stop: SIGKILL now rather than the polite SIGTERM-then-wait, for a
   // container that ignores the signal or takes minutes to drain. `kill` exits
@@ -239,7 +256,7 @@ export function composeCommand(action: ComposeAction, linked = false): string {
     `${base} build --no-cache && ` +
     `${step('Stopping the old containers')} && ${down} && ` +
     `${step('Starting the rebuilt app')} && ` +
-    `${base} up -d --force-recreate --remove-orphans`;
+    `${base} up -d --force-recreate --renew-anon-volumes --remove-orphans`;
   const compose =
     action === 'up'
       ? up

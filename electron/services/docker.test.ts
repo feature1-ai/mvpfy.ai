@@ -15,11 +15,12 @@ describe('composeCommand', () => {
   it('clears orphans on both halves, so a renamed service cannot hold its port', () => {
     // bootstrap rewrites the compose file; a service dropped from it is still
     // running, and compose will not touch it unless told to.
-    expect(composeCommand('up')).toContain('up -d --build --remove-orphans');
+    expect(composeCommand('up')).toContain('up -d --build');
+    expect(composeCommand('up')).toContain('--remove-orphans');
     expect(composeCommand('down')).toContain('down --remove-orphans');
     const restart = composeCommand('restart');
     expect(restart).toContain('down --remove-orphans');
-    expect(restart).toContain('up -d --build --remove-orphans');
+    expect(restart).toContain('up -d --build');
   });
 
   it('never deletes volumes — Stop must not destroy the database', () => {
@@ -161,6 +162,22 @@ describe('seedCommandFor', () => {
   });
 });
 
+describe('composeCommand up', () => {
+  it('takes the dependency volumes from the image, not from the last container', () => {
+    // Anonymous volumes are filled once and handed to every replacement
+    // container after that, so a story that adds a dependency leaves every
+    // later start running against the tree from the day the volume was made.
+    expect(composeCommand('up')).toContain('--renew-anon-volumes');
+    expect(composeCommand('restart')).toContain('--renew-anon-volumes');
+  });
+
+  it('never removes the named volumes the database lives in', () => {
+    // --renew-anon-volumes is safe precisely because it is not --volumes.
+    expect(composeCommand('up')).not.toContain('--volumes ');
+    expect(composeCommand('up')).not.toMatch(/--volumes$/);
+  });
+});
+
 describe('composeCommand rebuild', () => {
   it('builds from scratch and recreates, for a stack whose images were deleted', () => {
     const rebuild = composeCommand('rebuild');
@@ -183,6 +200,12 @@ describe('composeCommand rebuild', () => {
 
   it('still refuses to delete volumes — this rebuilds the setup, not the data', () => {
     expect(composeCommand('rebuild')).not.toContain('--volumes');
+  });
+
+  it('refills the dependency volumes from the image it just built', () => {
+    // Rebuilding the image and then handing the container the node_modules
+    // volume from the last one rebuilds nothing the app can see.
+    expect(composeCommand('rebuild')).toContain('--renew-anon-volumes');
   });
 
   it('checks the daemon first, like every other action that touches containers', () => {

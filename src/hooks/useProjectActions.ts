@@ -137,6 +137,15 @@ export function useProjectActions(
       // Phase B reads the workspace as well, and can be reached without phase
       // A having just run.
       await standOnFeatureIfTrunkIsEmpty();
+      // Questions belong to the run that wrote them. Left on disk they are read
+      // as THIS run's answer forever: the start that follows setup is declined
+      // while a questions file exists, and so is the readiness check, so one
+      // file written days ago silently stops every later setup from ever
+      // starting the app — the containers stay as they were and each repair
+      // asks for a retry that changes nothing. Cleared before the run, so a
+      // blocked agent writes them again and an unblocked one leaves them gone.
+      await window.mvpfy.writeRepoFile(project.localPath, pf(QUESTIONS_FILE), '');
+      refreshFiles();
       // Re-verify the port right before generating: it is baked into the
       // compose file, so it must be genuinely free at bootstrap time.
       const freePort = await window.mvpfy.findFreePort(project.basePort);

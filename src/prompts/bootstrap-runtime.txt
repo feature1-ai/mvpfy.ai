@@ -163,6 +163,25 @@ Rules:
   (rails), `--host 0.0.0.0` (uvicorn), `HOST=0.0.0.0` (most Node servers). And the port a
   service listens on must be the port every other service and the proxy address it by; a
   PORT set in one place and assumed in another is the same 502 by a different route.
+• NEVER gate the service that publishes the app port on another service's health. Compose
+  does not CREATE a container until every depends_on condition is met, so
+  `condition: service_healthy` on a proxy or web server means the app port has nothing
+  listening on it at all until that probe passes — and if the probe misses its budget even
+  once, that container is never created while every other one keeps running. The product
+  manager is then told the app never came up, with a full set of containers up and the one
+  that owns the port absent. depends_on is also TRANSITIVE: gating the front door on a
+  service that is itself gated on a database's health is the same trap one hop away. Order
+  the front door with `condition: service_started`, or leave the depends_on off entirely —
+  a proxy resolves its upstreams per request, so a request arriving early gets a 502 that
+  clears itself the moment the app answers. A port answering "not yet" is recoverable; a
+  port with nothing behind it is not.
+• Give every health check a start_period that outlasts a COLD start on a laptop — several
+  minutes, not seconds — and use `start_interval` so a fast start is still reported fast.
+  start_period is the window where a failing probe means "not yet" rather than "broken", so
+  it costs nothing when the app is quick and prevents the worst failure there is: a service
+  that was starting normally being marked unhealthy, which fails the whole start and leaves
+  the PM with containers up and no app. A genuinely dead service is still caught, by the
+  retries after that window.
 • Prove it before you finish: run the exact command the compose file will run, in the image
   you built, and see the app bind its port. `docker compose up` followed by the service
   still being up thirty seconds later is the evidence — a container that exits immediately

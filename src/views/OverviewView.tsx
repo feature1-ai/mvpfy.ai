@@ -92,6 +92,63 @@ function StartButton({ c, label }: { c: ProjectController; label: string }) {
   );
 }
 
+/**
+ * What setup stopped to ask, and the box to answer it in.
+ *
+ * A blocked agent writes its questions and stops rather than guessing, and
+ * mvpfy then declines to start the app — starting a half-configured stack
+ * would bury the question. Both halves were working; nothing rendered the
+ * questions. So the product manager saw setup finish, the app not start, and
+ * no reason given, and the file sat there declining every later start too.
+ * The blocker has to be the most visible thing on the screen.
+ */
+function SetupQuestions({ c }: { c: ProjectController }) {
+  const text = c.questionsFile?.content?.trim();
+  if (!text) return null;
+  return (
+    <section className="card overflow-hidden border-warn-border">
+      <div className="flex items-center gap-2 border-b border-line bg-warn-bg px-5 py-3">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn-text" />
+        <span className="section-label text-warn-text">
+          Setup needs an answer before it can finish
+        </span>
+      </div>
+      <div className="px-5 py-4">
+        <p className="mb-3 text-[13px] text-body">
+          It stopped rather than guess. Nothing starts until this is answered — a wrong guess baked
+          into the setup is harder to undo than a question.
+        </p>
+        <pre className="mb-3 max-h-[280px] overflow-auto whitespace-pre-wrap rounded-lg bg-sunken px-4 py-3 font-mono text-[12.5px] leading-relaxed text-body">
+          {text}
+        </pre>
+        <textarea
+          value={c.answersDraft}
+          onChange={(e) => c.setAnswersDraft(e.target.value)}
+          placeholder="Answer in plain language — one line per question is enough."
+          className="h-24 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-body outline-none focus:border-muted"
+        />
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button
+            onClick={() => void c.dismissQuestions()}
+            disabled={c.busy}
+            title="Clear the questions and carry on without answering them"
+            className="text-[11.5px] text-muted hover:text-body disabled:opacity-50"
+          >
+            or carry on without answering
+          </button>
+          <button
+            onClick={() => void c.saveAnswersAndRerun()}
+            disabled={c.busy || !c.answersDraft.trim()}
+            className="btn-primary h-8 px-3.5 disabled:opacity-50"
+          >
+            Answer and carry on
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function RebuildButton({ c, className = '' }: { c: ProjectController; className?: string }) {
   return (
     <button
@@ -150,6 +207,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   // is the current answer, so the states above it defer to it rather than
   // offering to start the same work again.
   const diagnosed = Boolean(c.triageContent) && !c.busy;
+  const hasQuestions = Boolean(c.questionsFile?.content?.trim());
   const strip: Record<
     EnvState['kind'],
     { title: string; bodyText: string; green?: boolean; red?: boolean }
@@ -160,8 +218,13 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
         'mvpfy will install dependencies and write the run config. Takes about two minutes the first time and runs on your agent subscription.',
     },
     review: {
-      title: 'Review the generated files',
-      bodyText: 'mvpfy wrote the run config below. Look it over — nothing runs until you start it.',
+      // Setup that stopped on a question did not finish, and saying "review
+      // what it wrote" over a half-written setup sends the PM to the wrong
+      // place — the answer is what it is waiting for.
+      title: hasQuestions ? 'Setup stopped to ask you something' : 'Review the generated files',
+      bodyText: hasQuestions
+        ? 'It needs an answer before it can finish. The question, and the box to answer it in, are below.'
+        : 'mvpfy wrote the run config below. Look it over — nothing runs until you start it.',
     },
     working: {
       title: env.kind === 'working' ? env.label : '',
@@ -405,6 +468,9 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </button>
             </div>
           </section>
+
+          {/* The one thing that stops setup finishing, and the way past it. */}
+          <SetupQuestions c={c} />
 
           {/* Only while it is up: sharing an app that is not running shares a
               connection refused, which is worse than not offering it. */}

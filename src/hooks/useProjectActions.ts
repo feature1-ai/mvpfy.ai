@@ -41,6 +41,8 @@ export interface ProjectActions {
   diagnose(): Promise<boolean>;
   /** Re-run the step the triage file says to retry. */
   retryFix(): Promise<boolean>;
+  /** Clear a question the PM cannot answer, so it stops blocking the start. */
+  dismissQuestions(): Promise<boolean>;
   dismissTriage(): Promise<boolean>;
   saveEnv(name: string, content: string): Promise<boolean>;
   /** Pull the latest changes from each repo's remote into the clone. */
@@ -363,6 +365,20 @@ export function useProjectActions(
       }
     });
 
+  /**
+   * Carry on without answering.
+   *
+   * A question nobody can answer must not be a dead end: the file itself is
+   * what declines the start, so clearing it is the way past — and it is the
+   * PM's decision, taken in the open, rather than a file quietly blocking
+   * everything until somebody notices it exists.
+   */
+  const dismissQuestions = () =>
+    guarded(async () => {
+      await window.mvpfy.writeRepoFile(project.localPath, pf(QUESTIONS_FILE), '');
+      refreshFiles();
+    });
+
   const dismissTriage = () =>
     guarded(async () => {
       await window.mvpfy.writeRepoFile(project.localPath, pf(TRIAGE_FILE), '');
@@ -528,6 +544,7 @@ export function useProjectActions(
   return {
     bootstrap,
     saveAnswersAndRerun,
+    dismissQuestions,
     docker,
     rebootstrap,
     seed,

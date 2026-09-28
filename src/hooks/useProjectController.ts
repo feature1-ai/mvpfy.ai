@@ -149,6 +149,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   // Actions
   bootstrap(): Promise<boolean>;
   saveAnswersAndRerun(): Promise<boolean>;
+  /** Clear a question the PM cannot answer, so it stops blocking the start. */
+  dismissQuestions(): Promise<boolean>;
   docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
   /** Run setup again on a project that already has generated files. */
   rebootstrap(): Promise<boolean>;

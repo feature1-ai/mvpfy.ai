@@ -21,6 +21,8 @@ interface Props {
   cliStatuses: CliStatus[];
   onRefreshClis: () => void;
   updateState: UpdateState;
+  /** Which card to scroll into view on open — set by the connect nudge. */
+  focus?: 'feature1' | null;
 }
 
 let runSeq = 0;
@@ -28,16 +30,24 @@ function nextRunId(kind: string, tool: string): string {
   return `cli-${kind}-${tool}-${++runSeq}`;
 }
 
+export const FEATURE1_CARD_ID = 'settings-feature1';
+
 export default function SettingsView({
   version,
   state,
   cliStatuses,
   onRefreshClis,
   updateState,
+  focus = null,
 }: Props) {
   const login = useFeature1Login(state, updateState);
   const [checking, setChecking] = useState(false);
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
+
+  useEffect(() => {
+    if (focus !== 'feature1') return;
+    document.getElementById(FEATURE1_CARD_ID)?.scrollIntoView({ block: 'start' });
+  }, [focus]);
 
   // An update that finishes downloading while Settings is open should change
   // the button under the user, not wait for them to ask again. Only progress
@@ -425,7 +435,10 @@ export default function SettingsView({
       </section>
 
       <div className="section-label mb-3">Connect your tools</div>
-      <section className="card mb-7 flex flex-col gap-4 px-[18px] py-4">
+      <section
+        id={FEATURE1_CARD_ID}
+        className="card mb-7 flex flex-col gap-4 scroll-mt-4 px-[18px] py-4"
+      >
         <div className="flex items-center gap-4">
           <span
             className={`mt-[7px] h-1.5 w-1.5 shrink-0 self-start rounded-full ${

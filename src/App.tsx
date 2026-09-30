@@ -11,6 +11,12 @@ import { checkClis } from './lib/cliCheck';
 import { loadState, saveState } from './lib/state';
 import { RunState, useRuns } from './lib/useRuns';
 import AddProjectView from './views/AddProjectView';
+import {
+  loadConnectNudgeDismissedAt,
+  saveConnectNudgeDismissedAt,
+  shouldShowConnectNudge,
+} from './lib/connectNudge';
+import ConnectFeature1Banner from './views/ConnectFeature1Banner';
 import ProjectShell, { ProjectTab } from './views/ProjectShell';
 import SettingsView from './views/SettingsView';
 import TopBar from './views/TopBar';
@@ -21,6 +27,11 @@ export default function App() {
   const [state, setState] = useState<MvpfyState | null>(null);
   const [cliStatuses, setCliStatuses] = useState<CliStatus[]>([]);
   const [screen, setScreen] = useState<Screen>('project');
+  // Settings opened from the connect nudge scrolls to the Feature1 card.
+  const [settingsFocus, setSettingsFocus] = useState<'feature1' | null>(null);
+  const [nudgeDismissedAt, setNudgeDismissedAt] = useState<string | null>(() =>
+    loadConnectNudgeDismissedAt()
+  );
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [tabByProject, setTabByProject] = useState<Record<string, ProjectTab>>({});
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
@@ -114,8 +125,25 @@ export default function App() {
           setScreen('project');
         }}
         onAddProject={() => setScreen('add')}
-        onOpenSettings={() => setScreen('settings')}
+        onOpenSettings={() => {
+          setSettingsFocus(null);
+          setScreen('settings');
+        }}
       />
+
+      {screen === 'project' && activeProject && shouldShowConnectNudge(state, nudgeDismissedAt) && (
+        <ConnectFeature1Banner
+          onConnect={() => {
+            setSettingsFocus('feature1');
+            setScreen('settings');
+          }}
+          onDismiss={() => {
+            const now = new Date();
+            saveConnectNudgeDismissedAt(now);
+            setNudgeDismissedAt(now.toISOString());
+          }}
+        />
+      )}
 
       {screen === 'settings' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -125,6 +153,7 @@ export default function App() {
             cliStatuses={cliStatuses}
             onRefreshClis={refreshClis}
             updateState={updateState}
+            focus={settingsFocus}
           />
         </div>
       ) : screen === 'add' || !activeProject ? (

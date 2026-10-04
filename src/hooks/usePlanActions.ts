@@ -18,7 +18,12 @@ import { Feature1McpClient, mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
 import { redactSecrets } from '../lib/raiseFailure';
 import { quotaExhausted } from '../lib/quota';
-import { cannotStartReason, featuresRunning, storyRunningFor } from '../lib/featureRuns';
+import {
+  MAX_FEATURES_AT_ONCE,
+  cannotStartReason,
+  featuresRunning,
+  storyRunningFor,
+} from '../lib/featureRuns';
 import {
   canMove,
   parsePlan,
@@ -120,6 +125,10 @@ export interface PlanActions {
   runningFeatures: string[];
   /** Why this feature cannot start implementing now, or null when it can. */
   cannotImplement(slug: string): string | null;
+  /** Work through several features at once, the rest waiting their turn. */
+  implementFeatures(slugs: string[]): Promise<boolean>;
+  /** Features picked but waiting for room. */
+  queuedFeatures: string[];
   moveStory(code: string, lane: StoryLane, feedback?: string): Promise<boolean>;
 }
 
@@ -169,6 +178,10 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // order within that feature; different features have nothing in common to
   // race over, so they run beside each other.
   const [runAll, setRunAll] = useState<string[]>([]);
+  // Features asked for while the limit was full. Picking four features and
+  // being told "three at a time" is a worse answer than starting three and
+  // remembering the fourth, which is what somebody picking four meant.
+  const [queued, setQueued] = useState<string[]>([]);
 
   const writePlan = useCallback(
     async (slug: string, next: ProjectPlan) => {
@@ -1234,9 +1247,9 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
    * with feedback still works, because each is still its own run. The feature
    * shares one conversation, so nothing is re-read between them.
    */
-  const implementFeature = () =>
+  const implementFeature = (forSlug?: string) =>
     guarded(async () => {
-      const active = activePlan;
+      const active = forSlug ? (plans.find((pl) => pl.slug === forSlug) ?? null) : activePlan;
       // A story left in Coding is one whose run stopped part-way — the
       // allowance ran out, or it was interrupted. Picking only from To Do meant
       // the feature refused to go on at all, with the half-finished story
@@ -1252,6 +1265,54 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       // whatever it leaves behind.
       await implementStory(next.code, Boolean(stuck), slug);
     });
+
+  /**
+   * Work through several features, as many at once as the limit allows and the
+   * rest in turn.
+   *
+   * Picking features one screen at a time was the only way to start more than
+   * one, which made a capability nobody could see: the board is where somebody
+   * decides what this week looks like, so it is where the work starts.
+   */
+  const implementFeatures = (slugs: string[]) =>
+    guarded(async () => {
+      const ready = slugs.filter((slug) => {
+        const plan = plans.find((pl) => pl.slug === slug)?.plan;
+        return (
+          plan?.approved &&
+          plan.stories.some((st) => st.lane === 'todo' || st.lane === 'coding') &&
+          !storyRunningFor(slug, storyRuns)
+        );
+      });
+      if (ready.length === 0) {
+        throw new Error('Nothing to implement in what you picked — agreed PRDs with stories left.');
+      }
+      // Everything goes in the queue and the pump below starts what it can, so
+      // one feature and six take the same path and the limit lives in one place.
+      setQueued((prev) => [...prev, ...ready.filter((slug) => !prev.includes(slug))]);
+    });
+
+  // Start queued features as room appears. Room is read from the runs
+  // themselves rather than from what this hook believes it started, so a run
+  // that failed to start, or one started from a feature's own screen, is
+  // counted the same way.
+  // Dispatched but not yet visible as a run: between asking for a feature and
+  // its first story appearing in the runs there are renders where it is in
+  // neither list, and without this it would be asked for again in each of them.
+  const starting = useRef(new Set<string>());
+  useEffect(() => {
+    if (queued.length === 0) return;
+    const running = featuresRunning(storyRuns);
+    if (running.length + starting.current.size >= MAX_FEATURES_AT_ONCE) return;
+    const next = queued.find((slug) => !running.includes(slug) && !starting.current.has(slug));
+    if (!next) return;
+    starting.current.add(next);
+    queueMicrotask(() => {
+      setQueued((prev) => prev.filter((slug) => slug !== next));
+      void implementFeature(next).finally(() => starting.current.delete(next));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queued, storyRuns]);
 
   // Start the next story once the last one has landed in Testing. Waiting for
   // that move rather than for the run to exit keeps two writes to the same
@@ -1361,6 +1422,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     implementFeature,
     runningFeatures: featuresRunning(storyRuns),
     cannotImplement: (slug: string) => cannotStartReason(slug, storyRuns),
+    implementFeatures,
+    queuedFeatures: queued,
     moveStory,
   };
 }

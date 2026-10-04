@@ -15,6 +15,7 @@ import {
 } from '../lib/plan';
 import { Feature1Feature } from '../lib/feature1Mcp';
 import { explainRaiseFailure } from '../lib/raiseFailure';
+import { MAX_FEATURES_AT_ONCE } from '../lib/featureRuns';
 import Feature1LoginPrompt from './Feature1LoginPrompt';
 import ReadinessPanel from './ReadinessPanel';
 
@@ -35,6 +36,8 @@ export default function PlanView({ c, onOpenTab }: Props) {
   const [bounce, setBounce] = useState<{ code: string; feedback: string } | null>(null);
   const [specOpen, setSpecOpen] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  // Features ticked on the board, waiting for the one button that starts them.
+  const [picked, setPicked] = useState<string[]>([]);
   const [creatingNew, setCreatingNew] = useState(false);
   const [planMode, setPlanMode] = useState<'describe' | 'feature1'>('describe');
   const [featureRef, setFeatureRef] = useState('');
@@ -296,6 +299,15 @@ export default function PlanView({ c, onOpenTab }: Props) {
   // The board of features. Opening one drills into its stories; this is where
   // the tab lands, so the shape of the work is visible before any detail is.
   if (openSlug === null) {
+    // What can be picked: an agreed PRD with work left in it. Everything else
+    // would be a tick that does nothing when the button is pressed.
+    const startable = (f: FeaturePlan) =>
+      Boolean(f.plan?.approved) &&
+      (f.plan?.stories ?? []).some((st) => st.lane === 'todo' || st.lane === 'coding') &&
+      !c.runningFeatures.includes(f.slug) &&
+      !c.queuedFeatures.includes(f.slug);
+    const pickable = plans.filter(startable);
+    const chosen = pickable.filter((f) => picked.includes(f.slug));
     return (
       <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
         {toolbar}
@@ -310,6 +322,60 @@ export default function PlanView({ c, onOpenTab }: Props) {
             Plan a feature
           </button>
         </div>
+        {/* Several features implement side by side — each in its own checkout,
+            on its own branch — so starting a week's work is one decision taken
+            here rather than one screen per feature. */}
+        {(pickable.length > 0 || c.queuedFeatures.length > 0) && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-sunken px-4 py-2.5">
+            <span className="text-[12.5px] text-body">
+              {chosen.length > 0
+                ? `${chosen.length} picked`
+                : `${pickable.length} feature${pickable.length === 1 ? '' : 's'} ready to implement`}
+            </span>
+            {c.queuedFeatures.length > 0 && (
+              <span className="text-[12px] text-muted">
+                · {c.queuedFeatures.length} waiting for room
+              </span>
+            )}
+            {c.runningFeatures.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-[12px] text-go">
+                <span className="dot-pulse h-1.5 w-1.5 rounded-full bg-go" />
+                {c.runningFeatures.length} being implemented
+              </span>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              {pickable.length > 1 && (
+                <button
+                  onClick={() =>
+                    setPicked(chosen.length === pickable.length ? [] : pickable.map((f) => f.slug))
+                  }
+                  className="text-[11.5px] text-muted hover:text-body"
+                >
+                  {chosen.length === pickable.length ? 'Clear' : 'Pick all ready'}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  const slugs = chosen.map((f) => f.slug);
+                  setPicked([]);
+                  void c.implementFeatures(slugs);
+                }}
+                disabled={chosen.length === 0 || c.planBlocked}
+                title={
+                  c.planBlocked
+                    ? 'Wait for the current environment run to finish first'
+                    : `Work through ${chosen.length || 'the picked'} feature${
+                        chosen.length === 1 ? '' : 's'
+                      } — ${MAX_FEATURES_AT_ONCE} at a time, the rest in turn`
+                }
+                className="btn-primary h-8 px-3.5 disabled:opacity-50"
+              >
+                Implement {chosen.length > 0 ? chosen.length : ''}{' '}
+                {chosen.length === 1 ? 'feature' : 'features'}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 items-start gap-4 min-[980px]:grid-cols-4">
           {LANES.map((lane) => {
             const inLane = plans.filter(
@@ -326,7 +392,27 @@ export default function PlanView({ c, onOpenTab }: Props) {
                 </div>
                 <div className="flex flex-col gap-2">
                   {inLane.map((f) => (
-                    <FeatureCard key={f.slug} feature={f} onOpen={() => openFeature(f.slug)} />
+                    <FeatureCard
+                      key={f.slug}
+                      feature={f}
+                      onOpen={() => openFeature(f.slug)}
+                      pickable={startable(f)}
+                      picked={picked.includes(f.slug)}
+                      onPick={() =>
+                        setPicked((prev) =>
+                          prev.includes(f.slug)
+                            ? prev.filter((s) => s !== f.slug)
+                            : [...prev, f.slug]
+                        )
+                      }
+                      state={
+                        c.runningFeatures.includes(f.slug)
+                          ? 'implementing'
+                          : c.queuedFeatures.includes(f.slug)
+                            ? 'queued'
+                            : null
+                      }
+                    />
                   ))}
                   {inLane.length === 0 && (
                     <p className="px-1 py-4 text-center text-[11.5px] text-faint">—</p>
@@ -1506,21 +1592,51 @@ function ReadinessChip({
 }
 
 /** One feature on the feature board: what it is, and how far along. */
-function FeatureCard({ feature, onOpen }: { feature: FeaturePlan; onOpen: () => void }) {
+function FeatureCard({
+  feature,
+  onOpen,
+  pickable = false,
+  picked = false,
+  onPick,
+  state = null,
+}: {
+  feature: FeaturePlan;
+  onOpen: () => void;
+  /** Can be started from here: an agreed PRD with work left in it. */
+  pickable?: boolean;
+  picked?: boolean;
+  onPick?: () => void;
+  state?: 'implementing' | 'queued' | null;
+}) {
   const plan = feature.plan;
   const stories = plan?.stories ?? [];
   const done = stories.filter((s) => s.lane === 'done').length;
   const busy = feature.generating || feature.runningStory !== null;
   return (
-    <button
-      onClick={onOpen}
-      className="w-full rounded-lg border border-line bg-surface p-3 text-left hover:border-muted"
+    // A div, not a button: the tick is its own control, and a button inside a
+    // button is neither valid nor clickable where it matters.
+    <div
+      className={`w-full rounded-lg border bg-surface p-3 text-left ${
+        picked ? 'border-go' : 'border-line hover:border-muted'
+      }`}
     >
       <div className="flex items-center gap-2">
+        {pickable && (
+          <input
+            type="checkbox"
+            checked={picked}
+            onChange={() => onPick?.()}
+            aria-label={`Pick ${plan?.spec.feature || feature.slug} to implement`}
+            className="h-3.5 w-3.5 shrink-0 accent-[color:var(--go,#1f7a4d)]"
+          />
+        )}
         {busy && <span className="dot-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-go" />}
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+        <button
+          onClick={onOpen}
+          className="min-w-0 flex-1 truncate text-left text-[13px] font-medium hover:underline"
+        >
           {plan?.spec.feature || feature.slug || 'Feature'}
-        </span>
+        </button>
       </div>
       {plan?.spec.overview.problem && (
         <p className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-body">
@@ -1534,12 +1650,17 @@ function FeatureCard({ feature, onOpen }: { feature: FeaturePlan; onOpen: () => 
             ? 'no stories yet'
             : `${done}/${stories.length} stories accepted`}
       </p>
+      {state && (
+        <p className="mt-1.5 font-mono text-[10px] text-go">
+          {state === 'implementing' ? 'implementing…' : 'waiting for room'}
+        </p>
+      )}
       {(plan?.prUrls?.length ?? 0) > 0 && (
         <p className="mt-1.5 font-mono text-[10px] text-go">
           {plan!.prUrls!.length} pull request{plan!.prUrls!.length === 1 ? '' : 's'} open
         </p>
       )}
-    </button>
+    </div>
   );
 }
 

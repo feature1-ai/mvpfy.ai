@@ -252,6 +252,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   runningFeatures: string[];
   /** Why this feature cannot start implementing now, or null when it can. */
   cannotImplement(slug: string): string | null;
+  /** Work through several features at once, the rest waiting their turn. */
+  implementFeatures(slugs: string[]): Promise<boolean>;
+  /** Features picked but waiting for room. */
+  queuedFeatures: string[];
   moveStory(code: string, lane: StoryLane, feedback?: string): Promise<boolean>;
   refreshStories(): Promise<boolean>;
   implement(story: UserStory): Promise<boolean>;

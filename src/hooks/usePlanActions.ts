@@ -18,6 +18,7 @@ import { Feature1McpClient, mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
 import { redactSecrets } from '../lib/raiseFailure';
 import { quotaExhausted } from '../lib/quota';
+import { cannotStartReason, featuresRunning, storyRunningFor } from '../lib/featureRuns';
 import {
   canMove,
   parsePlan,
@@ -115,8 +116,10 @@ export interface PlanActions {
   abandonMerge(): Promise<boolean>;
   /** Implement every remaining story in the active feature, in order. */
   implementFeature(): Promise<boolean>;
-  /** The feature whose stories are being worked through, if any. */
-  runningFeature: string | null;
+  /** The features whose stories are being worked through, if any. */
+  runningFeatures: string[];
+  /** Why this feature cannot start implementing now, or null when it can. */
+  cannotImplement(slug: string): string | null;
   moveStory(code: string, lane: StoryLane, feedback?: string): Promise<boolean>;
 }
 
@@ -162,7 +165,10 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   const processedPlanRuns = useRef(new Set<string>());
   // The feature being worked through story by story. Session-only on purpose:
   // a run that was interrupted by a quit should not silently resume itself.
-  const [runAllSlug, setRunAllSlug] = useState<string | null>(null);
+  // One per feature, not one for the project. Each feature's stories run in
+  // order within that feature; different features have nothing in common to
+  // race over, so they run beside each other.
+  const [runAll, setRunAll] = useState<string[]>([]);
 
   const writePlan = useCallback(
     async (slug: string, next: ProjectPlan) => {
@@ -822,10 +828,15 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // a change that ran out of allowance leaves the second and not the first.
   // One answer, because there is one button.
   const lastStoryRun = storyRuns.filter((r) => !r.running).pop();
-  const strandedStory = anyStoryRunning
+  // About the feature on screen, not the project: another feature implementing
+  // elsewhere says nothing about whether this one was left half-finished, and
+  // reading it project-wide hid a stranded feature for as long as any other
+  // one was running.
+  const thisFeatureRunning = storyRunningFor(activePlan?.slug ?? '', storyRuns);
+  const strandedStory = thisFeatureRunning
     ? null
     : (activePlan?.plan?.stories.find((st) => st.lane === 'coding')?.code ?? null);
-  const strandedFiles = anyStoryRunning
+  const strandedFiles = thisFeatureRunning
     ? 0
     : featureGit.reduce((n, r) => n + r.uncommitted.length, 0);
   const stranded: StrandedFeature | null =
@@ -852,8 +863,9 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       // A story halfway through is resumed, and the run-all chain is armed so
       // the rest of the feature follows it rather than stopping at one story.
       if (strandedStory) {
-        setRunAllSlug(active.slug);
-        await implementStory(strandedStory, true);
+        const slug = active.slug;
+        setRunAll((prev) => (prev.includes(slug) ? prev : [...prev, slug]));
+        await implementStory(strandedStory, true, slug);
         return;
       }
       // Work in the checkout belonging to no story: a change that stopped
@@ -1062,21 +1074,27 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       await writePlan(activePlan.slug, { ...activePlan.plan, approved: true });
     });
 
-  const implementStory = (code: string, continuing = false) =>
+  /**
+   * `forSlug` names the feature, rather than this reading whichever feature
+   * happens to be open. With one feature running that was the same thing; with
+   * several it is not, and the chain that starts the next story would have put
+   * it in whatever feature the builder had clicked on meanwhile.
+   */
+  const implementStory = (code: string, continuing = false, forSlug?: string) =>
     guarded(async () => {
-      const slug = activePlan?.slug ?? '';
-      const plan = activePlan?.plan;
+      const slug = forSlug ?? activePlan?.slug ?? '';
+      const plan = plans.find((pl) => pl.slug === slug)?.plan;
       const story = plan?.stories.find((s) => s.code === code);
       if (!plan || !story) throw new Error(`Story ${code} not found in the plan`);
       if (!plan.approved) throw new Error('Agree with the PRD first — then the board opens');
       if (story.lane !== 'todo' && story.lane !== 'coding') {
         throw new Error(`${code} is in ${story.lane} — drag it back to To Do to re-implement`);
       }
-      if (anyStoryRunning) {
-        throw new Error(
-          'A story is already being implemented — one at a time, so two runs do not write the same checkout'
-        );
-      }
+      // Per feature, not per project. Two features implement in two checkouts,
+      // on two branches, in two conversations — the reason this was ever one
+      // at a time stopped being true when each feature got its own worktree.
+      const why = cannotStartReason(slug, storyRuns);
+      if (why) throw new Error(why);
       if (planBlocked) {
         throw new Error('Wait for the current environment run to finish first');
       }
@@ -1228,10 +1246,11 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       if (!active || !next) {
         throw new Error('Every story in this feature has been accepted already');
       }
-      setRunAllSlug(active.slug);
+      const slug = active.slug;
+      setRunAll((prev) => (prev.includes(slug) ? prev : [...prev, slug]));
       // implementStory reports its own failures; the chain below picks up from
       // whatever it leaves behind.
-      await implementStory(next.code, Boolean(stuck));
+      await implementStory(next.code, Boolean(stuck), slug);
     });
 
   // Start the next story once the last one has landed in Testing. Waiting for
@@ -1239,30 +1258,34 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // plan file from racing each other.
   const chainedStories = useRef(new Set<string>());
   useEffect(() => {
-    if (!runAllSlug) return;
-    const run = storyRuns.find(
-      (r) =>
-        !r.running &&
-        !chainedStories.current.has(r.handle.runId) &&
-        (r.handle.planSlug ?? '') === runAllSlug
-    );
-    if (!run) return;
-    const plan = plans.find((pl) => pl.slug === runAllSlug)?.plan;
-    const finished = plan?.stories.find((st) => st.code === run.handle.storyId);
-    // Wait for the move into Testing before reading the plan again, so two
-    // writes to the same file cannot race each other.
-    if (!plan || finished?.lane === 'coding') return;
-    chainedStories.current.add(run.handle.runId);
-    // A failure stops the chain where it happened: a later story usually
-    // builds on an earlier one, and carrying on tends to produce a second
-    // failure and a board nobody can read.
-    const next = run.exitCode === 0 ? plan.stories.find((st) => st.lane === 'todo') : undefined;
-    queueMicrotask(() => {
-      if (next) void implementStory(next.code);
-      else setRunAllSlug(null);
-    });
+    // One chain per feature being worked through. They advance independently:
+    // a failure in one stops that feature where it happened and says nothing
+    // about the others, which is the whole point of them being separate.
+    for (const slug of runAll) {
+      const run = storyRuns.find(
+        (r) =>
+          !r.running &&
+          !chainedStories.current.has(r.handle.runId) &&
+          (r.handle.planSlug ?? '') === slug
+      );
+      if (!run) continue;
+      const plan = plans.find((pl) => pl.slug === slug)?.plan;
+      const finished = plan?.stories.find((st) => st.code === run.handle.storyId);
+      // Wait for the move into Testing before reading the plan again, so two
+      // writes to the same file cannot race each other.
+      if (!plan || finished?.lane === 'coding') continue;
+      chainedStories.current.add(run.handle.runId);
+      // A failure stops the chain where it happened: a later story usually
+      // builds on an earlier one, and carrying on tends to produce a second
+      // failure and a board nobody can read.
+      const next = run.exitCode === 0 ? plan.stories.find((st) => st.lane === 'todo') : undefined;
+      queueMicrotask(() => {
+        if (next) void implementStory(next.code, false, slug);
+        else setRunAll((prev) => prev.filter((s) => s !== slug));
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storyRuns, plans, runAllSlug]);
+  }, [storyRuns, plans, runAll]);
 
   const moveStory = (code: string, lane: StoryLane, feedback?: string) =>
     guarded(async () => {
@@ -1336,7 +1359,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         r.handle.kind === 'feature-change' && r.running && r.handle.planSlug === activePlan?.slug
     ),
     implementFeature,
-    runningFeature: runAllSlug,
+    runningFeatures: featuresRunning(storyRuns),
+    cannotImplement: (slug: string) => cannotStartReason(slug, storyRuns),
     moveStory,
   };
 }

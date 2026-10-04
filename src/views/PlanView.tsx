@@ -668,20 +668,25 @@ function ImplementFeatureButton({
   slug: string;
 }) {
   const remaining = plan.stories.filter((s) => s.lane === 'todo').length;
-  const runningHere = c.runningFeature === slug;
+  const runningHere = c.runningFeatures.includes(slug);
   if (remaining === 0 && !runningHere) return null;
+  // Why THIS feature cannot go, which is no longer the same question as
+  // whether anything is running: another feature implementing in its own
+  // checkout is not a reason to refuse this one.
+  const blocked = runningHere ? null : c.cannotImplement(slug);
   return (
     <button
       onClick={() => void c.implementFeature()}
-      disabled={c.anyStoryRunning || c.planBlocked || !plan.approved}
+      disabled={runningHere || Boolean(blocked) || c.planBlocked || !plan.approved}
       title={
-        plan.approved
-          ? 'Implement the remaining stories one after another'
-          : 'Agree with the PRD first'
+        !plan.approved
+          ? 'Agree with the PRD first'
+          : (blocked ??
+            'Implement the remaining stories one after another — other features can run at the same time')
       }
       className="btn-secondary h-8 px-3.5 disabled:opacity-50"
     >
-      {runningHere && c.anyStoryRunning
+      {runningHere
         ? `Implementing… ${remaining} left`
         : `Implement ${remaining} ${remaining === 1 ? 'story' : 'stories'}`}
     </button>

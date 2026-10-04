@@ -8,6 +8,7 @@ import {
   startSyncFeatureRun,
   startFeatureChangeRun,
   startResolveMergeRun,
+  startAutoMergeRun,
   isAmbientRun,
   lostConversation,
   makeRunId,
@@ -272,6 +273,12 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       });
       // A failed or cancelled push must keep its checkout and unpushed work.
       if (run.exitCode !== 0) continue;
+      // Nobody to review it: GitHub holds each pull request and merges it when
+      // its checks pass. Armed here rather than merged here — a red check must
+      // leave the pull request open exactly as it would have been.
+      if (project.autoMerge && urls.length > 0) {
+        void startAutoMergeRun(project, slug, urls).then(runsApi.track);
+      }
       // Testing this feature is over, so the workspace goes back to its trunk.
       // Done here rather than through the action so the effect does not depend
       // on something declared below it.

@@ -43,6 +43,8 @@ export interface ProjectActions {
   retryFix(): Promise<boolean>;
   /** Clear a question the PM cannot answer, so it stops blocking the start. */
   dismissQuestions(): Promise<boolean>;
+  /** Arm or disarm GitHub's auto-merge for this project's pull requests. */
+  setAutoMerge(on: boolean): Promise<boolean>;
   dismissTriage(): Promise<boolean>;
   saveEnv(name: string, content: string): Promise<boolean>;
   /** Pull the latest changes from each repo's remote into the clone. */
@@ -373,6 +375,20 @@ export function useProjectActions(
    * PM's decision, taken in the open, rather than a file quietly blocking
    * everything until somebody notices it exists.
    */
+  /**
+   * Whether GitHub should merge this project's pull requests itself once their
+   * checks pass. Per project, and off until somebody says otherwise: a
+   * repository a team reviews and one nobody else touches can belong to the
+   * same person, and the wrong answer on the first is not recoverable.
+   */
+  const setAutoMerge = (on: boolean) =>
+    guarded(async () => {
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, autoMerge: on } : p)),
+      }));
+    });
+
   const dismissQuestions = () =>
     guarded(async () => {
       await window.mvpfy.writeRepoFile(project.localPath, pf(QUESTIONS_FILE), '');
@@ -545,6 +561,7 @@ export function useProjectActions(
     bootstrap,
     saveAnswersAndRerun,
     dismissQuestions,
+    setAutoMerge,
     docker,
     rebootstrap,
     seed,

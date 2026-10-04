@@ -47,6 +47,17 @@ export interface Project {
    */
   testingSlug?: string | null;
   /**
+   * Arm GitHub's own auto-merge on every pull request this project raises, so
+   * it merges when its checks pass.
+   *
+   * For a builder working alone: the pull request is still raised and still
+   * runs its checks — it simply does not wait for a reviewer who is never
+   * coming. Per project rather than a setting across all of them, because the
+   * same person may have a repository nobody else touches and one their team
+   * reviews, and the wrong answer on the second is not recoverable.
+   */
+  autoMerge?: boolean;
+  /**
    * One Claude conversation per feature, by plan slug. Planning, refining and
    * implementing a feature all continue it, so refining a spec knows why the
    * spec says what it does. Kept here rather than in the agent-written plan
@@ -587,6 +598,8 @@ export interface MvpfyApi {
     dirs: string[],
     branch: string
   ): Promise<void>;
+  /** Ask GitHub to merge these pull requests itself once their checks pass. */
+  autoMergePullRequests(runId: string, workspacePath: string, urls: string[]): Promise<void>;
   /** Merge the trunk into a feature's branch, in its worktree. */
   mergeTrunk(
     runId: string,

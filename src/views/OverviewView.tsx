@@ -149,6 +149,54 @@ function SetupQuestions({ c }: { c: ProjectController }) {
   );
 }
 
+/**
+ * What happens to this project's pull requests once they are raised.
+ *
+ * Per project, and never a setting across all of them: the same person has a
+ * repository their team reviews and one nobody else touches, and arming the
+ * first by accident is not something a later click undoes.
+ */
+function PullRequestPolicy({ c }: { c: ProjectController }) {
+  const on = c.project.autoMerge === true;
+  return (
+    <section className="card px-[18px] py-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="section-label">Pull requests</span>
+        <button
+          role="switch"
+          aria-checked={on}
+          aria-label="Let GitHub merge this project's pull requests when their checks pass"
+          onClick={() => void c.setAutoMerge(!on)}
+          className={`relative h-[18px] w-8 shrink-0 rounded-full transition-colors ${
+            on ? 'bg-go' : 'bg-line'
+          }`}
+        >
+          <span
+            className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white transition-all ${
+              on ? 'left-[16px]' : 'left-[2px]'
+            }`}
+          />
+        </button>
+      </div>
+      <p className="text-[12px] leading-normal text-muted">
+        {on ? (
+          <>
+            <span className="font-medium text-body">GitHub merges them when checks pass.</span>{' '}
+            Raised the same way, squashed into one commit, branch deleted after. A failing check
+            leaves it open — nothing here merges anything itself.
+          </>
+        ) : (
+          <>
+            <span className="font-medium text-body">They wait for you to merge.</span> Turn this on
+            if nobody else reviews this project, and GitHub will merge each one once its checks
+            pass.
+          </>
+        )}
+      </p>
+    </section>
+  );
+}
+
 function RebuildButton({ c, className = '' }: { c: ProjectController; className?: string }) {
   return (
     <button
@@ -748,6 +796,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
 
         {/* Right column */}
         <div className="flex min-w-0 flex-col gap-5">
+          <PullRequestPolicy c={c} />
           <section className="card px-[18px] py-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="section-label">Repositories</span>

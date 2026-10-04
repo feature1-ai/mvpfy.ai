@@ -151,6 +151,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   saveAnswersAndRerun(): Promise<boolean>;
   /** Clear a question the PM cannot answer, so it stops blocking the start. */
   dismissQuestions(): Promise<boolean>;
+  /** Arm or disarm GitHub's auto-merge for this project's pull requests. */
+  setAutoMerge(on: boolean): Promise<boolean>;
   docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
   /** Run setup again on a project that already has generated files. */
   rebootstrap(): Promise<boolean>;

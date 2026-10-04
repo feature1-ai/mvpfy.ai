@@ -34,7 +34,7 @@ import {
   readDesignImage,
   removeDesignImage,
 } from './services/design';
-import { pullRequestStates } from './services/github';
+import { autoMergeCommand, pullRequestStates } from './services/github';
 import { hasCloudflared, tunnelCommand } from './services/share';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
@@ -312,6 +312,18 @@ export function registerIpc(): void {
       );
     }
   );
+  ipcMain.handle('auto-merge-prs', (_ev, runId: string, workspacePath: string, urls: string[]) => {
+    const resolved = path.resolve(workspacePath);
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('Merging is restricted to managed and linked project directories');
+    }
+    const command = autoMergeCommand(urls);
+    startRun(
+      runId,
+      command || `echo ${JSON.stringify('No pull request to arm auto-merge on.')}`,
+      resolved
+    );
+  });
   ipcMain.handle(
     'feature-conflicts',
     (_ev, workspacePath: string, dirs: string[], projectKey: string, featureSlug: string) => {

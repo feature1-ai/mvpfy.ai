@@ -141,6 +141,7 @@ export type RunKind =
   | 'plan-spec'
   | 'plan-story'
   | 'raise-pr'
+  | 'auto-merge'
   | 'push-feature'
   | 'sync-feature'
   | 'feature-change'
@@ -376,6 +377,21 @@ export async function startDockerRun(project: Project, action: ComposeAction): P
   // the same state as the polite one.
   const stopping = action === 'down' || action === 'force-down';
   return { runId, kind: stopping ? 'docker-down' : 'docker-up', projectId: project.id };
+}
+
+/**
+ * Hand the pull requests to GitHub's own auto-merge, for a project with nobody
+ * to review them. Raised exactly as before; what changes is that GitHub holds
+ * them until their checks pass instead of a person holding them forever.
+ */
+export async function startAutoMergeRun(
+  project: Project,
+  planSlug: string,
+  urls: string[]
+): Promise<RunHandle> {
+  const runId = makeRunId('automerge');
+  await window.mvpfy.autoMergePullRequests(runId, project.localPath, urls);
+  return { runId, kind: 'auto-merge', projectId: project.id, planSlug };
 }
 
 /** Ship the workspace's uncommitted product changes as pull request(s). */

@@ -84,3 +84,40 @@ export function pullRequestStates(urls: string[]): PullRequestState[] {
   }
   return out;
 }
+
+/**
+ * Ask GitHub to merge these pull requests itself, once their checks pass.
+ *
+ * For a builder with nobody to review: the pull request is still raised, still
+ * runs its checks, still exists to be read — it simply does not wait for a
+ * reviewer who is never coming. GitHub holds it and merges when the checks are
+ * green, which is the part that matters: nothing here merges anything, and a
+ * red check leaves the pull request open exactly as it would have been.
+ *
+ * Squash, because a feature is one change to the product however many stories
+ * it took, and the pull request body already lists them.
+ *
+ * Each pull request is asked for on its own: with several repositories, one
+ * refusing is not a reason to leave the others waiting for a person. A refusal
+ * is reported rather than worked around — the usual one is a repository that
+ * has not turned auto-merge on, and merging it immediately instead would be
+ * the one thing this must never do.
+ */
+export function autoMergeCommand(urls: string[]): string {
+  const steps: string[] = [];
+  for (const raw of urls) {
+    const url = raw.trim();
+    // Never a string from anywhere else: these reach a command line.
+    if (!isPullRequestUrl(url)) continue;
+    const q = shellQuote(url);
+    const name = url.replace(/^https:\/\/[^/]+\//, '').replace('/pull/', ' #');
+    steps.push(
+      `(echo ${shellQuote(`── ${name}`)} && gh pr merge ${q} --squash --auto --delete-branch) || ` +
+        `echo ${shellQuote(
+          `${name}: GitHub would not arm auto-merge — usually because the repository has it switched off (Settings → General → Pull Requests). The pull request is open and merging it is yours`
+        )}`
+    );
+  }
+  if (steps.length === 0) return '';
+  return steps.join(' && ');
+}

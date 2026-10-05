@@ -241,7 +241,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
   const activity = c.busy ? latestActivity(c.latestRun?.log ?? '') : null;
   const ports = parsePorts(mvpfyYml);
   const cred = c.demoCredentials[0] ?? null;
-  const name = project.localPath.split('/').pop();
+  const name = project.localPath.split(/[\\/]/).pop();
   const homePath = project.localPath.replace(/^\/Users\/[^/]+/, '~');
 
   function copy(label: string, value: string) {
@@ -320,9 +320,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
 
   return (
     <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{name}</h1>
+          <p className="section-label mb-2">Project overview</p>
+          <h1 className="text-[28px] font-semibold tracking-[-0.03em]">{name}</h1>
           <p className="mt-0.5 font-mono text-xs text-muted">{homePath}</p>
         </div>
         <div className="flex gap-2">

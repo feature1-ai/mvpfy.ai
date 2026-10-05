@@ -6,17 +6,17 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Redesign palette (design_handoff_mvpfy_shell)
-        paper: '#F7F5F1',
+        // Shared workspace palette: neutral surfaces with semantic status colors.
+        paper: '#F6F7F9',
         surface: '#FFFFFF',
-        sunken: '#FAF8F4',
-        hoverfill: '#EFEBE3',
-        line: '#E4E0D8',
-        'line-subtle': '#EFEBE3',
+        sunken: '#F8F9FB',
+        hoverfill: '#EDEFF3',
+        line: '#E0E3E9',
+        'line-subtle': '#ECEEF2',
         ink: { DEFAULT: '#1B1A17', hover: '#33302B' },
-        body: '#57534C',
-        muted: '#8A857C',
-        faint: '#A8A296',
+        body: '#505766',
+        muted: '#697180',
+        faint: '#747C89',
         'dot-idle': '#C9C3B8',
         go: {
           DEFAULT: '#1F7A4C',
@@ -27,7 +27,9 @@ module.exports = {
         },
         warn: { bg: '#FBF1DC', border: '#EBD9AE', text: '#8A5A00' },
         danger: { DEFAULT: '#A32B22', hover: '#7E1F18' },
-        // Legacy brand purple — retained for the logo and design-sync previews.
+        // Brand purple. No longer only the logo: it is the accent the workspace
+        // marks "you are here" with — the open tab, the selected project, the
+        // focus ring — so it carries meaning now and not just identity.
         brand: {
           DEFAULT: '#623883',
           light: '#A25ED8',

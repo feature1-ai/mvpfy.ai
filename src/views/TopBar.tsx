@@ -44,15 +44,15 @@ export default function TopBar({
     };
   }, [menuOpen]);
 
-  const name = (p: Project) => p.localPath.split('/').pop() ?? p.id;
+  const name = (p: Project) => p.localPath.split(/[\\/]/).pop() ?? p.id;
   const running = (p: Project) => p.status === 'running';
 
   return (
-    <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
-      <div className="flex items-baseline gap-2 border-r border-line pr-4">
-        <img src={logoUrl} alt="#mvpFY" className="h-5 translate-y-[3px]" />
-        <span className="text-[11px] tracking-[0.02em] text-muted">
-          the IDE for PMs · by{' '}
+    <header className="sticky top-0 z-20 flex min-h-[64px] shrink-0 flex-wrap items-center gap-3 py-3 border-b border-line bg-surface px-5">
+      <div className="flex shrink-0 items-center gap-3 border-r border-line pr-4">
+        <img src={logoUrl} alt="#mvpFY" className="h-6" />
+        <span className="hidden text-[11px] leading-relaxed tracking-[0.02em] text-muted xl:block">
+          The product workspace · by{' '}
           <button
             onClick={() => void window.mvpfy.openExternal('https://feature1.ai')}
             className="hover:text-body hover:underline"
@@ -67,6 +67,9 @@ export default function TopBar({
       {projects.length > 0 && (
         <div className="relative" ref={menuRef}>
           <button
+            aria-expanded={menuOpen}
+            aria-controls="project-switcher"
+            aria-label={`Switch project: ${active ? name(active) : 'Select project'}`}
             onClick={() => setMenuOpen((v) => !v)}
             className="flex h-8 items-center gap-2 rounded-md border border-line bg-paper px-2.5 text-[13px] font-medium hover:bg-hoverfill"
           >
@@ -75,20 +78,26 @@ export default function TopBar({
                 active && running(active) ? 'bg-go' : 'bg-dot-idle'
               }`}
             />
-            {active ? name(active) : 'Select project'}
+            <span className="max-w-[180px] truncate">
+              {active ? name(active) : 'Select project'}
+            </span>
             <span className="text-[10px] text-muted">▾</span>
           </button>
           {menuOpen && (
-            <div className="absolute left-0 top-[38px] z-30 w-[300px] rounded-lg border border-line bg-surface p-1.5 shadow-[0_8px_24px_rgba(27,26,23,.10)]">
+            <div
+              id="project-switcher"
+              className="absolute left-0 top-[38px] z-30 w-[300px] rounded-lg border border-line bg-surface p-1.5 shadow-[0_8px_24px_rgba(27,26,23,.10)]"
+            >
               <div className="section-label px-2.5 pb-1.5 pt-2">Projects</div>
               {projects.map((p) => (
                 <button
                   key={p.id}
+                  aria-current={p.id === activeProjectId ? 'true' : undefined}
                   onClick={() => {
                     onSelectProject(p.id);
                     setMenuOpen(false);
                   }}
-                  className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left hover:bg-paper"
+                  className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left hover:bg-paper ${p.id === activeProjectId ? 'bg-brand/5 text-brand' : ''}`}
                 >
                   <span
                     className={`h-[7px] w-[7px] rounded-full ${running(p) ? 'bg-go' : 'bg-dot-idle'}`}
@@ -115,11 +124,11 @@ export default function TopBar({
       )}
 
       <div className="ml-auto flex items-center gap-1.5">
-        <span className="mr-2 hidden items-center gap-1.5 text-xs text-muted sm:flex">
+        <span className="mr-2 hidden items-center gap-1.5 text-xs text-muted lg:flex">
           <span
             className={`h-1.5 w-1.5 rounded-full ${tenantConnected ? 'bg-go' : 'bg-dot-idle'}`}
           />
-          {tenantConnected ? `Feature1 · ${tenantSlug}` : 'Feature1 not connected ·'}
+          {tenantConnected ? `Feature1 · ${tenantSlug}` : 'Feature1 ·'}
           {!tenantConnected && (
             <button
               onClick={onOpenSettings}
@@ -129,10 +138,10 @@ export default function TopBar({
             </button>
           )}
         </span>
-        <button onClick={onOpenSettings} className="btn-ghost h-[30px] px-3">
+        <button onClick={onOpenSettings} className="btn-ghost h-9 px-3">
           Settings
         </button>
-        <button onClick={onAddProject} className="btn-primary h-[30px] px-3">
+        <button onClick={onAddProject} className="btn-primary h-9 px-3">
           Add project
         </button>
       </div>

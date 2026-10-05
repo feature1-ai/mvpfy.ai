@@ -123,129 +123,159 @@ export default function AddProjectView({ state, updateState, onCreated }: Props)
   }
 
   return (
-    <div className="mx-auto w-full max-w-[560px] px-6 pb-20 pt-24">
-      <h1 className="mb-2 text-[26px] font-semibold tracking-[-0.02em]">
-        {firstRun ? 'Add your first project' : 'Add a project'}
-      </h1>
-      <div className="mb-6 flex gap-2">
-        {(
-          [
-            ['existing', 'I have code already'],
-            ['new', 'Start something new'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => {
-              setSource(key);
-              setError(null);
-            }}
-            className={`h-[34px] rounded-md px-3.5 text-[13px] ${
-              source === key
-                ? 'bg-ink font-medium text-white'
-                : 'border border-line text-muted hover:text-body'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+    <div className="mx-auto grid w-full max-w-[1080px] items-start gap-10 px-6 py-12 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16 lg:py-20">
+      <div className="lg:sticky lg:top-10">
+        <span className="section-label text-brand">Your product workspace</span>
+        <h2 className="mt-4 text-4xl font-semibold leading-[1.15] tracking-[-0.04em] lg:text-[44px]">
+          From idea to
+          <br />
+          your next release.
+        </h2>
+        <p className="mt-5 max-w-[360px] text-[15px] leading-relaxed text-body">
+          Bring your code or start fresh. Plan features, build with your agent, and test your app in
+          one place.
+        </p>
+        <div className="mt-8 space-y-6">
+          {(source === 'existing'
+            ? STEPS
+            : [
+                ['01', 'Create your workspace', 'Choose a name and where to keep your code.'],
+                [
+                  '02',
+                  'Plan your first feature',
+                  'Describe your idea and review the product spec.',
+                ],
+                ['03', 'Build & try it', 'Let your agent implement it, then test the running app.'],
+              ]
+          ).map(([n, title, desc]) => (
+            <div key={n} className="flex items-start gap-4">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface font-mono text-[11px] text-brand">
+                {n}
+              </span>
+              <div>
+                <div className="text-sm font-medium">{title}</div>
+                <p className="mt-1 max-w-[300px] text-[13px] leading-relaxed text-muted">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-
-      {source === 'new' ? (
-        <NewProductPane
-          name={newName}
-          onName={setNewName}
-          remoteKind={remoteKind}
-          onRemoteKind={setRemoteKind}
-          remoteUrl={remoteUrl}
-          onRemoteUrl={setRemoteUrl}
-          busy={cloning}
-          onCreate={() => void startFromScratch()}
-        />
-      ) : (
-        <>
-          <p className="mb-7 text-sm leading-relaxed text-body [text-wrap:pretty]">
-            Paste one or more repositories. mvpfy adds them and sets the environment up on its own —
-            it works out how to run the code, writes the run config and starts the app, which takes
-            a few minutes on your agent subscription. Follow along on the cards; the last one is
-            yours.
-          </p>
-
-          <label className="section-label mb-1.5 block">Repositories</label>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={
-              'https://github.com/org/frontend\nhttps://github.com/org/backend\n~/code/local-service'
-            }
-            disabled={cloning}
-            className="h-[104px] w-full resize-y rounded-lg border border-line bg-surface px-3.5 py-3 font-mono text-[13px] leading-[1.7] outline-none placeholder:text-faint focus:border-muted"
-          />
-          <div className="mt-3 flex items-center gap-2.5">
+      <section className="card p-6 sm:p-8">
+        <h1 className="mb-5 text-[24px] font-semibold tracking-[-0.02em]">
+          {firstRun ? 'Add your first project' : 'Add a project'}
+        </h1>
+        <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-paper p-1">
+          {(
+            [
+              ['existing', 'I have code already'],
+              ['new', 'Start something new'],
+            ] as const
+          ).map(([key, label]) => (
             <button
-              onClick={() => void add()}
-              disabled={cloning || !text.trim()}
-              className="btn-primary h-[38px] px-4 text-sm disabled:opacity-50"
+              key={key}
+              aria-pressed={source === key}
+              disabled={cloning}
+              onClick={() => {
+                setSource(key);
+                setError(null);
+              }}
+              className={`h-[34px] rounded-md px-3.5 text-[13px] ${
+                source === key
+                  ? 'bg-surface font-medium text-ink shadow-sm'
+                  : 'text-muted hover:text-ink'
+              }`}
             >
-              {cloning ? 'Adding…' : 'Add & bootstrap'}
+              {label}
             </button>
-            <button
-              onClick={() =>
-                void window.mvpfy.pickDirectory().then((dirs) => {
-                  if (!dirs?.length) return;
-                  setText((prev) => {
-                    const existing = splitEntries(prev);
-                    const added = dirs.filter((d) => !existing.includes(d));
-                    return [...existing, ...added].join('\n');
-                  });
-                })
+          ))}
+        </div>
+
+        {source === 'new' ? (
+          <NewProductPane
+            name={newName}
+            onName={setNewName}
+            remoteKind={remoteKind}
+            onRemoteKind={setRemoteKind}
+            remoteUrl={remoteUrl}
+            onRemoteUrl={setRemoteUrl}
+            busy={cloning}
+            onCreate={() => void startFromScratch()}
+          />
+        ) : (
+          <>
+            <p className="mb-7 text-sm leading-relaxed text-body [text-wrap:pretty]">
+              Add a GitHub repository or a local folder. Coming from Replit or Lovable? Connect your
+              project to GitHub first, then paste its repository URL here. Setup takes a few minutes
+              and uses your agent subscription.
+            </p>
+
+            <label htmlFor="project-repositories" className="section-label mb-1.5 block">
+              Repository URLs or folder paths
+            </label>
+            <textarea
+              id="project-repositories"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={
+                'https://github.com/org/frontend\nhttps://github.com/org/backend\n~/code/local-service'
               }
               disabled={cloning}
-              className="btn-secondary h-[38px] px-4 text-sm disabled:opacity-50"
-            >
-              Browse local folders…
-            </button>
-            <span className="ml-auto text-xs text-muted">One per line</span>
-          </div>
-          {looksLocal && (
-            <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-sunken px-3.5 py-3">
-              <input
-                type="checkbox"
-                checked={inPlace}
-                onChange={(e) => setInPlace(e.target.checked)}
-                className="mt-0.5 accent-ink"
-              />
-              <span className="text-[12.5px] leading-relaxed text-body">
-                <span className="font-medium text-ink">
-                  Use this folder in place — don&apos;t copy.
-                </span>{' '}
-                mvpfy works directly in your folder: the agent edits your working copy, and
-                everything mvpfy generates stays inside a <span className="font-mono">.mvpfy/</span>{' '}
-                subfolder. Removing the project later only removes that subfolder and the containers
-                — never your code.
-              </span>
-            </label>
-          )}
-        </>
-      )}
-      {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-danger">{error}</p>}
-      {notice && (
-        <p className="mt-3 whitespace-pre-wrap rounded-lg border border-warn-border bg-warn-bg px-3.5 py-3 text-[12.5px] text-warn-text">
-          {notice}
-        </p>
-      )}
-
-      <div className="mt-10 grid gap-3.5 border-t border-line pt-6">
-        {STEPS.map(([n, title, desc]) => (
-          <div key={n} className="flex items-baseline gap-3.5">
-            <span className="font-mono text-xs text-faint">{n}</span>
-            <div>
-              <span className="text-[13px] font-medium">{title}</span>
-              <span className="ml-2 text-[13px] text-body">{desc}</span>
+              className="h-[104px] w-full resize-y rounded-lg border border-line bg-surface px-3.5 py-3 font-mono text-[13px] leading-[1.7] outline-none placeholder:text-faint focus:border-muted"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={() => void add()}
+                disabled={cloning || !text.trim()}
+                className="btn-primary h-[38px] px-4 text-sm disabled:opacity-50"
+              >
+                {cloning ? 'Adding…' : 'Add & bootstrap'}
+              </button>
+              <button
+                onClick={() =>
+                  void window.mvpfy.pickDirectory().then((dirs) => {
+                    if (!dirs?.length) return;
+                    setText((prev) => {
+                      const existing = splitEntries(prev);
+                      const added = dirs.filter((d) => !existing.includes(d));
+                      return [...existing, ...added].join('\n');
+                    });
+                  })
+                }
+                disabled={cloning}
+                className="btn-secondary h-[38px] px-4 text-sm disabled:opacity-50"
+              >
+                Browse local folders…
+              </button>
+              <span className="ml-auto text-xs text-muted">One per line</span>
             </div>
-          </div>
-        ))}
-      </div>
+            {looksLocal && (
+              <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-sunken px-3.5 py-3">
+                <input
+                  type="checkbox"
+                  checked={inPlace}
+                  onChange={(e) => setInPlace(e.target.checked)}
+                  className="mt-0.5 accent-ink"
+                />
+                <span className="text-[12.5px] leading-relaxed text-body">
+                  <span className="font-medium text-ink">
+                    Use this folder in place — don&apos;t copy.
+                  </span>{' '}
+                  mvpfy works directly in your folder: the agent edits your working copy, and
+                  everything mvpfy generates stays inside a{' '}
+                  <span className="font-mono">.mvpfy/</span> subfolder. Removing the project later
+                  only removes that subfolder and the containers — never your code.
+                </span>
+              </label>
+            )}
+          </>
+        )}
+        {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-danger">{error}</p>}
+        {notice && (
+          <p className="mt-3 whitespace-pre-wrap rounded-lg border border-warn-border bg-warn-bg px-3.5 py-3 text-[12.5px] text-warn-text">
+            {notice}
+          </p>
+        )}
+      </section>
     </div>
   );
 }
@@ -302,8 +332,11 @@ function NewProductPane({
         something to run.
       </p>
 
-      <label className="section-label mb-1.5 block">What are you building?</label>
+      <label htmlFor="project-name" className="section-label mb-1.5 block">
+        What are you building?
+      </label>
       <input
+        id="project-name"
         value={name}
         onChange={(e) => onName(e.target.value)}
         onKeyDown={(e) => {
@@ -340,6 +373,7 @@ function NewProductPane({
 
       {remoteKind === 'existing' && (
         <input
+          aria-label="Existing GitHub repository URL"
           value={remoteUrl}
           onChange={(e) => onRemoteUrl(e.target.value)}
           onKeyDown={(e) => {

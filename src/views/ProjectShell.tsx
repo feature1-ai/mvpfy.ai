@@ -5,9 +5,11 @@ import { UpdateState, useProjectController } from '../hooks/useProjectController
 import { RunsApi, RunState } from '../lib/useRuns';
 import AgentView from './AgentView';
 import LogPanel from '../components/LogPanel';
+import PlanActivityPanel from '../components/PlanActivityPanel';
 import { parseUsage, shortCount, totalIn } from '../lib/usage';
 import OverviewView from './OverviewView';
 import PlanView from './PlanView';
+import WorkspaceIcon from '../components/WorkspaceIcon';
 
 export type ProjectTab = 'overview' | 'plan' | 'agent' | 'app' | 'code' | 'logs';
 
@@ -57,30 +59,35 @@ export default function ProjectShell({
   const tabs: Array<{ id: ProjectTab; label: string; hint?: string }> = [
     { id: 'overview', label: 'Overview' },
     { id: 'plan', label: 'Plan' },
-    { id: 'agent', label: 'Agent' },
-    { id: 'app', label: 'App', hint: `:${project.basePort}` },
+    { id: 'agent', label: 'Ask agent' },
+    { id: 'app', label: 'App preview', hint: `:${project.basePort}` },
     { id: 'code', label: 'Code' },
-    { id: 'logs', label: 'Logs' },
+    { id: 'logs', label: 'Activity & logs' },
   ];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <nav className="sticky top-[52px] z-[15] flex h-11 shrink-0 items-center gap-0.5 border-b border-line bg-surface px-5">
+      <nav
+        aria-label="Project workspace"
+        className="z-[15] flex min-h-[64px] shrink-0 flex-wrap items-center gap-1 border-b border-line bg-surface px-4 py-2 sm:px-6"
+      >
         {tabs.map((t) => (
           <button
             key={t.id}
+            aria-current={tab === t.id ? 'page' : undefined}
             onClick={() => onTabChange(t.id)}
-            className={`flex h-[43px] items-center gap-[7px] border-b-2 px-3.5 text-[13px] ${
+            className={`flex h-10 items-center gap-2 rounded-lg px-3 text-[13px] ${
               tab === t.id
-                ? 'border-ink font-semibold text-ink'
-                : 'border-transparent text-muted hover:text-ink'
+                ? 'bg-brand/10 font-semibold text-brand'
+                : 'text-muted hover:bg-paper hover:text-ink'
             }`}
           >
+            <WorkspaceIcon name={t.id} />
             {t.label}
             {t.hint && <span className="font-mono text-[11px] text-faint">{t.hint}</span>}
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-3.5 text-xs">
+        <div className="ml-auto flex flex-wrap items-center gap-3.5 py-1 text-xs">
           {tab === 'app' && c.appHealthy && (
             <>
               <span className="flex h-7 items-center gap-1.5 rounded-md border border-go-border bg-go-bgalt px-[11px] font-mono text-xs text-go">
@@ -136,8 +143,13 @@ export default function ProjectShell({
           <OverviewView c={c} mvpfyYml={mvpfyYml} onOpenTab={(t) => onTabChange(t)} />
         </Pane>
 
-        <Pane active={tab === 'plan'} scroll>
-          <PlanView c={c} onOpenTab={(t) => onTabChange(t)} />
+        <Pane active={tab === 'plan'}>
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <PlanView c={c} onOpenTab={(t) => onTabChange(t)} />
+            </div>
+            <PlanActivityPanel runs={c.runHistory} onStop={c.stopRun} />
+          </div>
         </Pane>
 
         <Pane active={tab === 'agent'} scroll>
@@ -349,6 +361,8 @@ function Pane({
 }) {
   return (
     <div
+      aria-hidden={!active}
+      {...(!active ? { inert: '' } : {})}
       className={`absolute inset-0 ${scroll ? 'overflow-y-auto' : 'overflow-hidden'} bg-paper`}
       style={{ zIndex: active ? 2 : 0, pointerEvents: active ? 'auto' : 'none' }}
     >

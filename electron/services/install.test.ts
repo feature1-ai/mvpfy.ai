@@ -134,7 +134,16 @@ describe('installing the tunnel client', () => {
   });
 
   it('goes through the same installer machinery as everything else', () => {
-    expect(() => installAllCommand(['cloudflared'])).not.toThrow();
+    // Where there is an installer for it, it is built like any other tool.
+    // Where there is not — Linux has no plan for it — the machinery says so
+    // instead of handing back a command that cannot work, which is the same
+    // contract every other tool has and the reason this goes through it.
+    const hasPlan = installPlans().some((p) => p.tool === 'cloudflared' && p.available);
+    if (hasPlan) {
+      expect(installAllCommand(['cloudflared'])).toContain('cloudflared');
+    } else {
+      expect(() => installAllCommand(['cloudflared'])).toThrow(/Nothing here can be installed/);
+    }
   });
 
   it('cannot be swept into Install all, because that reads the checklist', () => {

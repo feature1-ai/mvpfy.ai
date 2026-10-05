@@ -206,18 +206,24 @@ describe('ensureInitialCommit', () => {
   };
 
   it('makes a repository with no commits able to hold a worktree', () => {
-    // `git worktree add -b` fails outright on an unborn HEAD, and every
-    // feature starts by making one — so a brand-new repository could not be
-    // built in at all, and said so mid-run in git's words.
+    // Older git refuses `worktree add -b` outright on an unborn HEAD, which is
+    // what this is here for: every feature starts by making one, so a
+    // brand-new repository could not be built in at all and said so mid-run in
+    // git's words. Newer git allows it, so the refusal is noted where it
+    // happens rather than asserted — the thing that must be true on every
+    // version is below: after this, the repository has a commit and takes a
+    // worktree.
     const dir = repo();
     setLinkedRoots([dir]);
     const wt = (name: string) => path.join(dir, '..', `${path.basename(dir)}-${name}`);
-    expect(() =>
+    try {
       execFileSync('git', ['worktree', 'add', wt('a'), '-b', 'mvpfy/x'], {
         cwd: dir,
         stdio: 'ignore',
-      })
-    ).toThrow();
+      });
+    } catch {
+      // The version this guards against. Either way, what follows is the point.
+    }
 
     ensureInitialCommit(dir);
 

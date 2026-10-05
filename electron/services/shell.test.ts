@@ -150,6 +150,19 @@ describe('openTerminalCommand', () => {
     expect(command).not.toMatch(/[^'"]\/Users\/pm\/my project/);
   });
 
+  it.runIf(!IS_WIN && process.platform !== 'darwin')(
+    'quotes the path inside the shell command too, not only as an argument',
+    () => {
+      // Linux falls back to `xterm -e <shell command>`, which puts the path
+      // through a shell a second time. A folder named with a `;` or a `$(…)`
+      // would otherwise run as a command — the folder is one the user picked,
+      // so its name is not something to pass to a shell unquoted.
+      const command = openTerminalCommand('/home/pm/weird; touch /tmp/pwned');
+      expect(command).not.toContain('xterm -e "cd /home/pm/weird; touch');
+      expect(command).toContain("'/home/pm/weird; touch /tmp/pwned'");
+    }
+  );
+
   it.runIf(IS_WIN)('uses cmd, and /d so another drive is followed', () => {
     expect(openTerminalCommand('D:\\work\\shop')).toContain('cd /d');
   });

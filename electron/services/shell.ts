@@ -77,11 +77,17 @@ export function openTerminalCommand(cwd: string): string {
       .replace(/"/g, '\\"')}"`;
     return `osascript -e 'tell application "Terminal" to activate' -e ${shellQuote(applescript)}`;
   }
+  // The first three take the directory as an argument and are safe with it
+  // quoted. xterm takes a shell command, so the path goes through a shell a
+  // second time: unquoted there, a project folder with a space in it failed to
+  // cd, and one whose name held a `;` or a `$(…)` would have run as a command.
+  // The inner quoting is what makes a folder name a folder name again.
+  const inner = `cd ${dir}; exec $SHELL`;
   return (
     `x-terminal-emulator --working-directory=${dir} || ` +
     `gnome-terminal --working-directory=${dir} || ` +
     `konsole --workdir ${dir} || ` +
-    `xterm -e "cd ${cwd}; $SHELL"`
+    `xterm -e ${shellQuote(inner)}`
   );
 }
 

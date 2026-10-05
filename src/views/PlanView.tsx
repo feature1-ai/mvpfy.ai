@@ -8,7 +8,6 @@ import {
   LANE_LABELS,
   PlanStory,
   ProjectPlan,
-  SpecItem,
   StoryLane,
   featureLane,
   uncoveredItems,
@@ -18,6 +17,7 @@ import { explainRaiseFailure } from '../lib/raiseFailure';
 import { MAX_FEATURES_AT_ONCE } from '../lib/featureRuns';
 import Feature1LoginPrompt from './Feature1LoginPrompt';
 import ReadinessPanel from './ReadinessPanel';
+import ProductSpecReader from '../components/ProductSpecReader';
 
 interface Props {
   c: ProjectController;
@@ -311,7 +311,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
     return (
       <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-7">
         {toolbar}
-        <div className="mb-5 flex items-start justify-between gap-4">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-[22px] font-semibold tracking-[-0.02em]">Features</h1>
             <p className="mt-0.5 text-[13px] text-body">
@@ -454,82 +454,12 @@ export default function PlanView({ c, onOpenTab }: Props) {
 
   const specCard = (
     <section className="card mb-6 overflow-hidden">
-      {/* One column, read top to bottom. Two columns meant two reading
-          orders — the argument down the left, the contents down the right —
-          and the reader finishing one had to go back up for the other. A spec
-          is an argument: this is the problem, this is the answer, this is who
-          it is for, this is how we will know. Then what is in it. */}
-      <div className="grid gap-6 p-6">
-        <div className="max-w-[68ch]">
-          <div className="section-label mb-1.5">The problem</div>
-          {/* Larger than everything under it, because it is the reason the
-              rest exists — and it read at the same weight as a non-functional
-              requirement. */}
-          <p className="text-[15px] leading-relaxed text-ink">{plan.spec.overview.problem}</p>
-          <div className="section-label mb-1.5 mt-5">The answer</div>
-          <p className="text-[14px] leading-relaxed text-body">{plan.spec.overview.summary}</p>
-        </div>
-
-        <div className="grid gap-5 min-[760px]:grid-cols-2">
-          <div className="max-w-[48ch]">
-            <div className="section-label mb-1.5">Who it is for</div>
-            <p className="text-[13.5px] leading-relaxed text-body">
-              {plan.spec.overview.targetUsers}
-            </p>
-          </div>
-          <div>
-            <div className="section-label mb-1.5">
-              How we will know it worked
-              <Count n={plan.spec.overview.successMetrics.length} />
-            </div>
-            <ul className="grid gap-1.5 text-[13.5px] leading-relaxed text-body">
-              {plan.spec.overview.successMetrics.map((m, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-faint">·</span>
-                  <span>{m}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Said once, where the first dot appears, instead of living in a
-            tooltip nobody hovers. */}
-        <div className="border-t border-line pt-5">
-          <p className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-muted">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-go" /> a story covers this
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-warn-text" /> nothing covers it yet
-            </span>
-          </p>
-          <div className="grid gap-5 min-[760px]:grid-cols-2">
-            <ItemList label="In scope" items={plan.spec.scope.inScope} uncovered={uncovered} />
-            <ItemList label="Out of scope" items={plan.spec.scope.outOfScope} muted />
-          </div>
-        </div>
-
-        {/* Numbered, because a flow is a sequence and a bullet hides that. */}
-        <ItemList label="User flows" items={plan.spec.flows} uncovered={uncovered} numbered />
-
-        <div className="grid gap-5 min-[760px]:grid-cols-2">
-          <ItemList
-            label="What it must do"
-            items={plan.spec.requirements.functional}
-            uncovered={uncovered}
-          />
-          <ItemList
-            label="How it must behave"
-            items={plan.spec.requirements.nonFunctional}
-            uncovered={uncovered}
-          />
-        </div>
-      </div>
+      <ProductSpecReader key={active.slug} spec={plan.spec} uncovered={uncovered} />
       <div className="flex items-center gap-2 border-t border-line bg-sunken px-5 py-3">
         <input
           value={refine}
           onChange={(e) => setRefine(e.target.value)}
+          aria-label="Refine the product spec"
           placeholder="Refine the spec — e.g. add bulk export to scope, split US-03 in two…"
           className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-3 text-[13px] outline-none placeholder:text-faint focus:border-muted"
         />
@@ -592,7 +522,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
       {toolbar}
 
       {/* Header */}
-      <div className="mb-5 flex items-start justify-between gap-4">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{plan.spec.feature}</h1>
           <p className="mt-0.5 text-[13px] text-body">
@@ -605,7 +535,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
             )}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Feature1Push c={c} plan={plan} />
           <ImplementFeatureButton c={c} plan={plan} slug={active.slug} />
           <TestFeatureButton c={c} slug={active.slug} />
@@ -1089,7 +1019,7 @@ function ConfirmDeleteFeature({
           Removes the plan, the spec, the designs and this feature&apos;s checkouts.{' '}
           <strong className="font-medium text-ink">{keeps}</strong>
         </p>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={onConfirm}
             disabled={c.busy}
@@ -1500,7 +1430,7 @@ function AwaitingAcceptance({ c, plan }: { c: ProjectController; plan: ProjectPl
           All {plan.stories.length} stories are accepted, so the feature stays in Testing until you
           accept the feature itself. Try it end to end first — accepting moves it to Done.
         </p>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => void c.markFeatureTested()}
             disabled={c.busy}
@@ -1934,57 +1864,6 @@ function StoryCard({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/** How many, next to what they are: a list's size is part of reading it. */
-function Count({ n }: { n: number }) {
-  if (n === 0) return null;
-  return <span className="ml-1.5 font-mono text-[10px] normal-case text-faint">{n}</span>;
-}
-
-function ItemList({
-  label,
-  items,
-  uncovered,
-  muted,
-  numbered,
-}: {
-  label: string;
-  items: SpecItem[];
-  uncovered?: SpecItem[];
-  muted?: boolean;
-  /** Sequences — a flow read as an unordered list loses its order. */
-  numbered?: boolean;
-}) {
-  if (items.length === 0) return null;
-  const uncoveredIds = new Set((uncovered ?? []).map((i) => i.id));
-  return (
-    <div>
-      <div className="section-label mb-2">
-        {label}
-        <Count n={items.length} />
-      </div>
-      <ul className="grid gap-2">
-        {items.map((i, at) => (
-          <li key={i.id} className="flex items-baseline gap-2 text-[13.5px] leading-relaxed">
-            {numbered ? (
-              <span className="w-4 shrink-0 font-mono text-[11px] text-faint">{at + 1}</span>
-            ) : (
-              !muted && (
-                <span
-                  title={uncoveredIds.has(i.id) ? 'No story covers this yet' : 'Covered by a story'}
-                  className={`h-1.5 w-1.5 shrink-0 translate-y-[6px] rounded-full ${
-                    uncoveredIds.has(i.id) ? 'bg-warn-text' : 'bg-go'
-                  }`}
-                />
-              )
-            )}
-            <span className={muted ? 'text-muted' : 'text-body'}>{i.text}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

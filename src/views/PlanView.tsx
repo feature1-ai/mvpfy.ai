@@ -769,7 +769,7 @@ function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) 
   return (
     <button
       onClick={() => void c.testFeature(live && !stale ? null : slug)}
-      disabled={c.busy || implementing}
+      disabled={c.busy || implementing || c.preparingPreview}
       title={
         implementing
           ? 'A story is being implemented — its code is still changing. Test it once that finishes.'
@@ -787,13 +787,15 @@ function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) 
             : 'btn-secondary'
       }`}
     >
-      {implementing
-        ? 'Test when this finishes'
-        : stale
-          ? 'Not on this feature — check out'
-          : live
-            ? '● Running this feature'
-            : 'Test this feature'}
+      {c.preparingPreview
+        ? 'Preparing preview…'
+        : implementing
+          ? 'Test when this finishes'
+          : stale
+            ? 'Not on this feature — check out'
+            : live
+              ? '● Running this feature'
+              : 'Test this feature'}
     </button>
   );
 }

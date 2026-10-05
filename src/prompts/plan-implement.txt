@@ -35,6 +35,9 @@ Hard rules:
   anything under mvpfy/. They are local scaffolding, not part of the product, and a
   reviewer should never see them in this pull request. Stage the files you changed by
   name rather than staging everything.
+• Commit any new incremental database migrations with this story. Test them against an
+  isolated test database. Never migrate/reset the product manager's running preview database
+  from a feature checkout; mvpfy applies pending migrations when they choose Test this feature.
 • Never commit env files or secrets.
 • Do not ask for confirmation mid-flow. If truly blocked on information only the product
   manager has, write numbered questions to mvpfy-questions.md and stop.

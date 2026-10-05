@@ -372,3 +372,42 @@ affected. If you ever hit it again: don't bypass the warning — upgrade `electr
 
 **`spawn …/Electron ENOENT` when starting.** The Electron binary didn't get downloaded by
 `npm install` (postinstall was skipped). Run `node node_modules/electron/install.js` once.
+
+### Database changes when testing a feature or pulling merged code
+
+**Test this feature** checks out the feature, applies pending migrations in a one-off app
+container, then restarts the local Compose stack. A failed or stopped migration blocks the
+preview from being marked ready; its output remains available in the Plan log panel. Retry
+**Test this feature** after fixing the error. Existing database volumes are preserved.
+
+After a PR is merged, pull/sync its code into the local workspace, then use **Overview →
+Local database → Update database**. This applies pending migrations for the currently checked
+out code and restarts the app without changing branches. Merging a PR remotely alone does not
+update the local checkout or database. Migration output is available through **View logs**.
+
+New environment setups record the migration steps in `mvpfy.yml` (under `.mvpfy/` for linked
+projects). Existing Rails, Django, Laravel and standard Prisma projects are detected when
+exactly one Compose service builds or mounts each repository. For multiple app/worker
+services, monorepos, custom commands or other frameworks, configure each step explicitly:
+
+```yaml
+migrations:
+  - service: app
+    command: [bundle, exec, rails, db:migrate]
+```
+
+`service` is the name in `docker-compose.mvpfy.yml`. `command` is an argument list executed
+inside that service, using its environment and volumes; it is not a host shell command.
+Use incremental commands only, never a database reset or schema reload. Set `migrations: []`
+for a project with no migrations. Commands run sequentially and stop on the first failure.
+
+The app service must expose its database connection through `DATABASE_URL`, `DB_HOST`, or
+another supported database URL/host environment variable pointing to a local Compose
+Postgres/MySQL/MariaDB service. External or unverifiable targets are rejected. SQLite requires
+`DB_DATABASE` to be an absolute path inside a shared volume and `DB_CONNECTION=sqlite` (or a
+SQLite database URL). Configuration files with hidden connection settings may need those
+explicit environment variables before the migration step can run.
+
+Switching back to the default branch does **not** undo migrations. The preview shares one
+persistent database across feature branches, so schema changes must remain compatible with
+code you switch back to. This does not apply migrations to a deployed/production database.

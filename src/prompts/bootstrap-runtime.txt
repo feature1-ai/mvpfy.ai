@@ -81,6 +81,20 @@ Follow these steps:
        seed_command: docker compose -f docker-compose.mvpfy.yml exec -T app npm run seed
      It must run INSIDE the stack, be safe to run on every start, and create nothing twice.
      Omit the key entirely if the product needs no seeding.
+     Record pending database migrations as a top-level `migrations:` list, for example:
+       migrations:
+         - service: app
+           command: [bundle, exec, rails, db:migrate]
+     The command is an argument list run INSIDE that Compose service, not a host shell
+     command. Record one entry per app/database needing migrations. Use only incremental,
+     non-interactive commands (Prisma migrate deploy, Django migrate --noinput, Laravel
+     migrate --force). Never reset/drop/recreate a populated database or use schema-load
+     as the migration command. Use migrations: [] only when no migrations are needed.
+     Set DATABASE_URL or DB_HOST explicitly in the app service's Compose environment to
+     the local postgres/mysql/mariadb service name; never use a production database.
+     For SQLite, use a shared volume and an absolute DB_DATABASE path inside that volume.
+     mvpfy runs these commands when the builder selects Test this feature, before restart.
+     Never rely on a one-off migration run during story implementation to update the preview.
      If the app has authentication, arrange for a demo account (see the seeding rule in
      Rules below) and record it in a `demo_login:` block (url, email/username, password,
      and how to get the OTP if login needs one — e.g. "read the code at the mailhog URL").
@@ -205,7 +219,8 @@ Rules:
   (Rails db/schema.rb or structure.sql → `rails db:schema:load`, Django, Prisma, …), NOT by
   replaying the full migration history — old migration chains are often broken when run from
   scratch. Guard the load so it only runs on an empty database and never wipes data on a
-  container restart, and never auto-run pending migrations at startup.
+  container restart, and never auto-run pending migrations at startup. Record the incremental migration command
+  in mvpfy.yml instead; Test this feature applies it explicitly against the local database.
 • Reuse the existing Dockerfile/docker-compose.yml if present — subject to the dev
   dependency rule above: a Dockerfile written to ship the product installs production
   dependencies only, and the watcher will not be in it.

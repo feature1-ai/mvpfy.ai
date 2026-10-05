@@ -1,3 +1,4 @@
+import { migrationCommandFor } from './services/migrations';
 import { app, dialog, ipcMain, shell } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -124,6 +125,22 @@ export function registerIpc(): void {
       startRun(runId, ideCommand(resolved, action, port), resolved);
     }
   );
+  ipcMain.handle('migrate', (_ev, runId: string, workspacePath: string, repos: string[]) => {
+    const resolved = path.resolve(workspacePath);
+    if (
+      !isAllowedWorkspace(resolved) ||
+      !Array.isArray(repos) ||
+      repos.some(
+        (repo) =>
+          !isAllowedWorkspace(path.resolve(repo)) ||
+          (path.resolve(repo) !== resolved && !path.resolve(repo).startsWith(resolved + path.sep))
+      )
+    ) {
+      throw new Error('Migrations are restricted to this managed or linked project.');
+    }
+    const linked = isLinkedPath(resolved) && !isManagedPath(resolved);
+    startRun(runId, migrationCommandFor(resolved, linked, repos), resolved);
+  });
   ipcMain.handle('seed', (_ev, runId: string, workspacePath: string) => {
     const resolved = path.resolve(workspacePath);
     if (!isAllowedWorkspace(resolved)) {

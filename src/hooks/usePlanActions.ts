@@ -1,3 +1,4 @@
+import { prepareFeaturePreview } from '../lib/prepareFeaturePreview';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RunSession, configDirFor, planFileFor, specFileFor } from '../../shared/types';
 import {
@@ -87,6 +88,7 @@ export interface PlanActions {
   /** Wire gh in as git's credential helper, then raise again. */
   repairGitAuth(): Promise<boolean>;
   /** Put the running app on this feature's code, or back on the trunk. */
+  preparingPreview: boolean;
   testFeature(slug: string | null): Promise<boolean>;
   /** The workspace is on this feature but behind its latest commit. */
   testingStale: boolean;
@@ -173,16 +175,20 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // not race them. Spec generation only writes its own plan/spec pair, and the
   // readiness check writes only its own report, so both may overlap with
   // anything — including stories of other features.
-  const planBlocked = projectRuns.some(
-    (r) =>
-      r.running &&
-      // A followed log stream and a live share are not work in progress. This
-      // list had its own copy of that rule and only one of the two was ever
-      // updated, so sharing an app quietly disabled implementing on every
-      // feature — the same defect as before, in the second place it lived.
-      !isAmbientRun(r.handle.kind) &&
-      !['plan-spec', 'plan-story', 'readiness'].includes(r.handle.kind)
-  );
+  const [preparingPreview, setPreparingPreview] = useState(false);
+  const previewLock = useRef(false);
+  const planBlocked =
+    preparingPreview ||
+    projectRuns.some(
+      (r) =>
+        r.running &&
+        // A followed log stream and a live share are not work in progress. This
+        // list had its own copy of that rule and only one of the two was ever
+        // updated, so sharing an app quietly disabled implementing on every
+        // feature — the same defect as before, in the second place it lived.
+        !isAmbientRun(r.handle.kind) &&
+        !['plan-spec', 'plan-story', 'readiness'].includes(r.handle.kind)
+    );
   const processedPlanRuns = useRef(new Set<string>());
   // The feature being worked through story by story. Session-only on purpose:
   // a run that was interrupted by a quit should not silently resume itself.
@@ -331,22 +337,34 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
    */
   const testFeature = (slug: string | null) =>
     guarded(async () => {
-      if (slug !== null && anyStoryRunning) {
-        throw new Error(
-          'A story of this feature is being implemented — its code is still changing. Test it once that finishes.'
-        );
+      if (previewLock.current || planBlocked || anyStoryRunning) {
+        throw new Error('Wait for the current work to finish before preparing a feature preview.');
       }
-      const branch = slug === null ? null : `mvpfy/${slug || 'feature'}`;
-      const res = await window.mvpfy.checkoutFeature(
-        project.localPath,
-        project.repos.map((r) => r.dir),
-        branch
-      );
-      if (!res.ok) throw new Error(res.error || 'Could not switch the workspace to that branch');
-      updateState((prev) => ({
-        ...prev,
-        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, testingSlug: slug } : p)),
-      }));
+      previewLock.current = true;
+      setPreparingPreview(true);
+      try {
+        updateState((prev) => ({
+          ...prev,
+          projects: prev.projects.map((p) =>
+            p.id === project.id ? { ...p, testingSlug: null } : p
+          ),
+        }));
+        await prepareFeaturePreview(
+          project,
+          slug,
+          Boolean(contentOf(files, pf('mvpfy.yml'))),
+          runsApi
+        );
+        updateState((prev) => ({
+          ...prev,
+          projects: prev.projects.map((p) =>
+            p.id === project.id ? { ...p, testingSlug: slug } : p
+          ),
+        }));
+      } finally {
+        previewLock.current = false;
+        setPreparingPreview(false);
+      }
     });
 
   /**
@@ -1520,6 +1538,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     raisePr,
     repairGitAuth,
     testFeature,
+    preparingPreview,
     testingStale,
     approvePlan,
     implementStory,

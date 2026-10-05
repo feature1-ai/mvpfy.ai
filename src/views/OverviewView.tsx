@@ -37,6 +37,7 @@ function envState(c: ProjectController): EnvState {
       };
     }
     if (k === 'docker-down') return { kind: 'working', label: 'Stopping…' };
+    if (k === 'migrate') return { kind: 'working', label: 'Applying database migrations…' };
     if (k === 'seed') return { kind: 'working', label: 'Adding your demo login and sample data…' };
     if (k === 'triage') return { kind: 'working', label: 'Diagnosing & fixing…' };
     if (k === 'instruct') return { kind: 'working', label: 'Making your change…' };
@@ -797,6 +798,31 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
 
         {/* Right column */}
         <div className="flex min-w-0 flex-col gap-5">
+          {c.hasMvpfyYml && (
+            <section className="card px-[18px] py-4">
+              <h2 className="section-label">Local database</h2>
+              <p className="mt-2 text-xs leading-relaxed text-body">
+                After pulling merged code, apply its pending migrations and restart the app. Uses
+                the code currently checked out. Database volumes are preserved; migrations are not
+                rolled back when switching branches.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => void c.migrateDatabase()}
+                  disabled={c.busy || c.updatingDatabase || c.preparingPreview}
+                  className="btn-secondary h-8 px-3 disabled:opacity-50"
+                >
+                  {c.updatingDatabase ? 'Updating database…' : 'Update database'}
+                </button>
+                <button
+                  onClick={() => onOpenTab('logs')}
+                  className="text-xs text-go hover:underline"
+                >
+                  View logs
+                </button>
+              </div>
+            </section>
+          )}
           <PullRequestPolicy c={c} />
           <section className="card px-[18px] py-4">
             <div className="mb-3 flex items-center justify-between">

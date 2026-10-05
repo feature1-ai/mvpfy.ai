@@ -534,6 +534,7 @@ export interface MvpfyApi {
    * Run the project's recorded seed command. Resolves false when it records
    * none, which is normal for a product that needs no seeding.
    */
+  migrate(runId: string, workspacePath: string, repos: string[]): Promise<void>;
   seed(runId: string, workspacePath: string): Promise<boolean>;
   /**
    * What each service of the stack is actually doing. `docker compose up -d`

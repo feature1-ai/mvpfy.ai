@@ -1,3 +1,4 @@
+import { updateLocalDatabase } from '../lib/prepareFeaturePreview';
 import { useEffect, useRef, useState } from 'react';
 import {
   ANSWERS_FILE,
@@ -35,6 +36,8 @@ export interface ProjectActions {
   rebootstrap(): Promise<boolean>;
   /** Run the project's recorded seed command. */
   seed(): Promise<boolean>;
+  migrateDatabase(): Promise<boolean>;
+  updatingDatabase: boolean;
   /** Restarting and diagnosing have both been tried; this needs a person. */
   recoveryExhausted: boolean;
   /** Feed the failed run's log to the agent: plain-language diagnosis + fix. */
@@ -226,6 +229,28 @@ export function useProjectActions(
     queueMicrotask(() => void seed());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appHealthy, projectRuns]);
+
+  const [updatingDatabase, setUpdatingDatabase] = useState(false);
+  const databaseLock = useRef(false);
+  const migrateDatabase = () =>
+    guarded(async () => {
+      if (
+        databaseLock.current ||
+        projectRuns.some((run) => run.running && !isAmbientRun(run.handle.kind))
+      ) {
+        throw new Error('Wait for the current work to finish before updating the database.');
+      }
+      if (!contentOf(files, pf('mvpfy.yml')))
+        throw new Error('Set up the environment before updating its database.');
+      databaseLock.current = true;
+      setUpdatingDatabase(true);
+      try {
+        await updateLocalDatabase(project, runsApi);
+      } finally {
+        databaseLock.current = false;
+        setUpdatingDatabase(false);
+      }
+    });
 
   const docker = (action: Exclude<ComposeAction, 'logs'>) =>
     guarded(async () => {
@@ -565,6 +590,8 @@ export function useProjectActions(
     docker,
     rebootstrap,
     seed,
+    migrateDatabase,
+    updatingDatabase,
     recoveryExhausted,
     diagnose,
     retryFix,

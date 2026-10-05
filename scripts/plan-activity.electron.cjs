@@ -32,10 +32,10 @@ app.whenReady().then(()=>{const window=new BrowserWindow({width:1024,height:768,
     await panel.getByText('Implementing S-1', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Stream output' }).click();
     await panel.locator('pre').filter({ hasText: 'New streamed output' }).waitFor();
-    await panel.getByLabel('Story run').selectOption('S-1');
+    await panel.getByLabel('Feature run').selectOption('S-1');
     await page.getByRole('button', { name: 'Start another story' }).click();
     assert.match(await panel.locator('pre').innerText(), /Implementing S-1/);
-    await panel.getByLabel('Story run').selectOption('');
+    await panel.getByLabel('Feature run').selectOption('');
     assert.match(await panel.locator('pre').innerText(), /Implementing S-2/);
     await panel.getByRole('button', { name: 'Stop', exact: true }).click();
     assert.equal(await page.getByTestId('stopped').innerText(), 'S-2');
@@ -47,7 +47,7 @@ app.whenReady().then(()=>{const window=new BrowserWindow({width:1024,height:768,
     await toggle.click();
     assert.match(await panel.locator('pre').innerText(), /New streamed output/);
     await page.getByRole('button', { name: 'Finish stories' }).click();
-    await panel.getByText('Recent story runs').waitFor();
+    await panel.getByText('Recent feature runs').waitFor();
     assert.equal(await panel.getByRole('button', { name: 'Stop', exact: true }).count(), 0);
     await page.locator('main').evaluate((el) => {
       el.scrollTop = el.scrollHeight;

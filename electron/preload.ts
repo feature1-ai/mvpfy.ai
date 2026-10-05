@@ -42,6 +42,8 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('docker-compose', runId, repoPath, action),
   ide: (runId: string, workspacePath: string, action: 'up' | 'down', port?: number) =>
     ipcRenderer.invoke('ide', runId, workspacePath, action, port),
+  migrate: (runId: string, workspacePath: string, repos: string[]) =>
+    ipcRenderer.invoke('migrate', runId, workspacePath, repos),
   seed: (runId: string, workspacePath: string) => ipcRenderer.invoke('seed', runId, workspacePath),
   composeStatus: (workspacePath: string) => ipcRenderer.invoke('compose-status', workspacePath),
   composeProgress: (workspacePath: string) => ipcRenderer.invoke('compose-progress', workspacePath),

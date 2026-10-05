@@ -147,6 +147,7 @@ export type RunKind =
   | 'feature-change'
   | 'resolve-merge'
   | 'install-tools'
+  | 'migrate'
   | 'seed'
   | 'git-auth';
 

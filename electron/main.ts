@@ -1,6 +1,7 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import * as path from 'node:path';
 import { registerIpc } from './ipc';
+import { notify } from './services/notify';
 import { ensureDirs } from './paths';
 import { setRunEventSink, stopAllRuns } from './services/runs';
 import { sweepRunArtifacts } from './services/agents';
@@ -61,6 +62,11 @@ app.whenReady().then(() => {
     exit: (ev) => sendToRenderer('run-exit', ev),
   });
   registerIpc();
+  // Registered here rather than in ipc.ts: a notification needs the window, to
+  // stay quiet while it is focused and to come back when the toast is clicked.
+  ipcMain.handle('notify', (_ev, notice: { title: string; body: string }) =>
+    notify(mainWindow, notice)
+  );
   initAutoUpdates((status) => sendToRenderer('update-status', status));
   // Brand the dock in dev; packaged builds use build/icon.icns.
   if (process.platform === 'darwin' && app.dock) {

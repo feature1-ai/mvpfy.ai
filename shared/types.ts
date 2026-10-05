@@ -598,6 +598,8 @@ export interface MvpfyApi {
     dirs: string[],
     branch: string
   ): Promise<void>;
+  /** A desktop notification, shown only while mvpfy is not the focused window. */
+  notify(notice: { title: string; body: string }): Promise<boolean>;
   /** Ask GitHub to merge these pull requests itself once their checks pass. */
   autoMergePullRequests(runId: string, workspacePath: string, urls: string[]): Promise<void>;
   /** Merge the trunk into a feature's branch, in its worktree. */

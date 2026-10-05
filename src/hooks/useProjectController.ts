@@ -258,6 +258,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   implementFeatures(slugs: string[]): Promise<boolean>;
   /** Features picked but waiting for room. */
   queuedFeatures: string[];
+  /** A feature paused on quota, and when it will carry on by itself. */
+  quotaWait: { slug: string; at: Date } | null;
   moveStory(code: string, lane: StoryLane, feedback?: string): Promise<boolean>;
   refreshStories(): Promise<boolean>;
   implement(story: UserStory): Promise<boolean>;

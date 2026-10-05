@@ -15,6 +15,7 @@ import {
 import { Feature1Feature } from '../lib/feature1Mcp';
 import { explainRaiseFailure } from '../lib/raiseFailure';
 import { MAX_FEATURES_AT_ONCE } from '../lib/featureRuns';
+import { waitingLine } from '../lib/quotaWait';
 import Feature1LoginPrompt from './Feature1LoginPrompt';
 import ReadinessPanel from './ReadinessPanel';
 import ProductSpecReader from '../components/ProductSpecReader';
@@ -1184,6 +1185,8 @@ function FeatureDesign({
 function ContinueFeature({ c }: { c: ProjectController }) {
   const s = c.stranded;
   if (!s) return null;
+  const waiting =
+    c.quotaWait && c.quotaWait.slug === (c.activePlan?.slug ?? '') ? c.quotaWait : null;
   const what = s.story
     ? `${s.story} stopped part-way`
     : `work here was never committed${s.files > 1 ? ` — ${s.files} files` : ''}`;
@@ -1204,6 +1207,16 @@ function ContinueFeature({ c }: { c: ProjectController }) {
           Everything it had done is still in this feature&apos;s checkout. Continuing reads what is
           already there and carries on from it — it does not start again, and it does not undo
           anything — then works through the rest of the feature.
+          {/* The wait is deliberate and unattended, so it has to be visible:
+              a timer nobody can see is indistinguishable from nothing
+              happening, which is what the button below is for. */}
+          {waiting && (
+            <>
+              {' '}
+              <span className="font-medium text-warn-text">{waitingLine(waiting.at)}</span> mvpfy
+              has to stay open for that.
+            </>
+          )}
         </p>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <button

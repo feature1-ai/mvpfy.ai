@@ -18,7 +18,16 @@ import {
 import { Feature1McpClient, mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
 import { redactSecrets } from '../lib/raiseFailure';
-import { quotaExhausted } from '../lib/quota';
+import { quotaExhausted, quotaResetAt } from '../lib/quota';
+import { nextAttemptAt, waitFor } from '../lib/quotaWait';
+import {
+  featureImplemented,
+  featurePulled,
+  featurePushed,
+  quotaBack,
+  quotaRanOut,
+  quotaStillOut,
+} from '../lib/notices';
 import {
   MAX_FEATURES_AT_ONCE,
   cannotStartReason,
@@ -130,6 +139,8 @@ export interface PlanActions {
   implementFeatures(slugs: string[]): Promise<boolean>;
   /** Features picked but waiting for room. */
   queuedFeatures: string[];
+  /** A feature paused on quota, and when it will carry on by itself. */
+  quotaWait: { slug: string; at: Date } | null;
   moveStory(code: string, lane: StoryLane, feedback?: string): Promise<boolean>;
 }
 
@@ -1321,6 +1332,114 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queued, storyRuns]);
 
+  /**
+   * The moments worth interrupting someone for.
+   *
+   * Everything here runs for a long time with nobody watching — that is the
+   * point of it — so the end of the waiting has to reach somebody who walked
+   * away. Said once per run, and only while mvpfy is not the window they are
+   * looking at; the main process decides that, because only it can know.
+   */
+  const announced = useRef(new Set<string>());
+  const [quotaWait, setQuotaWait] = useState<{
+    slug: string;
+    story: string | null;
+    attempt: number;
+    at: Date;
+  } | null>(null);
+
+  useEffect(() => {
+    for (const run of projectRuns) {
+      if (run.running) continue;
+      const kind = run.handle.kind;
+      // A pull from Feature1 writes a spec, so it arrives as a spec run — what
+      // tells them apart is whether the plan it produced carries a Feature1
+      // reference. Both end a wait, and say so differently.
+      if (kind !== 'plan-story' && kind !== 'plan-spec' && kind !== 'push-feature') continue;
+      if (announced.current.has(run.handle.runId)) continue;
+      const slug = run.handle.planSlug ?? '';
+      const plan = plans.find((pl) => pl.slug === slug)?.plan;
+      const name = plan?.spec.feature || slug;
+
+      if (kind === 'plan-spec' || kind === 'push-feature') {
+        // A spec run that exited before its plan file landed has nothing to
+        // announce yet; leaving it unmarked lets the next render try again.
+        if (kind === 'plan-spec' && run.exitCode === 0 && !plan) continue;
+        announced.current.add(run.handle.runId);
+        if (run.exitCode !== 0) continue;
+        void window.mvpfy.notify(
+          kind === 'push-feature'
+            ? featurePushed(name)
+            : featurePulled(name, plan?.stories.length ?? 0, Boolean(plan?.feature1FeatureRef))
+        );
+        continue;
+      }
+
+      // A story run. Wait for its move out of Coding before reading the plan,
+      // for the same reason the chain below does: the file is written by the
+      // run that just ended, and announcing from a plan it has not landed in
+      // yet says the wrong thing.
+      const story = plan?.stories.find((st) => st.code === run.handle.storyId);
+      if (plan && story?.lane === 'coding' && run.exitCode === 0) continue;
+      announced.current.add(run.handle.runId);
+
+      if (run.exitCode !== 0 && quotaExhausted(run.log)) {
+        const resetAt = quotaResetAt(run.log);
+        const at = nextAttemptAt(
+          new Date(),
+          resetAt,
+          quotaWait?.slug === slug ? quotaWait.attempt : 0
+        );
+        void window.mvpfy.notify(at ? quotaRanOut(name, resetAt) : quotaStillOut(name));
+        queueMicrotask(() =>
+          setQuotaWait(
+            at
+              ? {
+                  slug,
+                  story: run.handle.storyId ?? null,
+                  attempt: (quotaWait?.slug === slug ? quotaWait.attempt : 0) + 1,
+                  at,
+                }
+              : null
+          )
+        );
+        continue;
+      }
+      if (run.exitCode !== 0) continue;
+      // Nothing left to start in this feature: it is theirs to try now.
+      const left = (plan?.stories ?? []).filter(
+        (st) => st.lane === 'todo' || st.lane === 'coding'
+      ).length;
+      if (left === 0 && (plan?.stories.length ?? 0) > 0) {
+        void window.mvpfy.notify(featureImplemented(name, plan?.stories.length ?? 0));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectRuns, plans]);
+
+  /**
+   * Carry on when the allowance comes back.
+   *
+   * The one failure where doing nothing is the fix — and until now that hour
+   * was the builder's to notice, remember and act on, so a feature sat
+   * half-implemented until somebody opened the app and wondered why. Only
+   * while mvpfy is open, which is said where it is offered.
+   */
+  useEffect(() => {
+    if (!quotaWait) return;
+    const timer = setTimeout(
+      () => {
+        const plan = plans.find((pl) => pl.slug === quotaWait.slug)?.plan;
+        void window.mvpfy.notify(quotaBack(plan?.spec.feature || quotaWait.slug, quotaWait.story));
+        setQuotaWait(null);
+        void implementFeature(quotaWait.slug);
+      },
+      waitFor(new Date(), quotaWait.at)
+    );
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotaWait]);
+
   // Start the next story once the last one has landed in Testing. Waiting for
   // that move rather than for the run to exit keeps two writes to the same
   // plan file from racing each other.
@@ -1431,6 +1550,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     cannotImplement: (slug: string) => cannotStartReason(slug, storyRuns),
     implementFeatures,
     queuedFeatures: queued,
+    quotaWait: quotaWait ? { slug: quotaWait.slug, at: quotaWait.at } : null,
     moveStory,
   };
 }

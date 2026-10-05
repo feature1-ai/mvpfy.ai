@@ -38,11 +38,29 @@ export function waitFor(now: Date, at: Date): number {
 }
 
 /**
- * What the screen says while it waits. A countdown nobody asked for would be
- * noise; what matters is that this is deliberate and unattended.
+ * How long is left, as a person would say it.
+ *
+ * Coarse while it is far away and exact in the last minute, because that is
+ * when the number is actually being watched. A wait that has run out reads as
+ * about to happen rather than as 0:00 — the resume is a timer firing, not a
+ * clock striking, and a frozen zero looks like something broke.
  */
-export function waitingLine(at: Date | null): string {
-  if (!at) return 'Waiting for your agent’s allowance to come back.';
-  const when = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  return `Waiting for your agent’s allowance — carrying on by itself at about ${when}.`;
+export function countdown(now: Date, at: Date): string {
+  const left = Math.max(0, at.getTime() - now.getTime());
+  if (left < 10_000) return 'any moment now';
+  const seconds = Math.ceil(left / 1000);
+  if (seconds < 60) return `in ${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `in ${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+  const hours = Math.floor(minutes / 60);
+  return `in ${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+/**
+ * How often to redraw it: every second once the seconds are shown, and once a
+ * minute while they are not. A countdown of hours that repaints every second
+ * is a render loop nobody asked for.
+ */
+export function tickEvery(now: Date, at: Date): number {
+  return at.getTime() - now.getTime() < 3_600_000 ? 1000 : 60_000;
 }

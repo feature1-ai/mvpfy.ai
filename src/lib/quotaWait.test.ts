@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BACKOFF_MINUTES, nextAttemptAt, waitFor, waitingLine } from './quotaWait';
+import { BACKOFF_MINUTES, countdown, nextAttemptAt, tickEvery, waitFor } from './quotaWait';
 
 const at = (iso: string) => new Date(iso);
 
@@ -43,9 +43,25 @@ describe('waitFor', () => {
   });
 });
 
-describe('waitingLine', () => {
-  it('says it is deliberate, and unattended', () => {
-    expect(waitingLine(at('2026-10-05T13:01:00Z'))).toMatch(/carrying on by itself/i);
-    expect(waitingLine(null)).toMatch(/waiting for your agent/i);
+describe('countdown', () => {
+  const now = at('2026-10-05T10:00:00Z');
+  const inSeconds = (s: number) => at(new Date(now.getTime() + s * 1000).toISOString());
+
+  it('is coarse far out and exact when it is nearly time', () => {
+    expect(countdown(now, inSeconds(3 * 3600 + 25 * 60))).toBe('in 3h 25m');
+    expect(countdown(now, inSeconds(25 * 60 + 30))).toBe('in 25m 30s');
+    expect(countdown(now, inSeconds(45))).toBe('in 45s');
+  });
+
+  it('reads as about to happen rather than as a stuck zero', () => {
+    // The resume is a timer firing, not a clock striking: 0:00 sitting there
+    // for a second or two looks like something broke.
+    expect(countdown(now, inSeconds(4))).toBe('any moment now');
+    expect(countdown(now, inSeconds(-600))).toBe('any moment now');
+  });
+
+  it('redraws every second only once seconds are on screen', () => {
+    expect(tickEvery(now, inSeconds(120))).toBe(1000);
+    expect(tickEvery(now, inSeconds(4 * 3600))).toBe(60_000);
   });
 });

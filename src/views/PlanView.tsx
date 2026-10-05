@@ -15,7 +15,7 @@ import {
 import { Feature1Feature } from '../lib/feature1Mcp';
 import { explainRaiseFailure } from '../lib/raiseFailure';
 import { MAX_FEATURES_AT_ONCE } from '../lib/featureRuns';
-import { waitingLine } from '../lib/quotaWait';
+import QuotaCountdown from '../components/QuotaCountdown';
 import Feature1LoginPrompt from './Feature1LoginPrompt';
 import ReadinessPanel from './ReadinessPanel';
 import ProductSpecReader from '../components/ProductSpecReader';
@@ -1213,8 +1213,10 @@ function ContinueFeature({ c }: { c: ProjectController }) {
           {waiting && (
             <>
               {' '}
-              <span className="font-medium text-warn-text">{waitingLine(waiting.at)}</span> mvpfy
-              has to stay open for that.
+              <span className="font-medium text-warn-text">
+                Carrying on by itself <QuotaCountdown at={waiting.at} />
+              </span>{' '}
+              — mvpfy has to stay open for that.
             </>
           )}
         </p>

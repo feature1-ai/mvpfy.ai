@@ -36,6 +36,7 @@ import {
   removeDesignImage,
 } from './services/design';
 import { autoMergeCommand, pullRequestStates } from './services/github';
+import { simulatorTargets } from './services/simulators';
 import { hasCloudflared, tunnelCommand } from './services/share';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
@@ -189,6 +190,8 @@ export function registerIpc(): void {
     deleteFeatureFiles(workspacePath, configDir, slug)
   );
   ipcMain.handle('pr-states', (_ev, urls: string[]) => pullRequestStates(urls));
+  // Read-only and local: what this machine can run a phone app on.
+  ipcMain.handle('simulators', () => simulatorTargets());
   ipcMain.handle('pick-images', async () => {
     const res = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],

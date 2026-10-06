@@ -863,7 +863,9 @@ export async function startRunClientRun(
   project: Project,
   settings: Settings,
   component: { id: string; name: string; kind: string; repo?: string },
-  appUrl: string
+  appUrl: string,
+  /** Where to run it, in the words the builder picked. */
+  target = 'whatever this machine can run it on'
 ): Promise<RunHandle> {
   const runId = makeRunId('runclient');
   await window.mvpfy.runAgent({
@@ -876,6 +878,7 @@ export async function startRunClientRun(
       componentKind: component.kind,
       componentRepo: component.repo || project.localPath,
       appUrl,
+      target,
     }),
     ...agentFor(settings),
   });

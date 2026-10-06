@@ -599,6 +599,8 @@ export interface MvpfyApi {
     dirs: string[],
     branch: string
   ): Promise<void>;
+  /** What this machine can run a phone app on: simulators, emulators, phones. */
+  simulators(): Promise<{ ios: string[]; android: string[]; devices: string[] }>;
   /** A desktop notification, shown only while mvpfy is not the focused window. */
   notify(notice: { title: string; body: string }): Promise<boolean>;
   /** Ask GitHub to merge these pull requests itself once their checks pass. */

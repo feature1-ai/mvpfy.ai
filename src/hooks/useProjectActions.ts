@@ -53,7 +53,12 @@ export interface ProjectActions {
   /** Arm or disarm GitHub's auto-merge for this project's pull requests. */
   setAutoMerge(on: boolean): Promise<boolean>;
   /** Start a desktop or phone app on this machine, through the agent. */
-  runClient(component: { id: string; name: string; kind: string; repo?: string }): Promise<boolean>;
+  runClient(
+    component: { id: string; name: string; kind: string; repo?: string },
+    target?: string
+  ): Promise<boolean>;
+  /** Simulators, emulators and phones this machine can run an app on. */
+  runTargets: { ios: string[]; android: string[]; devices: string[] };
   /** The client app being started or running, if any. */
   runningClient: string | null;
   dismissTriage(): Promise<boolean>;
@@ -103,6 +108,25 @@ export function useProjectActions(
     ctx;
   const [answersDraft, setAnswersDraft] = useState('');
   const [runningClient, setRunningClient] = useState<string | null>(null);
+  // Asked once per project view: booting a simulator is the builder's own
+  // machine, and what it can do does not change while they look at a screen.
+  const [runTargets, setRunTargets] = useState<{
+    ios: string[];
+    android: string[];
+    devices: string[];
+  }>({ ios: [], android: [], devices: [] });
+  useEffect(() => {
+    let cancelled = false;
+    void window.mvpfy
+      .simulators()
+      .then((found) => {
+        if (!cancelled) setRunTargets(found);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -432,7 +456,10 @@ export function useProjectActions(
    * machine with the builder's own toolchains, so it is the one thing here
    * that can open a window or start a bundler a phone can reach.
    */
-  const runClient = (component: { id: string; name: string; kind: string; repo?: string }) =>
+  const runClient = (
+    component: { id: string; name: string; kind: string; repo?: string },
+    target?: string
+  ) =>
     guarded(async () => {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
@@ -440,7 +467,8 @@ export function useProjectActions(
         project,
         state.settings,
         component,
-        `http://localhost:${project.basePort}`
+        `http://localhost:${project.basePort}`,
+        target
       );
       runsApi.track(handle);
       setRunningClient(component.name);
@@ -628,6 +656,7 @@ export function useProjectActions(
     dismissQuestions,
     setAutoMerge,
     runClient,
+    runTargets,
     runningClient: projectRuns.some((r) => r.running && r.handle.kind === 'run-client')
       ? runningClient
       : null,

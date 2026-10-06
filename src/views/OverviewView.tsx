@@ -207,6 +207,90 @@ function PullRequestPolicy({ c }: { c: ProjectController }) {
 }
 
 /**
+ * Starting an app that has no container, where this machine can actually run it.
+ *
+ * A phone app is three different jobs wearing one name: boot a simulator that
+ * is already installed, install onto a phone that is already plugged in, or
+ * start a bundler and scan a code. Which of those is possible is a fact about
+ * this laptop, so mvpfy asks it rather than making the agent guess — and a
+ * machine with no simulators is offered the one thing that works there instead
+ * of a button that fails.
+ */
+function ClientRun({
+  c,
+  component,
+}: {
+  c: ProjectController;
+  component: { id: string; name: string; kind: string; repo?: string };
+}) {
+  const [open, setOpen] = useState(false);
+  const running = c.runningClient === component.name;
+  const { ios, android, devices } = c.runTargets;
+  const phone = component.kind === 'mobile';
+  const choices: Array<{ label: string; target: string }> = [];
+  if (phone) {
+    if (ios[0])
+      choices.push({
+        label: `iOS Simulator — ${ios[0]}`,
+        target: `the iOS Simulator, device "${ios[0]}"`,
+      });
+    if (android[0])
+      choices.push({
+        label: `Android emulator — ${android[0]}`,
+        target: `the Android emulator, AVD "${android[0]}"`,
+      });
+    for (const serial of devices.slice(0, 2))
+      choices.push({ label: `the device ${serial}`, target: `the connected device ${serial}` });
+    choices.push({
+      label: 'my own phone, over the network',
+      target:
+        "the product manager's own phone over the network — start the bundler and print a QR code",
+    });
+  }
+
+  if (running) return <span className="ml-auto text-[11.5px] text-go">starting…</span>;
+  if (!phone || choices.length === 1) {
+    return (
+      <button
+        onClick={() => void c.runClient(component, choices[0]?.target)}
+        disabled={c.busy}
+        title="mvpfy asks your agent to start this on your machine, pointed at the backend already running here"
+        className="ml-auto text-[11.5px] text-go hover:underline disabled:opacity-50"
+      >
+        run it on my machine
+      </button>
+    );
+  }
+  return (
+    <div className="ml-auto flex flex-col items-end gap-1">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={c.busy}
+        className="text-[11.5px] text-go hover:underline disabled:opacity-50"
+      >
+        run it {open ? '↑' : '↓'}
+      </button>
+      {open && (
+        <div className="flex flex-col items-end gap-1">
+          {choices.map((choice) => (
+            <button
+              key={choice.label}
+              onClick={() => {
+                setOpen(false);
+                void c.runClient(component, choice.target);
+              }}
+              className="text-[11.5px] text-muted hover:text-body"
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * What this product is made of, and the pieces setup cannot answer for itself.
  *
  * Reading the repositories tells mvpfy what is here. What it cannot tell is
@@ -362,16 +446,7 @@ function ProductComponents({ c }: { c: ProjectController }) {
                 {/* No container is an installed app, but the agent is on this
                     machine with the builder's own toolchains — so the thing to
                     offer is not an address, it is starting it. */}
-                {isClient(p.kind) && p.decision !== 'skip' && (
-                  <button
-                    onClick={() => void c.runClient(p)}
-                    disabled={c.busy || c.runningClient === p.name}
-                    title="mvpfy asks your agent to start this on your machine, pointed at the backend already running here"
-                    className="ml-auto text-[11.5px] text-go hover:underline disabled:opacity-50"
-                  >
-                    {c.runningClient === p.name ? 'starting…' : 'run it on my machine'}
-                  </button>
-                )}
+                {isClient(p.kind) && p.decision !== 'skip' && <ClientRun c={c} component={p} />}
                 {pointing !== p.id && !isClient(p.kind) && (
                   <button
                     onClick={() => {

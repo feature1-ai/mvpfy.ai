@@ -35,10 +35,21 @@ Do this:
 4. Start it, and KEEP IT RUNNING. This run stays alive as long as the app does, which is
    what lets the product manager stop it from mvpfy.
    • A desktop app: launch it so its window opens on this machine.
-   • A mobile app: prefer a development server the phone connects to over an emulator —
-     start the bundler, bind it to an address the phone can reach on this network (not
-     localhost), and print the URL and the QR code the bundler gives you. An emulator only
-     if one is already installed and running.
+   • A mobile app: run it where you were asked to.
+
+     Where to run it: {target}
+
+     – An iOS simulator: boot that device if it is not already booted
+       (`xcrun simctl boot`, then open the Simulator app so they can see it), then build and
+       launch the app onto it with the project's own command.
+     – An Android emulator: start that AVD, wait for it to finish booting rather than
+       assuming, then build and install onto it.
+     – A phone that is already connected: install onto that serial.
+     – Their own phone over the network: start the bundler, bind it to an address the phone
+       can reach on this network rather than localhost, and print the URL and the QR code.
+
+     Booting a simulator that is already installed is seconds and is yours to do. Installing
+     the SDK that would create one is not — see the rule below.
 
 5. If you cannot run it — a toolchain that is not here, a licence to accept, a device to
    plug in — STOP and say so in one plain sentence naming the one thing that is missing and

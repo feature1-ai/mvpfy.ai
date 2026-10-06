@@ -40,8 +40,16 @@ export const COMPONENT_LABELS: Record<ComponentKind, string> = {
  */
 export type ComponentState = 'found' | 'missing';
 
-/** What the PM decided about a component the workspace does not hold. */
-export type ComponentDecision = 'elsewhere' | 'stand-in' | 'skip';
+/**
+ * What the PM decided about a component.
+ *
+ * `remote` is the one that applies to parts the workspace DOES hold: eight
+ * services in the repository, three of them worth running on a laptop and five
+ * already running on a shared server. Starting all eight is minutes of build
+ * time and gigabytes of memory to reproduce something that already exists at an
+ * address — so the address is the answer, and the three that matter run here.
+ */
+export type ComponentDecision = 'elsewhere' | 'stand-in' | 'skip' | 'remote';
 
 export interface ProductComponent {
   id: string;
@@ -53,8 +61,10 @@ export interface ProductComponent {
   repo?: string;
   /** Why the agent believes this exists: the line of code that says so. */
   evidence: string;
-  /** Set once the PM has answered for a missing one. */
+  /** Set once the PM has answered — or changed their mind about a found one. */
   decision?: ComponentDecision;
+  /** Where it already runs, when the decision is 'remote'. */
+  url?: string;
 }
 
 export interface ComponentInventory {
@@ -72,7 +82,7 @@ const KINDS = new Set<string>([
   'database',
 ]);
 
-const DECISIONS = new Set<string>(['elsewhere', 'stand-in', 'skip']);
+const DECISIONS = new Set<string>(['elsewhere', 'stand-in', 'skip', 'remote']);
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
@@ -111,6 +121,7 @@ export function parseComponents(raw: string | null | undefined): ProductComponen
       ...(repo ? { repo } : {}),
       evidence: text(o.evidence),
       ...(DECISIONS.has(decision) ? { decision: decision as ComponentDecision } : {}),
+      ...(validRemoteUrl(text(o.url)) ? { url: text(o.url) } : {}),
     });
   }
   return out;
@@ -133,13 +144,57 @@ export function needsAnswer(components: ProductComponent[]): boolean {
   return unanswered(components).length > 0;
 }
 
-/** The inventory written back, with one component's answer recorded. */
+/**
+ * Where something already runs.
+ *
+ * Checked rather than trusted: this address is written into a file an agent
+ * reads and an environment is built from, so it has to be an address and
+ * nothing else. Anything with whitespace or a shell's punctuation in it is not
+ * a URL somebody typed by accident.
+ */
+export function validRemoteUrl(value: string | null | undefined): boolean {
+  const url = (value ?? '').trim();
+  if (!url || /[\s'"`$;|&<>\\]/.test(url)) return false;
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname.length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The inventory written back, with one component's answer recorded.
+ *
+ * A decision that is not 'remote' drops any address that was there, so a
+ * service switched back to running here cannot leave a stale URL behind for
+ * the next setup to wire something to.
+ */
 export function withDecision(
   components: ProductComponent[],
   id: string,
-  decision: ComponentDecision
+  decision: ComponentDecision,
+  url?: string
 ): ProductComponent[] {
-  return components.map((c) => (c.id === id ? { ...c, decision } : c));
+  return components.map((c) =>
+    c.id === id
+      ? {
+          ...c,
+          decision,
+          ...(decision === 'remote' && validRemoteUrl(url)
+            ? { url: url!.trim() }
+            : { url: undefined }),
+        }
+      : c
+  );
+}
+
+/** Running here is the default, and the only thing that needs a container. */
+export function runsLocally(component: ProductComponent): boolean {
+  if (component.decision === 'remote' || component.decision === 'skip') return false;
+  return component.state === 'found' || component.decision === 'elsewhere';
 }
 
 /** What setup is being asked to do, in one line the PM can check. */
@@ -148,5 +203,7 @@ export function decisionLabel(decision: ComponentDecision): string {
     ? 'its code is in another repository'
     : decision === 'stand-in'
       ? 'stand it in, so the rest can run'
-      : 'leave it out of what runs here';
+      : decision === 'remote'
+        ? 'use the one already running'
+        : 'leave it out of what runs here';
 }

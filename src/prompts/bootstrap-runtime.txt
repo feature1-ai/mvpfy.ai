@@ -148,7 +148,19 @@ Rules:
       would for a third-party API, so everything that depends on it runs.
     – "decision": "skip" — leave it out entirely. Do not stand it in, do not start it, and
       do not let the rest of the stack fail because it is absent.
+    – "decision": "remote" — it is ALREADY RUNNING at the address in "url". Do not build it,
+      do not start a container for it, and do not stand it in. Point everything that talks to
+      it at that address: the env var the code already reads, the proxy route if one exists,
+      the service name in any config that resolves it. Record it in mvpfy.yml under services
+      with that url and a description saying it runs elsewhere, so the app knows the address
+      is not one of ours. This applies to a component whose code IS in this workspace as
+      readily as to one that is not — eight services in a repository with five of them
+      already running on a shared server is the ordinary shape of this, and building the five
+      would spend minutes and gigabytes reproducing something that already answers.
   Never add a component that is not on that list, and never silently drop one that is.
+• A remote component is not a fallback. If its address does not answer, say so plainly in
+  mvpfy-run.md and let it fail loudly — quietly standing in for something the product
+  manager told you is real is how they end up testing against fake data without knowing.
 • The main user-facing app must be exposed on host port {basePort}; give other repos' apps
   their own nearby host ports and record them all in mvpfy.yml and mvpfy-run.md.
 • In mvpfy.yml the main app's `host_port` and the port in its `url` must be identical and

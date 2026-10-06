@@ -12,6 +12,7 @@ import {
   ProductComponent,
   needsAnswer,
   parseComponents,
+  validRemoteUrl,
   withDecision,
 } from '../lib/components';
 import { ControllerContext, contentOf } from './controllerContext';
@@ -21,8 +22,11 @@ export interface BootstrapFlowState {
   productComponents: ProductComponent[];
   /** True while a part of the product is missing and unanswered. */
   componentsNeedAnswer: boolean;
-  /** Answer for one missing part, so setting up can build the right thing. */
-  decideComponent(id: string, decision: ComponentDecision): Promise<boolean>;
+  /**
+   * Answer for one part, so setting up builds the right thing. `url` is where
+   * it already runs, for the parts that should not run here at all.
+   */
+  decideComponent(id: string, decision: ComponentDecision, url?: string): Promise<boolean>;
   /** The setup board: agent tasks, then mvpfy's human-gated final card. */
   bootstrapTasks: ResolvedTask[];
   /** The agent's one-line reading of what this product is. */
@@ -94,11 +98,14 @@ export function useBootstrapFlow(ctx: ControllerContext, appHealthy: boolean): B
   const bootstrapRaw = contentOf(files, pf(BOOTSTRAP_FILE));
   const productComponents = parseComponents(bootstrapRaw);
 
-  const decideComponent = (id: string, decision: ComponentDecision) =>
+  const decideComponent = (id: string, decision: ComponentDecision, url?: string) =>
     guarded(async () => {
       if (!bootstrapRaw?.trim()) return;
+      if (decision === 'remote' && !validRemoteUrl(url)) {
+        throw new Error('That is not an address — it needs to start with http:// or https://');
+      }
       const parsed = JSON.parse(bootstrapRaw) as Record<string, unknown>;
-      const next = withDecision(productComponents, id, decision);
+      const next = withDecision(productComponents, id, decision, url);
       await window.mvpfy.writeRepoFile(
         project.localPath,
         pf(BOOTSTRAP_FILE),

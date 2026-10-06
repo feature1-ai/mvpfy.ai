@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   needsAnswer,
   parseComponents,
+  runsLocally,
   unanswered,
+  validRemoteUrl,
   withDecision,
   type ProductComponent,
 } from './components';
@@ -92,5 +94,66 @@ describe('needsAnswer', () => {
     );
     expect(list[0].decision).toBe('skip');
     expect(needsAnswer(list)).toBe(false);
+  });
+});
+
+describe('pointing a component at something already running', () => {
+  it('accepts an address and keeps it with the decision', () => {
+    const list = parseComponents(file([{ id: 'billing', name: 'Billing', kind: 'api' }]));
+    const next = withDecision(list, 'billing', 'remote', 'https://billing.staging.acme.com');
+    expect(next[0]).toMatchObject({
+      decision: 'remote',
+      url: 'https://billing.staging.acme.com',
+    });
+  });
+
+  it('refuses anything that is not an address', () => {
+    // This is written into a file an agent reads and an environment is built
+    // from, so it has to be an address and nothing else.
+    expect(validRemoteUrl('https://billing.acme.com')).toBe(true);
+    expect(validRemoteUrl('http://localhost:8080')).toBe(true);
+    expect(validRemoteUrl('billing.acme.com')).toBe(false);
+    expect(validRemoteUrl('file:///etc/passwd')).toBe(false);
+    expect(validRemoteUrl('https://acme.com; rm -rf /')).toBe(false);
+    expect(validRemoteUrl('https://acme.com $(whoami)')).toBe(false);
+    expect(validRemoteUrl('')).toBe(false);
+    expect(validRemoteUrl(null)).toBe(false);
+  });
+
+  it('drops a stale address when it goes back to running here', () => {
+    const list = parseComponents(
+      file([
+        { id: 'billing', name: 'Billing', url: 'https://billing.acme.com', decision: 'remote' },
+      ])
+    );
+    expect(withDecision(list, 'billing', 'skip')[0].url).toBeUndefined();
+  });
+
+  it('is available for a service that IS in the repo', () => {
+    // The microservices case: eight here, three worth running on a laptop.
+    const list = parseComponents(
+      file([
+        { id: 'web', name: 'Web', state: 'found', repo: 'web' },
+        { id: 'billing', name: 'Billing', state: 'found', repo: 'billing' },
+      ])
+    );
+    const next = withDecision(list, 'billing', 'remote', 'https://billing.staging.acme.com');
+    // Still no question asked: a found component never gated setup, and
+    // choosing to point it somewhere does not start one.
+    expect(needsAnswer(next)).toBe(false);
+    expect(runsLocally(next[0])).toBe(true);
+    expect(runsLocally(next[1])).toBe(false);
+  });
+
+  it('knows what still needs a container', () => {
+    const list = parseComponents(
+      file([
+        { id: 'a', name: 'A', state: 'found' },
+        { id: 'b', name: 'B', state: 'missing', decision: 'elsewhere' },
+        { id: 'c', name: 'C', state: 'missing', decision: 'stand-in' },
+        { id: 'd', name: 'D', state: 'missing', decision: 'skip' },
+      ])
+    );
+    expect(list.map(runsLocally)).toEqual([true, true, false, false]);
   });
 });

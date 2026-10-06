@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ProjectController } from '../hooks/useProjectController';
 import { parsePorts } from '../lib/ports';
-import { COMPONENT_LABELS } from '../lib/components';
+import { COMPONENT_LABELS, decisionLabel, runsLocally } from '../lib/components';
 import { latestActivity } from '../lib/runActivity';
 import BootstrapFlowCard from './BootstrapFlowCard';
 import QrCode from '../components/QrCode';
@@ -215,9 +215,46 @@ function PullRequestPolicy({ c }: { c: ProjectController }) {
  */
 function ProductComponents({ c }: { c: ProjectController }) {
   const all = c.productComponents;
+  // Which component's address is being typed, if any.
+  const [pointing, setPointing] = useState<string | null>(null);
+  const [url, setUrl] = useState('');
   if (all.length === 0) return null;
   const asking = all.filter((p) => p.state === 'missing' && !p.decision);
-  const found = all.filter((p) => p.state === 'found');
+  const settled = all.filter((p) => !(p.state === 'missing' && !p.decision));
+
+  const point = (id: string) => (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <input
+        value={url}
+        autoFocus
+        onChange={(e) => setUrl(e.target.value)}
+        placeholder="https://billing.staging.example.com"
+        className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-2.5 font-mono text-[12px] outline-none placeholder:text-faint focus:border-muted"
+      />
+      <button
+        onClick={() => {
+          const address = url;
+          setPointing(null);
+          setUrl('');
+          void c.decideComponent(id, 'remote', address);
+        }}
+        disabled={!url.trim()}
+        className="btn-primary h-8 px-3 disabled:opacity-50"
+      >
+        Use this
+      </button>
+      <button
+        onClick={() => {
+          setPointing(null);
+          setUrl('');
+        }}
+        className="h-8 px-2 text-[12px] text-muted hover:text-body"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+
   return (
     <section
       className={`card overflow-hidden ${asking.length > 0 ? 'border-warn-border' : 'border-line'}`}
@@ -234,19 +271,9 @@ function ProductComponents({ c }: { c: ProjectController }) {
         </span>
       </div>
       <div className="px-5 py-4">
-        {found.length > 0 && (
-          <div className="mb-4 flex flex-wrap gap-x-4 gap-y-1.5">
-            {found.map((p) => (
-              <span key={p.id} className="inline-flex items-baseline gap-1.5 text-[13px]">
-                <span className="h-1.5 w-1.5 translate-y-[-1px] rounded-full bg-go" />
-                <span className="text-body">{p.name}</span>
-                <span className="text-[11px] text-faint">{COMPONENT_LABELS[p.kind]}</span>
-              </span>
-            ))}
-          </div>
-        )}
+        {/* The ones that need an answer before anything is built. */}
         {asking.map((p) => (
-          <div key={p.id} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
+          <div key={p.id} className="mb-4 border-b border-line pb-4">
             <p className="text-[13px] text-body">
               <span className="font-medium">{p.name}</span>{' '}
               <span className="text-[11px] text-faint">{COMPONENT_LABELS[p.kind]}</span> — your code
@@ -255,31 +282,93 @@ function ProductComponents({ c }: { c: ProjectController }) {
             {p.evidence && (
               <p className="mt-0.5 font-mono text-[11.5px] text-muted">{p.evidence}</p>
             )}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => void c.decideComponent(p.id, 'elsewhere')}
-                title="Its code is in another repository — add that repository, then choose this"
-                className="btn-secondary h-8 px-3"
-              >
-                It is in another repo
-              </button>
-              <button
-                onClick={() => void c.decideComponent(p.id, 'stand-in')}
-                title="Serve realistic fake responses for it, so everything that depends on it runs"
-                className="btn-secondary h-8 px-3"
-              >
-                Stand it in
-              </button>
-              <button
-                onClick={() => void c.decideComponent(p.id, 'skip')}
-                title="Leave it out of what runs here"
-                className="h-8 px-2.5 text-[13px] text-muted hover:text-body"
-              >
-                Not part of this
-              </button>
-            </div>
+            {pointing === p.id ? (
+              point(p.id)
+            ) : (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => {
+                    setPointing(p.id);
+                    setUrl('');
+                  }}
+                  title="It is already running somewhere — give mvpfy the address and nothing is built for it"
+                  className="btn-secondary h-8 px-3"
+                >
+                  It runs at a URL
+                </button>
+                <button
+                  onClick={() => void c.decideComponent(p.id, 'elsewhere')}
+                  title="Its code is in another repository — add that repository, then choose this"
+                  className="btn-secondary h-8 px-3"
+                >
+                  It is in another repo
+                </button>
+                <button
+                  onClick={() => void c.decideComponent(p.id, 'stand-in')}
+                  title="Serve realistic fake responses for it, so everything that depends on it runs"
+                  className="btn-secondary h-8 px-3"
+                >
+                  Stand it in
+                </button>
+                <button
+                  onClick={() => void c.decideComponent(p.id, 'skip')}
+                  title="Leave it out of what runs here"
+                  className="h-8 px-2.5 text-[13px] text-muted hover:text-body"
+                >
+                  Not part of this
+                </button>
+              </div>
+            )}
           </div>
         ))}
+
+        {/* Everything settled: what will run here, and what will not. Nothing
+            asks anything, but each one can be changed — the microservices case
+            is eight here and three worth running on a laptop. */}
+        <div className="grid gap-2.5">
+          {settled.map((p) => {
+            const local = runsLocally(p);
+            return (
+              <div key={p.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${
+                    local ? 'bg-go' : 'bg-dot-idle'
+                  }`}
+                />
+                <span className="text-[13px] text-body">{p.name}</span>
+                <span className="text-[11px] text-faint">{COMPONENT_LABELS[p.kind]}</span>
+                <span className="text-[11.5px] text-muted">
+                  {p.decision ? decisionLabel(p.decision) : 'runs here'}
+                </span>
+                {p.url && <span className="font-mono text-[11px] text-muted">{p.url}</span>}
+                {pointing !== p.id && (
+                  <button
+                    onClick={() => {
+                      setPointing(p.id);
+                      setUrl(p.url ?? '');
+                    }}
+                    className="ml-auto text-[11.5px] text-go hover:underline"
+                  >
+                    {local ? 'point at a URL' : 'change'}
+                  </button>
+                )}
+                {pointing === p.id && <div className="w-full">{point(p.id)}</div>}
+                {pointing === p.id && !local && (
+                  <button
+                    onClick={() => {
+                      setPointing(null);
+                      void c.decideComponent(p.id, 'elsewhere');
+                    }}
+                    className="text-[11.5px] text-muted hover:text-body"
+                  >
+                    or run it here after all
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
         {asking.length > 0 && (
           <p className="mt-3 border-t border-line pt-3 text-[12px] text-muted">
             Setting up waits for these. Everything else it found it will build without asking.

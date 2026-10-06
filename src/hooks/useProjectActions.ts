@@ -2,6 +2,7 @@ import { updateLocalDatabase } from '../lib/prepareFeaturePreview';
 import { useEffect, useRef, useState } from 'react';
 import {
   ANSWERS_FILE,
+  BOOTSTRAP_FILE,
   ComposeAction,
   QUESTIONS_FILE,
   ServiceState,
@@ -20,6 +21,7 @@ import {
   startTriageRun,
 } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
+import { needsAnswer, parseComponents } from '../lib/components';
 import { RunState } from '../lib/useRuns';
 import { ControllerContext, contentOf } from './controllerContext';
 import { parseTunnelUrl, tunnelRefused } from '../lib/tunnel';
@@ -268,6 +270,14 @@ export function useProjectActions(
       if (run.running || run.exitCode !== 0) continue;
       if (chained.current.has(run.handle.runId)) continue;
       if (run.handle.kind === 'bootstrap-plan') {
+        // Reading the product found a part of it that is not in this
+        // workspace — an admin dashboard in another repository, a mobile app
+        // that was never going to run here. Only the PM can say which, and
+        // building before they do produces an app that half works with
+        // nothing on screen saying which half. Everything found carries
+        // straight on: a question with an obvious answer is the friction that
+        // teaches people to stop reading questions.
+        if (needsAnswer(parseComponents(contentOf(files, pf(BOOTSTRAP_FILE))))) continue;
         chained.current.add(run.handle.runId);
         void bootstrapWork();
       } else if (run.handle.kind === 'bootstrap') {

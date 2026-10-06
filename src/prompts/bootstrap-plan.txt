@@ -21,6 +21,16 @@ do not run builds, installs or containers. Spend a couple of minutes at most.
 {
   "version": 1,
   "summary": "<one sentence: what this product is>",
+  "components": [
+    {
+      "id": "<short-kebab-id>",
+      "name": "<what the PM calls it: 'Customer portal', not 'frontend'>",
+      "kind": "web|api|admin|worker|mobile|desktop|service|database",
+      "state": "found|missing",
+      "repo": "<workspace-relative directory, when state is found>",
+      "evidence": "<the line of code or config that says this exists>"
+    }
+  ],
   "tasks": [
     {
       "id": "<short-kebab-id>",
@@ -31,6 +41,26 @@ do not run builds, installs or containers. Spend a couple of minutes at most.
     }
   ]
 }
+
+Rules for the components list:
+
+• List every part of the product this workspace is supposed to run, and every part the code
+  plainly EXPECTS to exist. One entry each; a repository holding two deployables is two
+  entries.
+• "state": "found" when the code for it is here — say which directory in "repo".
+  "state": "missing" when the code refers to it and it is NOT in this workspace: an env var
+  pointing at an admin dashboard, a fetch to an API in another repository, a mobile client
+  that talks to this backend, an OAuth callback into a product that is not here.
+• "evidence" is the reason you believe it, quoted small and exactly — "VITE_ADMIN_URL in
+  .env.example", "src/api.ts posts to https://admin.acme.com". A guess with no line behind
+  it is not a component; leave it out.
+• A missing component is the most useful thing in this file. Setting up without one produces
+  an app that half works with nothing on screen saying which half — so look for them
+  deliberately rather than describing only what is in front of you.
+• Never mark something missing just because it is a third-party service (Stripe, S3, an
+  email provider). Those are stand-ins you plan as tasks, not parts of the product.
+• Do not decide what to do about a missing component. The product manager answers that, and
+  the next run reads their answer.
 
 Rules for the task list:
 

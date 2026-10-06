@@ -7,9 +7,22 @@ import {
   ResolvedTask,
   RUNNING_TASK_ID,
 } from '../lib/bootstrapPlan';
+import {
+  ComponentDecision,
+  ProductComponent,
+  needsAnswer,
+  parseComponents,
+  withDecision,
+} from '../lib/components';
 import { ControllerContext, contentOf } from './controllerContext';
 
 export interface BootstrapFlowState {
+  /** What this product is made of, as setup read it. */
+  productComponents: ProductComponent[];
+  /** True while a part of the product is missing and unanswered. */
+  componentsNeedAnswer: boolean;
+  /** Answer for one missing part, so setting up can build the right thing. */
+  decideComponent(id: string, decision: ComponentDecision): Promise<boolean>;
   /** The setup board: agent tasks, then mvpfy's human-gated final card. */
   bootstrapTasks: ResolvedTask[];
   /** The agent's one-line reading of what this product is. */
@@ -27,7 +40,7 @@ export interface BootstrapFlowState {
  * the PM.
  */
 export function useBootstrapFlow(ctx: ControllerContext, appHealthy: boolean): BootstrapFlowState {
-  const { project, files, pf, projectRuns, updateState, guarded } = ctx;
+  const { project, files, pf, projectRuns, updateState, refreshFiles, guarded } = ctx;
   const flow = parseBootstrapFlow(contentOf(files, pf(BOOTSTRAP_FILE)));
 
   // Tasks declare arbitrary files, so their existence needs its own read —
@@ -75,9 +88,31 @@ export function useBootstrapFlow(ctx: ControllerContext, appHealthy: boolean): B
       }));
     });
 
+  // What the product is made of, read from the same file as the tasks. The
+  // answer to a missing one is written back there, because the run that builds
+  // the environment reads that file and nothing else.
+  const bootstrapRaw = contentOf(files, pf(BOOTSTRAP_FILE));
+  const productComponents = parseComponents(bootstrapRaw);
+
+  const decideComponent = (id: string, decision: ComponentDecision) =>
+    guarded(async () => {
+      if (!bootstrapRaw?.trim()) return;
+      const parsed = JSON.parse(bootstrapRaw) as Record<string, unknown>;
+      const next = withDecision(productComponents, id, decision);
+      await window.mvpfy.writeRepoFile(
+        project.localPath,
+        pf(BOOTSTRAP_FILE),
+        JSON.stringify({ ...parsed, components: next }, null, 2)
+      );
+      refreshFiles();
+    });
+
   return {
     bootstrapTasks: flow ? bootstrapTasks : [],
     bootstrapSummary: flow?.summary || null,
+    productComponents,
+    componentsNeedAnswer: needsAnswer(productComponents),
+    decideComponent,
     acceptBootstrap: () => setAccepted(true),
     reopenBootstrap: () => setAccepted(false),
   };

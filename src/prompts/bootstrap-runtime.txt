@@ -137,6 +137,18 @@ Follow these steps:
      read this instead of the Dockerfile.
 
 Rules:
+• {bootstrapFile} carries a "components" list: what this product is made of, and for any
+  part the code expects but this workspace does not hold, what the product manager decided
+  about it. Build what it says and nothing else:
+    – "state": "found" — run it. Every one of them, each on its own host port.
+    – "decision": "elsewhere" — its code is in another repository that is now in this
+      workspace. Treat it as found, and if you cannot see it, say so in your questions
+      rather than standing it in behind their back.
+    – "decision": "stand-in" — serve realistic fake responses for it, the same way you
+      would for a third-party API, so everything that depends on it runs.
+    – "decision": "skip" — leave it out entirely. Do not stand it in, do not start it, and
+      do not let the rest of the stack fail because it is absent.
+  Never add a component that is not on that list, and never silently drop one that is.
 • The main user-facing app must be exposed on host port {basePort}; give other repos' apps
   their own nearby host ports and record them all in mvpfy.yml and mvpfy-run.md.
 • In mvpfy.yml the main app's `host_port` and the port in its `url` must be identical and

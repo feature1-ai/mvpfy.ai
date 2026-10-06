@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ProjectController } from '../hooks/useProjectController';
 import { parsePorts } from '../lib/ports';
+import { COMPONENT_LABELS } from '../lib/components';
 import { latestActivity } from '../lib/runActivity';
 import BootstrapFlowCard from './BootstrapFlowCard';
 import QrCode from '../components/QrCode';
@@ -194,6 +195,97 @@ function PullRequestPolicy({ c }: { c: ProjectController }) {
           </>
         )}
       </p>
+    </section>
+  );
+}
+
+/**
+ * What this product is made of, and the pieces setup cannot answer for itself.
+ *
+ * Reading the repositories tells mvpfy what is here. What it cannot tell is
+ * whether the admin dashboard the code calls lives in another repository, is
+ * somebody else's product, or simply is not part of what should run on this
+ * laptop. Building before that is answered produces an app that half works
+ * with nothing on screen saying which half — the failure this card exists to
+ * prevent.
+ *
+ * Only the missing ones ask anything. Everything found is shown and left
+ * alone, because setting up starts by itself and a question with an obvious
+ * answer is what teaches people to stop reading questions.
+ */
+function ProductComponents({ c }: { c: ProjectController }) {
+  const all = c.productComponents;
+  if (all.length === 0) return null;
+  const asking = all.filter((p) => p.state === 'missing' && !p.decision);
+  const found = all.filter((p) => p.state === 'found');
+  return (
+    <section
+      className={`card overflow-hidden ${asking.length > 0 ? 'border-warn-border' : 'border-line'}`}
+    >
+      <div
+        className={`flex items-center gap-2 border-b border-line px-5 py-3 ${
+          asking.length > 0 ? 'bg-warn-bg' : ''
+        }`}
+      >
+        <span className={`section-label ${asking.length > 0 ? 'text-warn-text' : 'text-muted'}`}>
+          {asking.length > 0
+            ? `Your product has ${asking.length} part${asking.length === 1 ? '' : 's'} that is not here`
+            : 'What your product is made of'}
+        </span>
+      </div>
+      <div className="px-5 py-4">
+        {found.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-x-4 gap-y-1.5">
+            {found.map((p) => (
+              <span key={p.id} className="inline-flex items-baseline gap-1.5 text-[13px]">
+                <span className="h-1.5 w-1.5 translate-y-[-1px] rounded-full bg-go" />
+                <span className="text-body">{p.name}</span>
+                <span className="text-[11px] text-faint">{COMPONENT_LABELS[p.kind]}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {asking.map((p) => (
+          <div key={p.id} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
+            <p className="text-[13px] text-body">
+              <span className="font-medium">{p.name}</span>{' '}
+              <span className="text-[11px] text-faint">{COMPONENT_LABELS[p.kind]}</span> — your code
+              expects this, and it is not in this workspace.
+            </p>
+            {p.evidence && (
+              <p className="mt-0.5 font-mono text-[11.5px] text-muted">{p.evidence}</p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => void c.decideComponent(p.id, 'elsewhere')}
+                title="Its code is in another repository — add that repository, then choose this"
+                className="btn-secondary h-8 px-3"
+              >
+                It is in another repo
+              </button>
+              <button
+                onClick={() => void c.decideComponent(p.id, 'stand-in')}
+                title="Serve realistic fake responses for it, so everything that depends on it runs"
+                className="btn-secondary h-8 px-3"
+              >
+                Stand it in
+              </button>
+              <button
+                onClick={() => void c.decideComponent(p.id, 'skip')}
+                title="Leave it out of what runs here"
+                className="h-8 px-2.5 text-[13px] text-muted hover:text-body"
+              >
+                Not part of this
+              </button>
+            </div>
+          </div>
+        ))}
+        {asking.length > 0 && (
+          <p className="mt-3 border-t border-line pt-3 text-[12px] text-muted">
+            Setting up waits for these. Everything else it found it will build without asking.
+          </p>
+        )}
+      </div>
     </section>
   );
 }
@@ -518,6 +610,11 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </button>
             </div>
           </section>
+
+          {/* What the product is made of, and the parts only the PM can
+              answer for. Above the questions card because it is the earlier
+              gate: setup has not started building yet. */}
+          <ProductComponents c={c} />
 
           {/* The one thing that stops setup finishing, and the way past it. */}
           <SetupQuestions c={c} />

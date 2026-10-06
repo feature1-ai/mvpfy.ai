@@ -22,6 +22,7 @@ import {
 } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
 import { needsAnswer, parseComponents } from '../lib/components';
+import { parseTenancy, tenancyNeedsAnswer } from '../lib/tenancy';
 import { RunState } from '../lib/useRuns';
 import { ControllerContext, contentOf } from './controllerContext';
 import { parseTunnelUrl, tunnelRefused } from '../lib/tunnel';
@@ -277,7 +278,11 @@ export function useProjectActions(
         // nothing on screen saying which half. Everything found carries
         // straight on: a question with an obvious answer is the friction that
         // teaches people to stop reading questions.
-        if (needsAnswer(parseComponents(contentOf(files, pf(BOOTSTRAP_FILE))))) continue;
+        const read = contentOf(files, pf(BOOTSTRAP_FILE));
+        // The same rule for the customer this app should be: a product with
+        // tenants and no answer comes up as an unknown workspace, which looks
+        // like a broken app rather than an unanswered question.
+        if (needsAnswer(parseComponents(read)) || tenancyNeedsAnswer(parseTenancy(read))) continue;
         chained.current.add(run.handle.runId);
         void bootstrapWork();
       } else if (run.handle.kind === 'bootstrap') {

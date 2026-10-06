@@ -21,6 +21,11 @@ do not run builds, installs or containers. Spend a couple of minutes at most.
 {
   "version": 1,
   "summary": "<one sentence: what this product is>",
+  "tenancy": {
+    "mode": "host|path|header|none",
+    "local": "<the value to be locally — a hostname, a path segment, a header value>",
+    "header": "<the header's name, only when mode is header>"
+  },
   "components": [
     {
       "id": "<short-kebab-id>",
@@ -41,6 +46,22 @@ do not run builds, installs or containers. Spend a couple of minutes at most.
     }
   ]
 }
+
+Rules for tenancy:
+
+• Work out how this product decides WHICH CUSTOMER a request belongs to, because on
+  localhost there is no subdomain and usually no answer — the app then serves nothing, or an
+  error about an unknown workspace, or a default that behaves unlike any real customer.
+  Look for subdomain parsing, a middleware reading the Host header, a path prefix, or a
+  tenant/workspace/org header.
+• "mode": "none" when every user shares one instance. Most products. Say so plainly rather
+  than inventing tenancy that is not there.
+• "local" is what to BE here: for "host" a hostname the proxy can send and the app resolves
+  (demo.localhost is the usual shape); for "path" the first segment; for "header" the value.
+  Pick one that matches the demo customer you plan to seed, so the login you give the
+  product manager lands in the workspace they can see.
+• Keep it to letters, numbers, dots, dashes and underscores. It is written into generated
+  configuration and sent to a real server.
 
 Rules for the components list:
 

@@ -158,6 +158,19 @@ Rules:
       already running on a shared server is the ordinary shape of this, and building the five
       would spend minutes and gigabytes reproducing something that already answers.
   Never add a component that is not on that list, and never silently drop one that is.
+• {bootstrapFile} also carries "tenancy": how this product decides which customer a request
+  belongs to. When its mode is not "none", that one value has to be honoured everywhere, or
+  the app half works in a way that is hard to see:
+    – the proxy in front of the app sends the host (or path, or header) the app expects, so
+      opening localhost resolves a real customer instead of an unknown workspace;
+    – the demo customer you seed IS that one, so the login you hand over lands somewhere
+      with data in it;
+    – record it in mvpfy.yml so the app can forge the same host when the product manager
+      shares their running app with somebody else;
+    – and a component pointed at an address somewhere else is asked for THAT customer —
+      the same host, path or header — rather than whatever that server treats as default.
+  That last one matters most: a remote service is somebody's real environment, and asking it
+  for the wrong customer is reading another customer's data.
 • A remote component is not a fallback. If its address does not answer, say so plainly in
   mvpfy-run.md and let it fail loudly — quietly standing in for something the product
   manager told you is real is how they end up testing against fake data without knowing.

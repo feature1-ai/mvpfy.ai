@@ -7,6 +7,7 @@ import {
   decisionLabel,
   runsLocally,
 } from '../lib/components';
+import { tenancyLine } from '../lib/tenancy';
 import { latestActivity } from '../lib/runActivity';
 import BootstrapFlowCard from './BootstrapFlowCard';
 import QrCode from '../components/QrCode';
@@ -226,6 +227,8 @@ function ProductComponents({ c }: { c: ProjectController }) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<ComponentKind>('mobile');
+  const [tenantEditing, setTenantEditing] = useState(false);
+  const [tenant, setTenant] = useState('');
   if (all.length === 0) return null;
   const asking = all.filter((p) => p.state === 'missing' && !p.decision);
   const settled = all.filter((p) => !(p.state === 'missing' && !p.decision));
@@ -376,6 +379,53 @@ function ProductComponents({ c }: { c: ProjectController }) {
             );
           })}
         </div>
+
+        {/* Which customer this app is, for a product that has more than one.
+            Shown with the components because it is the same kind of fact: what
+            setting up has to be told before it can build the right thing. */}
+        {c.tenancy && c.tenancy.mode !== 'none' && (
+          <div className="mt-3 border-t border-line pt-3">
+            <p className="text-[12.5px] text-body">{tenancyLine(c.tenancy)}</p>
+            {tenantEditing ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  value={tenant}
+                  autoFocus
+                  onChange={(e) => setTenant(e.target.value)}
+                  placeholder="demo.localhost"
+                  className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-2.5 font-mono text-[12px] outline-none placeholder:text-faint focus:border-muted"
+                />
+                <button
+                  onClick={() => {
+                    const value = tenant;
+                    setTenantEditing(false);
+                    void c.setLocalTenant(value);
+                  }}
+                  disabled={!tenant.trim()}
+                  className="btn-primary h-8 px-3 disabled:opacity-50"
+                >
+                  Use this
+                </button>
+                <button
+                  onClick={() => setTenantEditing(false)}
+                  className="h-8 px-2 text-[12px] text-muted hover:text-body"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setTenant(c.tenancy?.local ?? '');
+                  setTenantEditing(true);
+                }}
+                className="mt-1 text-[11.5px] text-go hover:underline"
+              >
+                {c.tenancy.local ? 'change which customer' : 'say which customer'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Reading the code finds what the code refers to. A mobile app in its
             own repository leaves no trace in a backend, so the only source for

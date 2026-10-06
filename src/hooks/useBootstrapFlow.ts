@@ -17,6 +17,7 @@ import {
   validRemoteUrl,
   withDecision,
 } from '../lib/components';
+import { Tenancy, parseTenancy, validTenant } from '../lib/tenancy';
 import { ControllerContext, contentOf } from './controllerContext';
 
 export interface BootstrapFlowState {
@@ -31,6 +32,10 @@ export interface BootstrapFlowState {
   decideComponent(id: string, decision: ComponentDecision, url?: string): Promise<boolean>;
   /** Name a part of the product that reading the code never found. */
   addProductComponent(name: string, kind: ComponentKind): Promise<boolean>;
+  /** How this product picks a customer, and who it is here. */
+  tenancy: Tenancy | null;
+  /** Say which customer this machine should be. */
+  setLocalTenant(value: string): Promise<boolean>;
   /** The setup board: agent tasks, then mvpfy's human-gated final card. */
   bootstrapTasks: ResolvedTask[];
   /** The agent's one-line reading of what this product is. */
@@ -118,6 +123,23 @@ export function useBootstrapFlow(ctx: ControllerContext, appHealthy: boolean): B
       await writeComponents(addComponent(productComponents, name, kind));
     });
 
+  const tenancy = parseTenancy(bootstrapRaw);
+  const setLocalTenant = (value: string) =>
+    guarded(async () => {
+      const local = value.trim();
+      if (!validTenant(local)) {
+        throw new Error('Letters, numbers, dots, dashes and underscores — it goes into a hostname');
+      }
+      if (!bootstrapRaw?.trim() || !tenancy) return;
+      const parsed = JSON.parse(bootstrapRaw) as Record<string, unknown>;
+      await window.mvpfy.writeRepoFile(
+        project.localPath,
+        pf(BOOTSTRAP_FILE),
+        JSON.stringify({ ...parsed, tenancy: { ...tenancy, local } }, null, 2)
+      );
+      refreshFiles();
+    });
+
   const decideComponent = (id: string, decision: ComponentDecision, url?: string) =>
     guarded(async () => {
       if (!bootstrapRaw?.trim()) return;
@@ -134,6 +156,8 @@ export function useBootstrapFlow(ctx: ControllerContext, appHealthy: boolean): B
     componentsNeedAnswer: needsAnswer(productComponents),
     decideComponent,
     addProductComponent,
+    tenancy,
+    setLocalTenant,
     acceptBootstrap: () => setAccepted(true),
     reopenBootstrap: () => setAccepted(false),
   };

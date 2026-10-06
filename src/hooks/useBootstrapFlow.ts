@@ -9,7 +9,9 @@ import {
 } from '../lib/bootstrapPlan';
 import {
   ComponentDecision,
+  ComponentKind,
   ProductComponent,
+  addComponent,
   needsAnswer,
   parseComponents,
   validRemoteUrl,
@@ -27,6 +29,8 @@ export interface BootstrapFlowState {
    * it already runs, for the parts that should not run here at all.
    */
   decideComponent(id: string, decision: ComponentDecision, url?: string): Promise<boolean>;
+  /** Name a part of the product that reading the code never found. */
+  addProductComponent(name: string, kind: ComponentKind): Promise<boolean>;
   /** The setup board: agent tasks, then mvpfy's human-gated final card. */
   bootstrapTasks: ResolvedTask[];
   /** The agent's one-line reading of what this product is. */
@@ -98,20 +102,29 @@ export function useBootstrapFlow(ctx: ControllerContext, appHealthy: boolean): B
   const bootstrapRaw = contentOf(files, pf(BOOTSTRAP_FILE));
   const productComponents = parseComponents(bootstrapRaw);
 
+  const writeComponents = async (next: ProductComponent[]) => {
+    if (!bootstrapRaw?.trim()) throw new Error('Setting up has not read your product yet.');
+    const parsed = JSON.parse(bootstrapRaw) as Record<string, unknown>;
+    await window.mvpfy.writeRepoFile(
+      project.localPath,
+      pf(BOOTSTRAP_FILE),
+      JSON.stringify({ ...parsed, components: next }, null, 2)
+    );
+    refreshFiles();
+  };
+
+  const addProductComponent = (name: string, kind: ComponentKind) =>
+    guarded(async () => {
+      await writeComponents(addComponent(productComponents, name, kind));
+    });
+
   const decideComponent = (id: string, decision: ComponentDecision, url?: string) =>
     guarded(async () => {
       if (!bootstrapRaw?.trim()) return;
       if (decision === 'remote' && !validRemoteUrl(url)) {
         throw new Error('That is not an address — it needs to start with http:// or https://');
       }
-      const parsed = JSON.parse(bootstrapRaw) as Record<string, unknown>;
-      const next = withDecision(productComponents, id, decision, url);
-      await window.mvpfy.writeRepoFile(
-        project.localPath,
-        pf(BOOTSTRAP_FILE),
-        JSON.stringify({ ...parsed, components: next }, null, 2)
-      );
-      refreshFiles();
+      await writeComponents(withDecision(productComponents, id, decision, url));
     });
 
   return {
@@ -120,6 +133,7 @@ export function useBootstrapFlow(ctx: ControllerContext, appHealthy: boolean): B
     productComponents,
     componentsNeedAnswer: needsAnswer(productComponents),
     decideComponent,
+    addProductComponent,
     acceptBootstrap: () => setAccepted(true),
     reopenBootstrap: () => setAccepted(false),
   };

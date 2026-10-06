@@ -127,6 +127,34 @@ export function parseComponents(raw: string | null | undefined): ProductComponen
   return out;
 }
 
+/**
+ * A part the product manager says exists, that reading the code never found.
+ *
+ * The inventory is built from evidence, which is what stops it inventing an
+ * admin dashboard because a README mentions one — and it is exactly why a
+ * mobile app in its own repository can be invisible here. Nothing in a backend
+ * necessarily says a phone talks to it. The person who knows the product is
+ * the only source for that, so there has to be a way for them to say it.
+ *
+ * It arrives missing and undecided, which is to say it arrives as a question —
+ * the same one, answered the same four ways.
+ */
+export function addComponent(
+  components: ProductComponent[],
+  name: string,
+  kind: ComponentKind
+): ProductComponent[] {
+  const label = name.trim();
+  if (!label) return components;
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'component';
+  let id = base;
+  for (let n = 2; components.some((c) => c.id === id); n++) id = `${base}-${n}`;
+  return [
+    ...components,
+    { id, name: label, kind, state: 'missing', evidence: 'You said this is part of the product' },
+  ];
+}
+
 /** The pieces still waiting on the only person who can answer for them. */
 export function unanswered(components: ProductComponent[]): ProductComponent[] {
   return components.filter((c) => c.state === 'missing' && !c.decision);

@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ProjectController } from '../hooks/useProjectController';
 import { parsePorts } from '../lib/ports';
-import { COMPONENT_LABELS, decisionLabel, runsLocally } from '../lib/components';
+import {
+  COMPONENT_LABELS,
+  type ComponentKind,
+  decisionLabel,
+  runsLocally,
+} from '../lib/components';
 import { latestActivity } from '../lib/runActivity';
 import BootstrapFlowCard from './BootstrapFlowCard';
 import QrCode from '../components/QrCode';
@@ -218,6 +223,9 @@ function ProductComponents({ c }: { c: ProjectController }) {
   // Which component's address is being typed, if any.
   const [pointing, setPointing] = useState<string | null>(null);
   const [url, setUrl] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newKind, setNewKind] = useState<ComponentKind>('mobile');
   if (all.length === 0) return null;
   const asking = all.filter((p) => p.state === 'missing' && !p.decision);
   const settled = all.filter((p) => !(p.state === 'missing' && !p.decision));
@@ -369,11 +377,68 @@ function ProductComponents({ c }: { c: ProjectController }) {
           })}
         </div>
 
-        {asking.length > 0 && (
-          <p className="mt-3 border-t border-line pt-3 text-[12px] text-muted">
-            Setting up waits for these. Everything else it found it will build without asking.
-          </p>
-        )}
+        {/* Reading the code finds what the code refers to. A mobile app in its
+            own repository leaves no trace in a backend, so the only source for
+            it is the person who knows the product. */}
+        <div className="mt-3 border-t border-line pt-3">
+          {adding ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={newName}
+                autoFocus
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="What is it called? e.g. Driver app"
+                className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-2.5 text-[13px] outline-none placeholder:text-faint focus:border-muted"
+              />
+              <select
+                value={newKind}
+                onChange={(e) => setNewKind(e.target.value as ComponentKind)}
+                className="h-8 rounded-md border border-line bg-surface px-2 text-[13px] text-body"
+              >
+                {(Object.keys(COMPONENT_LABELS) as ComponentKind[]).map((k) => (
+                  <option key={k} value={k}>
+                    {COMPONENT_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  const name = newName;
+                  setAdding(false);
+                  setNewName('');
+                  void c.addProductComponent(name, newKind);
+                }}
+                disabled={!newName.trim()}
+                className="btn-primary h-8 px-3 disabled:opacity-50"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => {
+                  setAdding(false);
+                  setNewName('');
+                }}
+                className="h-8 px-2 text-[12px] text-muted hover:text-body"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="text-[12px] text-muted">
+                {asking.length > 0
+                  ? 'Setting up waits for these. Everything else it found it will build without asking.'
+                  : 'Reading your code found these. Anything it could not see, you can add.'}
+              </span>
+              <button
+                onClick={() => setAdding(true)}
+                className="text-[11.5px] text-go hover:underline"
+              >
+                Something is missing
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

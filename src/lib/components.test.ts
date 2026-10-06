@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addComponent,
   needsAnswer,
   parseComponents,
   runsLocally,
@@ -155,5 +156,32 @@ describe('pointing a component at something already running', () => {
       ])
     );
     expect(list.map(runsLocally)).toEqual([true, true, false, false]);
+  });
+});
+
+describe('adding a part the code never revealed', () => {
+  it('arrives as the same question, answered the same ways', () => {
+    // A mobile app in its own repository leaves no trace in a backend, so
+    // evidence-based reading will never find it. The PM is the only source.
+    const list = addComponent(parseComponents(file([found('API', 'api')])), 'Driver app', 'mobile');
+    expect(list).toHaveLength(2);
+    expect(list[1]).toMatchObject({ name: 'Driver app', kind: 'mobile', state: 'missing' });
+    expect(needsAnswer(list)).toBe(true);
+    expect(withDecision(list, list[1].id, 'remote', 'https://api.acme.com')[1].url).toBe(
+      'https://api.acme.com'
+    );
+  });
+
+  it('says where it came from, because every other entry says that too', () => {
+    expect(addComponent([], 'Driver app', 'mobile')[0].evidence).toMatch(/you said/i);
+  });
+
+  it('never collides with an id already there', () => {
+    const list = addComponent(addComponent([], 'Driver app', 'mobile'), 'Driver app', 'desktop');
+    expect(new Set(list.map((c) => c.id)).size).toBe(2);
+  });
+
+  it('ignores an empty name rather than adding a nameless row', () => {
+    expect(addComponent([], '   ', 'mobile')).toEqual([]);
   });
 });

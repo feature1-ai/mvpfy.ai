@@ -305,10 +305,10 @@ function ProductComponents({ c }: { c: ProjectController }) {
                 </button>
                 <button
                   onClick={() => void c.decideComponent(p.id, 'stand-in')}
-                  title="Serve realistic fake responses for it, so everything that depends on it runs"
+                  title="mvpfy writes a small fake version that answers with realistic data, so everything depending on it still runs"
                   className="btn-secondary h-8 px-3"
                 >
-                  Stand it in
+                  Fake it for now
                 </button>
                 <button
                   onClick={() => void c.decideComponent(p.id, 'skip')}

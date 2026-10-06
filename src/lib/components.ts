@@ -202,7 +202,7 @@ export function decisionLabel(decision: ComponentDecision): string {
   return decision === 'elsewhere'
     ? 'its code is in another repository'
     : decision === 'stand-in'
-      ? 'stand it in, so the rest can run'
+      ? 'faked, so the rest can run'
       : decision === 'remote'
         ? 'use the one already running'
         : 'leave it out of what runs here';

@@ -71,6 +71,19 @@ function windowsPlans(): InstallPlan[] {
       'Cloudflare.cloudflared',
       'Only needed to share a running app.'
     ),
+    viaWinget(
+      'adb',
+      'Android device tools',
+      'Google.PlatformTools',
+      'Lets mvpfy install an app onto a phone you plug in.'
+    ),
+    viaWinget(
+      'android-studio',
+      'Android Studio',
+      'Google.AndroidStudio',
+      'About 1 GB, and it opens its own window to download a system image and make an emulator.',
+      'terminal'
+    ),
     {
       tool: 'claude',
       label: 'Claude Code',
@@ -166,6 +179,30 @@ export function installPlans(): InstallPlan[] {
     },
     viaBrew('gh', 'GitHub CLI', 'gh'),
     viaBrew('cloudflared', 'Cloudflare Tunnel', 'cloudflared'),
+    // Running a phone app needs somewhere to run it, and the three answers
+    // cost wildly different things — so they are three entries, each saying
+    // what it actually costs rather than one "mobile support" button.
+    viaBrew('adb', 'Android device tools', '--cask android-platform-tools'),
+    {
+      tool: 'android-studio',
+      label: 'Android Studio',
+      command: 'brew install --cask android-studio',
+      mode: 'terminal',
+      note: 'About 1 GB, and it opens its own window to download a system image and make an emulator. Only needed to run an Android app without a real phone.',
+      available: brew,
+    },
+    {
+      tool: 'xcode',
+      label: 'Xcode',
+      // Not installable from here, and pretending otherwise would be the lie:
+      // it comes from the App Store, needs an Apple ID, is well over 10 GB,
+      // and its licence has to be accepted with a password. Opening the page
+      // is the honest limit of what mvpfy can do.
+      command: 'open "macappstore://apps.apple.com/app/xcode/id497799835"',
+      mode: 'terminal',
+      note: 'Opens the App Store. Over 10 GB and needs an Apple ID — only for running an iPhone app in a simulator. The command line tools alone do NOT include one.',
+      available: true,
+    },
     viaBrew('docker', 'Docker Desktop', '--cask docker-desktop'),
     {
       tool: 'claude',

@@ -120,9 +120,25 @@ describe('needsOwnWindow', () => {
 
 describe('installPlans', () => {
   it('never invents a source — every command names the vendor or the OS package manager', () => {
+    // `open "macappstore://` is the one addition that is not a package
+    // manager, and it installs nothing: Xcode cannot be installed from here at
+    // all — App Store, Apple ID, more than 10 GB, and a licence accepted with
+    // a password — so the honest limit of what mvpfy does is open the page.
     for (const plan of installPlans()) {
-      expect(plan.command).toMatch(/^(brew|winget|npm|curl|powershell|xcode-select|\/bin\/bash)/);
+      expect(plan.command, plan.tool).toMatch(
+        /^(brew|winget|npm|curl|powershell|xcode-select|open "macappstore:\/\/|\/bin\/bash)/
+      );
     }
+  });
+
+  it.runIf(onMac)('does not pretend it can install Xcode', () => {
+    // A button that claims to install it and cannot is worse than one that
+    // says where it comes from.
+    const plan = installPlans().find((p) => p.tool === 'xcode');
+    expect(plan?.mode).toBe('terminal');
+    expect(plan?.note).toMatch(/App Store/);
+    // And the trap worth naming: the command line tools are not a simulator.
+    expect(plan?.note).toMatch(/command line tools alone do NOT include one/i);
   });
 });
 

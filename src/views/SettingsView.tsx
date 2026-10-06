@@ -393,6 +393,53 @@ export default function SettingsView({
           );
         })()}
 
+        {/* Running a phone or desktop app is the one thing mvpfy cannot do in a
+            container, so it asks the agent to do it on this machine — and that
+            needs whatever this machine runs phones with. Shown together,
+            each saying what it costs, because "install mobile support" would
+            hide a 10 GB download inside a word. */}
+        <div className="border-t border-line-subtle pt-3">
+          <div className="mb-2 flex items-baseline gap-2">
+            <span className="text-[13px] font-medium">Phone apps</span>
+            <span className="text-[10px] text-faint">optional</span>
+            <span className="min-w-0 flex-1 text-[11.5px] text-muted">
+              Only if your product has one. mvpfy can run it on a simulator, a phone you plug in, or
+              your own phone over the network — the last needs nothing installed.
+            </span>
+          </div>
+          <div className="grid gap-2 pl-3">
+            {(['adb', 'android-studio', 'xcode'] as const).map((tool) => {
+              const plan = planFor(tool);
+              if (!plan) return null;
+              const busy = toolRun?.tool === tool;
+              return (
+                <div key={tool} className="flex items-center gap-3">
+                  <span className="w-[108px] shrink-0 text-[12px] text-body">{plan.label}</span>
+                  <span className="min-w-0 flex-1 text-[11px] leading-snug text-muted">
+                    {plan.note}
+                  </span>
+                  {plan.available ? (
+                    <button
+                      onClick={() => install(tool)}
+                      disabled={toolRun !== null}
+                      title={plan.command}
+                      className="btn-secondary h-6 shrink-0 px-2.5 text-[11.5px] disabled:opacity-50"
+                    >
+                      {busy
+                        ? 'Installing…'
+                        : plan.mode === 'terminal'
+                          ? 'Open installer'
+                          : 'Install'}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-[11px] text-warn-text">{plan.note}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Homebrew is not a tool mvpfy uses — it is how three of the others
             get installed, so it only appears while it is the thing in the way. */}
         {brewPlan?.available && (

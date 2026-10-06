@@ -65,6 +65,18 @@ export interface ProductComponent {
   decision?: ComponentDecision;
   /** Where it already runs, when the decision is 'remote'. */
   url?: string;
+  /**
+   * The env file THIS part reads, workspace-relative.
+   *
+   * Not the same file for everything. A compose stack reads one at the
+   * workspace root, and that is where ports and image settings belong — but a
+   * Vite frontend inlines VITE_* from its own repository at build time, a Rails
+   * app reads its own, and a phone app is configured in neither. A variable
+   * written to the wrong one is set and ignored, which is the worst kind of
+   * set: everything claims success and the app behaves as though it was never
+   * given the value.
+   */
+  envFile?: string;
 }
 
 export interface ComponentInventory {
@@ -122,6 +134,7 @@ export function parseComponents(raw: string | null | undefined): ProductComponen
       evidence: text(o.evidence),
       ...(DECISIONS.has(decision) ? { decision: decision as ComponentDecision } : {}),
       ...(validRemoteUrl(text(o.url)) ? { url: text(o.url) } : {}),
+      ...(safeEnvPath(text(o.envFile)) ? { envFile: text(o.envFile) } : {}),
     });
   }
   return out;
@@ -153,6 +166,21 @@ export function addComponent(
     ...components,
     { id, name: label, kind, state: 'missing', evidence: 'You said this is part of the product' },
   ];
+}
+
+/**
+ * An env path inside the workspace and nothing else.
+ *
+ * It is read from a model-written file and then written to, so it may not
+ * climb out of the workspace, name an absolute path, or be anything but an env
+ * file. A wrong path here overwrites something that is not env.
+ */
+export function safeEnvPath(value: string | null | undefined): boolean {
+  const path = (value ?? '').trim();
+  if (!path || path.length > 200) return false;
+  if (path.startsWith('/') || path.startsWith('\\') || /^[a-zA-Z]:/.test(path)) return false;
+  if (path.split(/[\\/]/).some((part) => part === '..')) return false;
+  return /(^|[\\/])\.env(\.[A-Za-z0-9_.-]+)?$/.test(path);
 }
 
 /** The pieces still waiting on the only person who can answer for them. */

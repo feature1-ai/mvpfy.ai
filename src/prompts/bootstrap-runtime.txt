@@ -171,6 +171,17 @@ Rules:
       the same host, path or header — rather than whatever that server treats as default.
   That last one matters most: a remote service is somebody's real environment, and asking it
   for the wrong customer is reading another customer's data.
+• A variable belongs in the file the app that reads it ACTUALLY reads, and they are not all
+  the same file. The compose stack reads one at the workspace root: ports, image settings,
+  anything you pass to a container belongs there. But a Vite or Next frontend inlines its
+  own VITE_/NEXT_PUBLIC_ variables from its own repository at BUILD time, a Rails or Django
+  app reads its own, and a phone or desktop app is configured in neither. A variable written
+  to the wrong file is set and ignored — everything reports success and the app behaves as
+  though it was never given the value, which is the hardest kind of wrong to see.
+  So: put each app's variables where that app reads them, and record the path in its entry
+  in the components list as "envFile" (workspace-relative). One file per app that has one;
+  the root file stays for the stack itself. Keep every one of them out of git, the same way
+  the root one already is.
 • A phone app or a desktop app is a CLIENT, not a service. Never build an image for one,
   never add it to the compose file, and never report it as part of what is running. There is
   no container that is an installed app on somebody's phone, and pretending otherwise gives

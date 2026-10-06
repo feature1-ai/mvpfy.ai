@@ -26,6 +26,7 @@ import { parseAppPort } from '../lib/ports';
 import { parsePublishedPorts } from '../lib/publishedPort';
 import { UserStory } from '../lib/feature1Mcp';
 import { ENV_FILE_CANDIDATES } from '../lib/envFile';
+import { parseComponents } from '../lib/components';
 import { troubleReport } from '../lib/trouble';
 import { appVerdict } from '../lib/appHealth';
 import { StoryLane } from '../lib/plan';
@@ -186,6 +187,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   changeContent: string | null;
   /** The env file the editor works on: first existing candidate, or null. */
   envFile: { name: string; content: string } | null;
+  /** One per part of the product that reads its own env file. */
+  componentEnvFiles: Array<{ component: string; name: string; content: string }>;
   /** Content of .env.mvpfy.example when present (seed for a new env file). */
   envExample: string | null;
   saveEnv(name: string, content: string): Promise<boolean>;
@@ -474,6 +477,51 @@ export function useProjectController(
     }
   }
 
+  // Each part of the product may read its own env file, so their paths are
+  // only known after the inventory has been read — a second read, like the
+  // bootstrap tasks' declared files, rather than a guess in the fixed list.
+  const envPaths = [
+    ...new Set(
+      parseComponents(contentOf(files, pf(BOOTSTRAP_FILE)))
+        .map((component) => component.envFile)
+        .filter((path): path is string => Boolean(path))
+    ),
+  ];
+  const envPathKey = envPaths.join('|');
+  const [componentEnv, setComponentEnv] = useState<{ key: string; files: RepoFile[] }>({
+    key: '',
+    files: [],
+  });
+  useEffect(() => {
+    // Nothing to read: the files already on hand are stamped with the paths
+    // they came from, so an empty list needs no clearing — reading the stamp
+    // below is what makes them disappear.
+    if (envPaths.length === 0) return;
+    let cancelled = false;
+    void window.mvpfy
+      .readRepoFiles(project.localPath, envPaths)
+      .then((read) => {
+        if (!cancelled) setComponentEnv({ key: envPathKey, files: read });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [envPathKey, project.localPath, runningCount]);
+
+  const componentEnvFiles = parseComponents(contentOf(files, pf(BOOTSTRAP_FILE)))
+    .filter((component) => component.envFile)
+    .map((component) => ({
+      component: component.name,
+      name: component.envFile!,
+      content:
+        (componentEnv.key === envPathKey ? componentEnv.files : []).find(
+          (f) => f.relativePath === component.envFile
+        )?.content ?? '',
+    }))
+    .filter((entry) => entry.content.trim().length > 0);
+
   const ctx: ControllerContext = {
     project,
     state,
@@ -584,6 +632,7 @@ export function useProjectController(
     summaryContent: contentOf(files, pf(SUMMARY_FILE)),
     changeContent: contentOf(files, pf(CHANGE_FILE)),
     changeNeedsRestart: /restart:\s*yes/i.test(contentOf(files, pf(CHANGE_FILE)) ?? ''),
+    componentEnvFiles,
     envFile: (() => {
       for (const name of ENV_FILE_CANDIDATES) {
         const f = files.find((x) => x.relativePath === pf(name) && x.exists);

@@ -6,6 +6,7 @@ import {
   needsAnswer,
   parseComponents,
   runsLocally,
+  safeEnvPath,
   unanswered,
   validRemoteUrl,
   withDecision,
@@ -224,5 +225,34 @@ describe('a phone or desktop app is a client, not a service', () => {
       file([{ name: 'API', kind: 'api', state: 'found', decision: 'remote' }])
     );
     expect(componentLine(api, 'http://localhost:4102')).toBe('use the one already running');
+  });
+});
+
+describe('where each part reads its own env', () => {
+  it('keeps a path inside the workspace that is actually an env file', () => {
+    expect(safeEnvPath('.env')).toBe(true);
+    expect(safeEnvPath('web/.env')).toBe(true);
+    expect(safeEnvPath('apps/admin/.env.local')).toBe(true);
+    expect(safeEnvPath('web\\.env')).toBe(true);
+  });
+
+  it('refuses a path that climbs out, or is not env at all', () => {
+    // Read from a model-written file and then written TO: a wrong path here
+    // overwrites something that is not env.
+    expect(safeEnvPath('../../.env')).toBe(false);
+    expect(safeEnvPath('/etc/passwd')).toBe(false);
+    expect(safeEnvPath('C:\\Windows\\System32\\drivers\\etc\\hosts')).toBe(false);
+    expect(safeEnvPath('web/package.json')).toBe(false);
+    expect(safeEnvPath('')).toBe(false);
+  });
+
+  it('carries it on the component that reads it', () => {
+    const [web] = parseComponents(
+      file([{ name: 'Web', kind: 'web', state: 'found', repo: 'web', envFile: 'web/.env' }])
+    );
+    expect(web.envFile).toBe('web/.env');
+    // A path that is not safe is dropped rather than carried.
+    const [bad] = parseComponents(file([{ name: 'Web', envFile: '../../../.ssh/config' }]));
+    expect(bad.envFile).toBeUndefined();
   });
 });

@@ -78,6 +78,9 @@ Rules for the components list:
 • A missing component is the most useful thing in this file. Setting up without one produces
   an app that half works with nothing on screen saying which half — so look for them
   deliberately rather than describing only what is in front of you.
+• Where you can already see it, say which env file that part reads, as "envFile" — a Vite
+  app's own .env, a Rails app's own, the root one for the stack. Leave it out when you do
+  not know yet; the next run works it out and writes it.
 • A phone app or a desktop app belongs on this list — the product manager needs to know it
   is part of the product — but it is a client somebody installs, not something that can run
   in this environment. Say what it is; the next run will tell them how to run it themselves.

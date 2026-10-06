@@ -1292,6 +1292,14 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
 
           <EnvVarsCard c={c} />
 
+          {/* An app that inlines its own variables at build time reads a file
+              in its own repository, not the one the stack reads. Shown apart
+              and named, because a variable in the wrong file is set and
+              ignored — and nothing anywhere says so. */}
+          {c.componentEnvFiles.map((env) => (
+            <EnvVarsCard key={env.name} c={c} file={env} title={env.component} />
+          ))}
+
           <div className="px-1">
             {confirmRemove ? (
               <div className="text-xs">

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   addComponent,
+  componentLine,
+  isClient,
   needsAnswer,
   parseComponents,
   runsLocally,
@@ -183,5 +185,44 @@ describe('adding a part the code never revealed', () => {
 
   it('ignores an empty name rather than adding a nameless row', () => {
     expect(addComponent([], '   ', 'mobile')).toEqual([]);
+  });
+});
+
+describe('a phone or desktop app is a client, not a service', () => {
+  it('never runs in the environment mvpfy builds', () => {
+    // No container is an installed app on somebody's phone. Saying "runs here"
+    // beside a web app put a green dot next to something unopenable.
+    const list = parseComponents(
+      file([
+        { id: 'web', name: 'Website', kind: 'web', state: 'found' },
+        { id: 'android', name: 'Android app', kind: 'mobile', state: 'found' },
+        { id: 'desktop', name: 'Desktop app', kind: 'desktop', state: 'found' },
+      ])
+    );
+    expect(list.map(runsLocally)).toEqual([true, false, false]);
+    expect(isClient('mobile')).toBe(true);
+    expect(isClient('desktop')).toBe(true);
+    expect(isClient('web')).toBe(false);
+  });
+
+  it('tells the builder the address to point it at, which is the useful half', () => {
+    const [client] = parseComponents(file([{ name: 'Android app', kind: 'mobile' }]));
+    expect(componentLine(client, 'http://localhost:4102')).toBe(
+      'you run this one — point it at http://localhost:4102'
+    );
+  });
+
+  it('still says plainly when one was left out', () => {
+    const [client] = parseComponents(
+      file([{ name: 'Android app', kind: 'mobile', state: 'missing', decision: 'skip' }])
+    );
+    expect(componentLine(client, 'http://localhost:4102')).toBe('left out');
+  });
+
+  it('says what a service is doing, unchanged', () => {
+    const [api] = parseComponents(
+      file([{ name: 'API', kind: 'api', state: 'found', decision: 'remote' }])
+    );
+    expect(componentLine(api, 'http://localhost:4102')).toBe('use the one already running');
   });
 });

@@ -78,6 +78,9 @@ Rules for the components list:
 • A missing component is the most useful thing in this file. Setting up without one produces
   an app that half works with nothing on screen saying which half — so look for them
   deliberately rather than describing only what is in front of you.
+• A phone app or a desktop app belongs on this list — the product manager needs to know it
+  is part of the product — but it is a client somebody installs, not something that can run
+  in this environment. Say what it is; the next run will tell them how to run it themselves.
 • Never mark something missing just because it is a third-party service (Stripe, S3, an
   email provider). Those are stand-ins you plan as tasks, not parts of the product.
 • Do not decide what to do about a missing component. The product manager answers that, and

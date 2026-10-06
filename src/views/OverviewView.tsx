@@ -4,7 +4,8 @@ import { parsePorts } from '../lib/ports';
 import {
   COMPONENT_LABELS,
   type ComponentKind,
-  decisionLabel,
+  componentLine,
+  isClient,
   runsLocally,
 } from '../lib/components';
 import { tenancyLine } from '../lib/tenancy';
@@ -297,16 +298,22 @@ function ProductComponents({ c }: { c: ProjectController }) {
               point(p.id)
             ) : (
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => {
-                    setPointing(p.id);
-                    setUrl('');
-                  }}
-                  title="It is already running somewhere — give mvpfy the address and nothing is built for it"
-                  className="btn-secondary h-8 px-3"
-                >
-                  It runs at a URL
-                </button>
+                {/* Not offered for a phone or desktop app: there is nothing to
+                    stand in for and no address it answers on. It is a thing
+                    somebody installs, and the only question is whether it
+                    belongs to this product. */}
+                {!isClient(p.kind) && (
+                  <button
+                    onClick={() => {
+                      setPointing(p.id);
+                      setUrl('');
+                    }}
+                    title="It is already running somewhere — give mvpfy the address and nothing is built for it"
+                    className="btn-secondary h-8 px-3"
+                  >
+                    It runs at a URL
+                  </button>
+                )}
                 <button
                   onClick={() => void c.decideComponent(p.id, 'elsewhere')}
                   title="Its code is in another repository — add that repository, then choose this"
@@ -314,13 +321,15 @@ function ProductComponents({ c }: { c: ProjectController }) {
                 >
                   It is in another repo
                 </button>
-                <button
-                  onClick={() => void c.decideComponent(p.id, 'stand-in')}
-                  title="mvpfy writes a small fake version that answers with realistic data, so everything depending on it still runs"
-                  className="btn-secondary h-8 px-3"
-                >
-                  Fake it for now
-                </button>
+                {!isClient(p.kind) && (
+                  <button
+                    onClick={() => void c.decideComponent(p.id, 'stand-in')}
+                    title="mvpfy writes a small fake version that answers with realistic data, so everything depending on it still runs"
+                    className="btn-secondary h-8 px-3"
+                  >
+                    Fake it for now
+                  </button>
+                )}
                 <button
                   onClick={() => void c.decideComponent(p.id, 'skip')}
                   title="Leave it out of what runs here"
@@ -348,11 +357,22 @@ function ProductComponents({ c }: { c: ProjectController }) {
                 />
                 <span className="text-[13px] text-body">{p.name}</span>
                 <span className="text-[11px] text-faint">{COMPONENT_LABELS[p.kind]}</span>
-                <span className="text-[11.5px] text-muted">
-                  {p.decision ? decisionLabel(p.decision) : 'runs here'}
-                </span>
+                <span className="text-[11.5px] text-muted">{componentLine(p, c.appUrl)}</span>
                 {p.url && <span className="font-mono text-[11px] text-muted">{p.url}</span>}
-                {pointing !== p.id && (
+                {/* No container is an installed app, but the agent is on this
+                    machine with the builder's own toolchains — so the thing to
+                    offer is not an address, it is starting it. */}
+                {isClient(p.kind) && p.decision !== 'skip' && (
+                  <button
+                    onClick={() => void c.runClient(p)}
+                    disabled={c.busy || c.runningClient === p.name}
+                    title="mvpfy asks your agent to start this on your machine, pointed at the backend already running here"
+                    className="ml-auto text-[11.5px] text-go hover:underline disabled:opacity-50"
+                  >
+                    {c.runningClient === p.name ? 'starting…' : 'run it on my machine'}
+                  </button>
+                )}
+                {pointing !== p.id && !isClient(p.kind) && (
                   <button
                     onClick={() => {
                       setPointing(p.id);

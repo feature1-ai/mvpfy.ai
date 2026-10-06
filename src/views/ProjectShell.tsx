@@ -342,6 +342,7 @@ const RUN_LABELS: Record<string, string> = {
   ship: 'Shipping a pull request',
   'raise-pr': 'Raising pull requests',
   'auto-merge': 'Asking GitHub to merge when checks pass',
+  'run-client': 'Starting the app on your machine',
   'push-feature': 'Pushing the feature to Feature1',
   'sync-feature': 'Syncing the feature with Feature1',
   share: 'Sharing the app',

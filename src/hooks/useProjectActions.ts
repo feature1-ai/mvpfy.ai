@@ -10,6 +10,7 @@ import {
 } from '../../shared/types';
 import {
   startAppLogsRun,
+  startRunClientRun,
   startSeedRun,
   isAmbientRun,
   makeRunId,
@@ -51,6 +52,10 @@ export interface ProjectActions {
   dismissQuestions(): Promise<boolean>;
   /** Arm or disarm GitHub's auto-merge for this project's pull requests. */
   setAutoMerge(on: boolean): Promise<boolean>;
+  /** Start a desktop or phone app on this machine, through the agent. */
+  runClient(component: { id: string; name: string; kind: string; repo?: string }): Promise<boolean>;
+  /** The client app being started or running, if any. */
+  runningClient: string | null;
   dismissTriage(): Promise<boolean>;
   saveEnv(name: string, content: string): Promise<boolean>;
   /** Pull the latest changes from each repo's remote into the clone. */
@@ -97,6 +102,7 @@ export function useProjectActions(
   const { project, state, updateState, runsApi, projectRuns, pf, files, refreshFiles, guarded } =
     ctx;
   const [answersDraft, setAnswersDraft] = useState('');
+  const [runningClient, setRunningClient] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -421,6 +427,25 @@ export function useProjectActions(
    * repository a team reviews and one nobody else touches can belong to the
    * same person, and the wrong answer on the first is not recoverable.
    */
+  /**
+   * Run a part of the product that has no container: the agent is on this
+   * machine with the builder's own toolchains, so it is the one thing here
+   * that can open a window or start a bundler a phone can reach.
+   */
+  const runClient = (component: { id: string; name: string; kind: string; repo?: string }) =>
+    guarded(async () => {
+      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
+      if (authProblem) throw new Error(authProblem);
+      const handle = await startRunClientRun(
+        project,
+        state.settings,
+        component,
+        `http://localhost:${project.basePort}`
+      );
+      runsApi.track(handle);
+      setRunningClient(component.name);
+    });
+
   const setAutoMerge = (on: boolean) =>
     guarded(async () => {
       updateState((prev) => ({
@@ -602,6 +627,10 @@ export function useProjectActions(
     saveAnswersAndRerun,
     dismissQuestions,
     setAutoMerge,
+    runClient,
+    runningClient: projectRuns.some((r) => r.running && r.handle.kind === 'run-client')
+      ? runningClient
+      : null,
     docker,
     rebootstrap,
     seed,

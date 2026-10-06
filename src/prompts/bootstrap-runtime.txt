@@ -171,6 +171,14 @@ Rules:
       the same host, path or header — rather than whatever that server treats as default.
   That last one matters most: a remote service is somebody's real environment, and asking it
   for the wrong customer is reading another customer's data.
+• A phone app or a desktop app is a CLIENT, not a service. Never build an image for one,
+  never add it to the compose file, and never report it as part of what is running. There is
+  no container that is an installed app on somebody's phone, and pretending otherwise gives
+  the product manager a green dot for something they cannot open. Instead, write in
+  mvpfy-run.md how to run it on their own machine — the one command for its toolchain, and
+  the local address to point it at so it talks to the backend you did start. If it needs a
+  development server that can reasonably run in a container (a Metro or Expo bundler, say),
+  that bundler may be a service; the app itself still is not.
 • A remote component is not a fallback. If its address does not answer, say so plainly in
   mvpfy-run.md and let it fail loudly — quietly standing in for something the product
   manager told you is real is how they end up testing against fake data without knowing.

@@ -219,10 +219,39 @@ export function withDecision(
   );
 }
 
+/**
+ * A part of the product that runs on somebody's own machine, not in the
+ * environment mvpfy builds.
+ *
+ * A phone app and a desktop app are clients: they are installed, launched and
+ * looked at by a person, and no container on localhost is any of those things.
+ * Calling them "runs here" beside a web app and a database was a lie with a
+ * green dot next to it — and the lie points the wrong way, because what the
+ * builder actually needs to know about a client is the address to point it at.
+ */
+export function isClient(kind: ComponentKind): boolean {
+  return kind === 'mobile' || kind === 'desktop';
+}
+
 /** Running here is the default, and the only thing that needs a container. */
 export function runsLocally(component: ProductComponent): boolean {
+  // A client is never built here, whatever else is true of it.
+  if (isClient(component.kind)) return false;
   if (component.decision === 'remote' || component.decision === 'skip') return false;
   return component.state === 'found' || component.decision === 'elsewhere';
+}
+
+/**
+ * What this part is doing, in one line. A client gets the address it should be
+ * pointed at, because that is the only thing mvpfy can usefully tell somebody
+ * about an app they will launch themselves.
+ */
+export function componentLine(component: ProductComponent, appUrl: string): string {
+  if (isClient(component.kind)) {
+    return component.decision === 'skip' ? 'left out' : `you run this one — point it at ${appUrl}`;
+  }
+  if (component.decision) return decisionLabel(component.decision);
+  return component.state === 'found' ? 'runs here' : 'not here yet';
 }
 
 /** What setup is being asked to do, in one line the PM can check. */

@@ -155,6 +155,10 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   dismissQuestions(): Promise<boolean>;
   /** Arm or disarm GitHub's auto-merge for this project's pull requests. */
   setAutoMerge(on: boolean): Promise<boolean>;
+  /** Start a desktop or phone app on this machine, through the agent. */
+  runClient(component: { id: string; name: string; kind: string; repo?: string }): Promise<boolean>;
+  /** The client app being started or running, if any. */
+  runningClient: string | null;
   docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
   /** Run setup again on a project that already has generated files. */
   rebootstrap(): Promise<boolean>;

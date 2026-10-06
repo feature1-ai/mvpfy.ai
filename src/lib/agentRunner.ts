@@ -16,6 +16,7 @@ import pushFeatureTemplate from '../prompts/push-feature.txt?raw';
 import syncFeatureTemplate from '../prompts/sync-feature.txt?raw';
 import featureChangeTemplate from '../prompts/feature-change.txt?raw';
 import resolveConflictsTemplate from '../prompts/resolve-conflicts.txt?raw';
+import runClientTemplate from '../prompts/run-client.txt?raw';
 import installToolsTemplate from '../prompts/install-tools.txt?raw';
 import {
   AgentKind,
@@ -142,6 +143,7 @@ export type RunKind =
   | 'plan-story'
   | 'raise-pr'
   | 'auto-merge'
+  | 'run-client'
   | 'push-feature'
   | 'sync-feature'
   | 'feature-change'
@@ -179,7 +181,11 @@ export function lostConversation(log: string | null | undefined): boolean {
  * A set rather than a condition at each site, because the last time a run of
  * this shape was added the one place that knew the rule was not updated.
  */
-export const AMBIENT_RUNS: ReadonlySet<RunKind> = new Set<RunKind>(['app-logs', 'share']);
+export const AMBIENT_RUNS: ReadonlySet<RunKind> = new Set<RunKind>([
+  'app-logs',
+  'share',
+  'run-client',
+]);
 
 export function isAmbientRun(kind: RunKind): boolean {
   return AMBIENT_RUNS.has(kind);
@@ -838,6 +844,42 @@ export async function startResolveMergeRun(
     ...(session ? { session } : {}),
   });
   return { runId, kind: 'resolve-merge', projectId: project.id, planSlug };
+}
+
+/**
+ * Start a part of the product that cannot run in a container — a desktop app,
+ * a phone app — using the agent already installed on this machine.
+ *
+ * mvpfy's environment is containers, and no container is an installed app on
+ * somebody's phone. But the agent is not in a container: it is on the builder's
+ * own machine with their own toolchains, which makes it the one thing here that
+ * CAN open a window or start a bundler a phone connects to. Writing
+ * instructions into a file and calling it handled was the alternative, and a
+ * product manager is exactly the person who cannot follow them.
+ *
+ * Ambient: it lasts as long as the app does, like a followed log or a share.
+ */
+export async function startRunClientRun(
+  project: Project,
+  settings: Settings,
+  component: { id: string; name: string; kind: string; repo?: string },
+  appUrl: string
+): Promise<RunHandle> {
+  const runId = makeRunId('runclient');
+  await window.mvpfy.runAgent({
+    runId,
+    repoPath: project.localPath,
+    promptText: fillTemplate(runClientTemplate, {
+      repoPath: project.localPath,
+      workspaceNote: workspaceNoteFor(project),
+      componentName: component.name,
+      componentKind: component.kind,
+      componentRepo: component.repo || project.localPath,
+      appUrl,
+    }),
+    ...agentFor(settings),
+  });
+  return { runId, kind: 'run-client', projectId: project.id };
 }
 
 /** Fast-forward pull each repo of the workspace from its remote. */

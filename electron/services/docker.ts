@@ -270,6 +270,33 @@ export function composeCommand(action: ComposeAction, linked = false): string {
   return `${ENSURE_DAEMON} && ${compose}`;
 }
 
+/**
+ * Restart one service, picking up whatever its env file now says.
+ *
+ * `docker compose restart` is the obvious command and the wrong one: it stops
+ * and starts the container it already has, environment and all, so a variable
+ * just changed is read by nothing. The container has to be recreated for a new
+ * value to reach the process inside it — which is why the button that appears
+ * after saving a variable cannot be a restart in docker's sense of the word.
+ *
+ * `--no-deps` keeps it to the one service. Recreating a backend should not
+ * take the database down with it, and the whole point of restarting one part
+ * is that the rest of the stack stays up.
+ */
+export function restartServiceCommand(service: string, linked = false): string {
+  // A compose service name and nothing else: this reaches a command line.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/.test(service.trim())) {
+    throw new Error('That is not a service name');
+  }
+  const base = linked
+    ? 'docker compose -f .mvpfy/docker-compose.mvpfy.yml --project-directory .'
+    : 'docker compose -f docker-compose.mvpfy.yml';
+  return (
+    `${ENSURE_DAEMON} && echo ${shellQuote(`── restarting ${service.trim()}`)} && ` +
+    `${base} up -d --force-recreate --no-deps ${shellQuote(service.trim())}`
+  );
+}
+
 export function ideCommand(workspacePath: string, action: 'up' | 'down', port?: number): string {
   const name = ideContainerName(workspacePath);
   if (action === 'down') return `${ENSURE_DAEMON} && docker rm -f ${name}`;

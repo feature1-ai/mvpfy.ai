@@ -139,6 +139,8 @@ const api: MvpfyApi = {
     ipcRenderer.invoke('delete-feature', workspacePath, configDir, slug),
   pullRequestStates: (urls: string[]) => ipcRenderer.invoke('pr-states', urls),
   simulators: () => ipcRenderer.invoke('simulators'),
+  restartService: (runId: string, repoPath: string, service: string) =>
+    ipcRenderer.invoke('restart-service', runId, repoPath, service),
   notify: (notice: { title: string; body: string }) => ipcRenderer.invoke('notify', notice),
   autoMergePullRequests: (runId: string, workspacePath: string, urls: string[]) =>
     ipcRenderer.invoke('auto-merge-prs', runId, workspacePath, urls),

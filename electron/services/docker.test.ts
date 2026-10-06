@@ -7,6 +7,7 @@ import {
   ideCommand,
   ideContainerName,
   parseComposePs,
+  restartServiceCommand,
   seedCommandFor,
 } from './docker';
 import { IS_WIN } from './shell';
@@ -226,5 +227,36 @@ describe('parseComposePs health', () => {
 
   it('reports no healthcheck as empty rather than as a failure', () => {
     expect(parseComposePs('{"Service":"web","State":"running","ExitCode":0}')[0].health).toBe('');
+  });
+});
+
+describe('restartServiceCommand', () => {
+  it('recreates rather than restarts, so a changed variable is actually read', () => {
+    // `docker compose restart` stops and starts the container it already has,
+    // environment and all — the new value reaches nothing.
+    const cmd = restartServiceCommand('backend');
+    expect(cmd).toContain('up -d --force-recreate');
+    expect(cmd).not.toMatch(/compose[^&]*\srestart\b/);
+  });
+
+  it('keeps it to the one service, so the database stays up', () => {
+    expect(restartServiceCommand('backend')).toContain('--no-deps');
+    // Quoted, because a service name reaches a command line like any other
+    // interpolated value here.
+    expect(restartServiceCommand('backend')).toMatch(/--no-deps ["']backend["']/);
+  });
+
+  it('checks the daemon first, like every other action that touches containers', () => {
+    expect(restartServiceCommand('backend').startsWith('docker info')).toBe(true);
+  });
+
+  it('finds the compose file where a linked project keeps it', () => {
+    expect(restartServiceCommand('web', true)).toContain('.mvpfy/docker-compose.mvpfy.yml');
+  });
+
+  it('refuses anything that is not a service name, because this is a command line', () => {
+    expect(() => restartServiceCommand('backend; rm -rf /')).toThrow(/not a service name/);
+    expect(() => restartServiceCommand('$(whoami)')).toThrow();
+    expect(() => restartServiceCommand('')).toThrow();
   });
 });

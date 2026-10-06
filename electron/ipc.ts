@@ -22,6 +22,7 @@ import {
 } from './services/cli';
 import {
   composeCommand,
+  restartServiceCommand,
   composeProgress,
   composeStatus,
   ideCommand,
@@ -116,6 +117,14 @@ export function registerIpc(): void {
       startRun(runId, composeCommand(action, linked), resolved);
     }
   );
+  ipcMain.handle('restart-service', (_ev, runId: string, repoPath: string, service: string) => {
+    const resolved = path.resolve(repoPath);
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('docker compose is restricted to managed and linked project directories');
+    }
+    const linked = isLinkedPath(resolved) && !isManagedPath(resolved);
+    startRun(runId, restartServiceCommand(service, linked), resolved);
+  });
   ipcMain.handle(
     'ide',
     (_ev, runId: string, workspacePath: string, action: 'up' | 'down', port?: number) => {

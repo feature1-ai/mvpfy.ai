@@ -163,6 +163,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   ): Promise<boolean>;
   /** Simulators, emulators and phones this machine can run an app on. */
   runTargets: { ios: string[]; android: string[]; devices: string[] };
+  /** Recreate one service, so a variable just changed is actually read. */
+  restartService(service: string): Promise<boolean>;
   /** The client app being started or running, if any. */
   runningClient: string | null;
   docker(action: Exclude<ComposeAction, 'logs'>): Promise<boolean>;
@@ -188,7 +190,12 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   /** The env file the editor works on: first existing candidate, or null. */
   envFile: { name: string; content: string } | null;
   /** One per part of the product that reads its own env file. */
-  componentEnvFiles: Array<{ component: string; name: string; content: string }>;
+  componentEnvFiles: Array<{
+    component: string;
+    name: string;
+    content: string;
+    service?: string;
+  }>;
   /** Content of .env.mvpfy.example when present (seed for a new env file). */
   envExample: string | null;
   saveEnv(name: string, content: string): Promise<boolean>;
@@ -515,6 +522,7 @@ export function useProjectController(
     .map((component) => ({
       component: component.name,
       name: component.envFile!,
+      ...(component.service ? { service: component.service } : {}),
       content:
         (componentEnv.key === envPathKey ? componentEnv.files : []).find(
           (f) => f.relativePath === component.envFile

@@ -77,6 +77,12 @@ export interface ProductComponent {
    * given the value.
    */
   envFile?: string;
+  /**
+   * The compose service that runs it, when one does. What makes restarting
+   * this part alone possible — and what tells mvpfy that a part it is showing
+   * is actually a container rather than a client or an address.
+   */
+  service?: string;
 }
 
 export interface ComponentInventory {
@@ -135,6 +141,7 @@ export function parseComponents(raw: string | null | undefined): ProductComponen
       ...(DECISIONS.has(decision) ? { decision: decision as ComponentDecision } : {}),
       ...(validRemoteUrl(text(o.url)) ? { url: text(o.url) } : {}),
       ...(safeEnvPath(text(o.envFile)) ? { envFile: text(o.envFile) } : {}),
+      ...(validServiceName(text(o.service)) ? { service: text(o.service) } : {}),
     });
   }
   return out;
@@ -181,6 +188,11 @@ export function safeEnvPath(value: string | null | undefined): boolean {
   if (path.startsWith('/') || path.startsWith('\\') || /^[a-zA-Z]:/.test(path)) return false;
   if (path.split(/[\\/]/).some((part) => part === '..')) return false;
   return /(^|[\\/])\.env(\.[A-Za-z0-9_.-]+)?$/.test(path);
+}
+
+/** A compose service name and nothing else: it reaches a command line. */
+export function validServiceName(value: string | null | undefined): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/.test((value ?? '').trim());
 }
 
 /** The pieces still waiting on the only person who can answer for them. */

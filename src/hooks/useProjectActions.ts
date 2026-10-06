@@ -59,6 +59,8 @@ export interface ProjectActions {
   ): Promise<boolean>;
   /** Simulators, emulators and phones this machine can run an app on. */
   runTargets: { ios: string[]; android: string[]; devices: string[] };
+  /** Recreate one service, so a variable just changed is actually read. */
+  restartService(service: string): Promise<boolean>;
   /** The client app being started or running, if any. */
   runningClient: string | null;
   dismissTriage(): Promise<boolean>;
@@ -474,6 +476,20 @@ export function useProjectActions(
       setRunningClient(component.name);
     });
 
+  /**
+   * Restart one part of the product rather than the stack.
+   *
+   * After changing a variable that belongs to one app, taking the database and
+   * everything else down with it is a minute of waiting for no reason — and on
+   * a stack with a slow service, enough of a reason not to change the variable.
+   */
+  const restartService = (service: string) =>
+    guarded(async () => {
+      const runId = makeRunId('docker-up');
+      runsApi.track({ runId, kind: 'docker-up', projectId: project.id });
+      await window.mvpfy.restartService(runId, project.localPath, service);
+    });
+
   const setAutoMerge = (on: boolean) =>
     guarded(async () => {
       updateState((prev) => ({
@@ -657,6 +673,7 @@ export function useProjectActions(
     setAutoMerge,
     runClient,
     runTargets,
+    restartService,
     runningClient: projectRuns.some((r) => r.running && r.handle.kind === 'run-client')
       ? runningClient
       : null,

@@ -602,7 +602,11 @@ export interface MvpfyApi {
   /** Recreate one compose service, so a changed variable is actually read. */
   restartService(runId: string, repoPath: string, service: string): Promise<void>;
   /** What this machine can run a phone app on: simulators, emulators, phones. */
-  simulators(): Promise<{ ios: string[]; android: string[]; devices: string[] }>;
+  simulators(): Promise<{
+    ios: string[];
+    android: string[];
+    devices: Array<{ serial: string; label: string }>;
+  }>;
   /** A desktop notification, shown only while mvpfy is not the focused window. */
   notify(notice: { title: string; body: string }): Promise<boolean>;
   /** Ask GitHub to merge these pull requests itself once their checks pass. */

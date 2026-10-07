@@ -1,5 +1,5 @@
 import { updateLocalDatabase } from '../lib/prepareFeaturePreview';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ANSWERS_FILE,
   BOOTSTRAP_FILE,
@@ -58,7 +58,13 @@ export interface ProjectActions {
     target?: string
   ): Promise<boolean>;
   /** Simulators, emulators and phones this machine can run an app on. */
-  runTargets: { ios: string[]; android: string[]; devices: string[] };
+  runTargets: {
+    ios: string[];
+    android: string[];
+    devices: Array<{ serial: string; label: string }>;
+  };
+  /** Ask the machine again — a phone plugged in a minute ago was not there. */
+  refreshRunTargets(): void;
   /** Recreate one service, so a variable just changed is actually read. */
   restartService(service: string): Promise<boolean>;
   /** The client app being started or running, if any. */
@@ -115,8 +121,14 @@ export function useProjectActions(
   const [runTargets, setRunTargets] = useState<{
     ios: string[];
     android: string[];
-    devices: string[];
+    devices: Array<{ serial: string; label: string }>;
   }>({ ios: [], android: [], devices: [] });
+  // Asked again on request, not only once: a phone is plugged in at the moment
+  // somebody wants to use it, which is after this screen opened. Probed on
+  // mount so the common case needs no click, and re-probed when the list is
+  // about to be read.
+  const [targetsNonce, setTargetsNonce] = useState(0);
+  const refreshRunTargets = useCallback(() => setTargetsNonce((n) => n + 1), []);
   useEffect(() => {
     let cancelled = false;
     void window.mvpfy
@@ -128,7 +140,7 @@ export function useProjectActions(
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [targetsNonce]);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -673,6 +685,7 @@ export function useProjectActions(
     setAutoMerge,
     runClient,
     runTargets,
+    refreshRunTargets,
     restartService,
     runningClient: projectRuns.some((r) => r.running && r.handle.kind === 'run-client')
       ? runningClient

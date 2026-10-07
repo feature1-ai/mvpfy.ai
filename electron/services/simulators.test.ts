@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAdbDevices, parseAvds, parseIosSimulators } from './simulators';
+import { deviceLabel, parseAdbDevices, parseAvds, parseIosSimulators } from './simulators';
 
 describe('parseIosSimulators', () => {
   const json = JSON.stringify({
@@ -60,5 +60,16 @@ describe('parseAdbDevices', () => {
 
   it('is empty when adb is not here at all', () => {
     expect(parseAdbDevices('')).toEqual([]);
+  });
+});
+
+describe('deviceLabel', () => {
+  it("uses the phone's own name, because a serial is not one", () => {
+    expect(deviceLabel('39081FDJG', 'Pixel 7')).toBe('Pixel 7 (39081FDJG)');
+  });
+
+  it('falls back to the serial rather than printing whatever came back', () => {
+    expect(deviceLabel('39081FDJG', '')).toBe('39081FDJG');
+    expect(deviceLabel('39081FDJG', 'error: device offline')).toBe('39081FDJG');
   });
 });

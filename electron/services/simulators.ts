@@ -20,8 +20,12 @@ export interface SimulatorTargets {
   ios: string[];
   /** Android virtual devices that exist on this machine. */
   android: string[];
-  /** Phones and running emulators adb can see right now. */
-  devices: string[];
+  /**
+   * Phones and running emulators adb can see right now, with the model name
+   * where it can be read. A serial is not something anybody recognises as
+   * their own phone; "Pixel 7" is.
+   */
+  devices: Array<{ serial: string; label: string }>;
 }
 
 /**
@@ -78,6 +82,12 @@ export function parseAdbDevices(text: string): string[] {
     .map((parts) => parts[0]);
 }
 
+/** A device's own name for itself, when adb will say. */
+export function deviceLabel(serial: string, model: string): string {
+  const name = model.trim();
+  return name && /^[\w .+-]{1,40}$/.test(name) ? `${name} (${serial})` : serial;
+}
+
 const ask = (command: string): string => {
   const res = spawnShellSync(command, { encoding: 'utf8', timeout: 20_000 });
   return res.status === 0 ? res.stdout : '';
@@ -99,6 +109,13 @@ export function simulatorTargets(): SimulatorTargets {
   const android = parseAvds(
     ask('emulator -list-avds') || ask(`"${home}/emulator/emulator" -list-avds`)
   );
-  const devices = parseAdbDevices(ask('adb devices'));
+  const devices = parseAdbDevices(ask('adb devices')).map((serial) => ({
+    serial,
+    // Quoted because a serial comes from outside and reaches a command line.
+    label: deviceLabel(
+      serial,
+      ask(`adb -s '${serial.replace(/'/g, '')}' shell getprop ro.product.model`)
+    ),
+  }));
   return { ios, android, devices };
 }

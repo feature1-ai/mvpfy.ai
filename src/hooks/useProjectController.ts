@@ -162,7 +162,13 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
     target?: string
   ): Promise<boolean>;
   /** Simulators, emulators and phones this machine can run an app on. */
-  runTargets: { ios: string[]; android: string[]; devices: string[] };
+  runTargets: {
+    ios: string[];
+    android: string[];
+    devices: Array<{ serial: string; label: string }>;
+  };
+  /** Ask the machine again — a phone plugged in a minute ago was not there. */
+  refreshRunTargets(): void;
   /** Recreate one service, so a variable just changed is actually read. */
   restartService(service: string): Promise<boolean>;
   /** The client app being started or running, if any. */

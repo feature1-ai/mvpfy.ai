@@ -229,18 +229,25 @@ function ClientRun({
   const phone = component.kind === 'mobile';
   const choices: Array<{ label: string; target: string }> = [];
   if (phone) {
-    if (ios[0])
+    // A phone plugged in by cable comes first: it is the one somebody went and
+    // did something physical for, so it is almost certainly what they meant.
+    for (const device of devices.slice(0, 3))
       choices.push({
-        label: `iOS Simulator — ${ios[0]}`,
-        target: `the iOS Simulator, device "${ios[0]}"`,
+        label: `${device.label} — plugged in`,
+        target: `the connected device ${device.serial}`,
       });
-    if (android[0])
+    // Every simulator and emulator, not just the first: a machine with four
+    // iPhones in it has four because the difference matters to somebody.
+    for (const device of ios.slice(0, 4))
       choices.push({
-        label: `Android emulator — ${android[0]}`,
-        target: `the Android emulator, AVD "${android[0]}"`,
+        label: `iOS Simulator — ${device}`,
+        target: `the iOS Simulator, device "${device}"`,
       });
-    for (const serial of devices.slice(0, 2))
-      choices.push({ label: `the device ${serial}`, target: `the connected device ${serial}` });
+    for (const avd of android.slice(0, 4))
+      choices.push({
+        label: `Android emulator — ${avd}`,
+        target: `the Android emulator, AVD "${avd}"`,
+      });
     choices.push({
       label: 'my own phone, over the network',
       target:
@@ -264,7 +271,12 @@ function ClientRun({
   return (
     <div className="ml-auto flex flex-col items-end gap-1">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // Asked again as the list is opened: the phone was plugged in to be
+          // used, which is after this screen was drawn.
+          if (!open) c.refreshRunTargets();
+          setOpen((v) => !v);
+        }}
         disabled={c.busy}
         className="text-[11.5px] text-go hover:underline disabled:opacity-50"
       >

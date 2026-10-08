@@ -1,4 +1,6 @@
-import { IS_WIN, spawnShellSync } from './shell';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { IS_WIN, shellQuote, spawnShellSync } from './shell';
 
 /**
  * The phones this machine can pretend to be.
@@ -88,10 +90,73 @@ export function deviceLabel(serial: string, model: string): string {
   return name && /^[\w .+-]{1,40}$/.test(name) ? `${name} (${serial})` : serial;
 }
 
+/**
+ * Where to look for the Android tools, in order. What somebody set themselves
+ * comes first, because they meant it; then where Android Studio puts the SDK
+ * when nobody tells it otherwise.
+ */
+export function androidSdkRoots(env: NodeJS.ProcessEnv, platform: string): string[] {
+  // The platform asked about, not the one this is running on: these take a
+  // platform argument so they can be checked for every machine from any of
+  // them, and joining with the host's separator makes that a lie.
+  const join = platform === 'win32' ? path.win32.join : path.posix.join;
+  const home = env.HOME || env.USERPROFILE || '';
+  const fallback =
+    platform === 'win32'
+      ? join(env.LOCALAPPDATA || home, 'Android', 'Sdk')
+      : platform === 'darwin'
+        ? join(home, 'Library', 'Android', 'sdk')
+        : join(home, 'Android', 'Sdk');
+  return [env.ANDROID_HOME, env.ANDROID_SDK_ROOT, fallback].filter((root): root is string =>
+    Boolean(root && root.trim())
+  );
+}
+
+/**
+ * The first of those roots that actually holds the tool.
+ *
+ * Resolved in Node rather than by chaining `||` in a shell, which was the
+ * first attempt and was wrong twice over: the arguments attach only to the
+ * last alternative in the chain, and `2>/dev/null` is not a thing on Windows.
+ */
+export function androidToolPath(
+  tool: 'adb' | 'emulator',
+  roots: string[],
+  exists: (path: string) => boolean,
+  platform: string = process.platform
+): string | null {
+  const join = platform === 'win32' ? path.win32.join : path.posix.join;
+  const dir = tool === 'adb' ? 'platform-tools' : 'emulator';
+  const file = platform === 'win32' ? `${tool}.exe` : tool;
+  for (const root of roots) {
+    const full = join(root, dir, file);
+    if (exists(full)) return full;
+  }
+  return null;
+}
+
 const ask = (command: string): string => {
   const res = spawnShellSync(command, { encoding: 'utf8', timeout: 20_000 });
   return res.status === 0 ? res.stdout : '';
 };
+
+/**
+ * `adb` and `emulator`, wherever they are.
+ *
+ * Neither is on PATH after a default Android Studio install — they live in the
+ * SDK, and putting them on PATH is something a developer does to their shell
+ * profile one day and forgets. Asking the shell for a bare `adb` therefore
+ * finds nothing on a machine with a phone plugged into it, which is precisely
+ * the machine that has one.
+ */
+function androidTool(tool: 'adb' | 'emulator'): string | null {
+  const probe = IS_WIN ? `where ${tool}` : `command -v ${tool}`;
+  if (spawnShellSync(probe, { encoding: 'utf8', timeout: 10_000 }).status === 0) return tool;
+  const found = androidToolPath(tool, androidSdkRoots(process.env, process.platform), (p) =>
+    fs.existsSync(p)
+  );
+  return found ? shellQuote(found) : null;
+}
 
 /** What this machine can run a phone app on, right now. */
 export function simulatorTargets(): SimulatorTargets {
@@ -99,23 +164,17 @@ export function simulatorTargets(): SimulatorTargets {
     process.platform === 'darwin'
       ? parseIosSimulators(ask('xcrun simctl list devices available -j'))
       : [];
-  // The emulator binary is not on PATH in a default Android Studio install, so
-  // the usual home is tried as well before concluding there is nothing here.
-  const home = IS_WIN
-    ? '%LOCALAPPDATA%\\Android\\Sdk'
-    : process.platform === 'darwin'
-      ? '$HOME/Library/Android/sdk'
-      : '$HOME/Android/Sdk';
-  const android = parseAvds(
-    ask('emulator -list-avds') || ask(`"${home}/emulator/emulator" -list-avds`)
-  );
-  const devices = parseAdbDevices(ask('adb devices')).map((serial) => ({
-    serial,
-    // Quoted because a serial comes from outside and reaches a command line.
-    label: deviceLabel(
-      serial,
-      ask(`adb -s '${serial.replace(/'/g, '')}' shell getprop ro.product.model`)
-    ),
-  }));
+  const emulator = androidTool('emulator');
+  const adb = androidTool('adb');
+  const android = emulator ? parseAvds(ask(`${emulator} -list-avds`)) : [];
+  const devices = adb
+    ? parseAdbDevices(ask(`${adb} devices`)).map((serial) => ({
+        serial,
+        label: deviceLabel(
+          serial,
+          ask(`${adb} -s ${shellQuote(serial)} shell getprop ro.product.model`)
+        ),
+      }))
+    : [];
   return { ios, android, devices };
 }

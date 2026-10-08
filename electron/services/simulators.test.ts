@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { deviceLabel, parseAdbDevices, parseAvds, parseIosSimulators } from './simulators';
+import {
+  androidSdkRoots,
+  androidToolPath,
+  deviceLabel,
+  parseAdbDevices,
+  parseAvds,
+  parseIosSimulators,
+} from './simulators';
 
 describe('parseIosSimulators', () => {
   const json = JSON.stringify({
@@ -71,5 +78,47 @@ describe('deviceLabel', () => {
   it('falls back to the serial rather than printing whatever came back', () => {
     expect(deviceLabel('39081FDJG', '')).toBe('39081FDJG');
     expect(deviceLabel('39081FDJG', 'error: device offline')).toBe('39081FDJG');
+  });
+});
+
+describe('finding the Android tools', () => {
+  const mac = { HOME: '/Users/pm' } as NodeJS.ProcessEnv;
+
+  it('looks where Android Studio actually puts the SDK', () => {
+    // Neither adb nor emulator is on PATH after a default install — they live
+    // in the SDK. Asking the shell for a bare `adb` finds nothing on exactly
+    // the machine that has a phone plugged into it.
+    expect(androidSdkRoots(mac, 'darwin')).toEqual(['/Users/pm/Library/Android/sdk']);
+    expect(androidSdkRoots({ HOME: '/home/pm' }, 'linux')).toEqual(['/home/pm/Android/Sdk']);
+    expect(
+      androidSdkRoots(
+        { USERPROFILE: 'C:\\Users\\pm', LOCALAPPDATA: 'C:\\Users\\pm\\AppData\\Local' },
+        'win32'
+      )
+    ).toEqual(['C:\\Users\\pm\\AppData\\Local\\Android\\Sdk']);
+  });
+
+  it('prefers what somebody set themselves, because they meant it', () => {
+    expect(androidSdkRoots({ ...mac, ANDROID_HOME: '/opt/android' }, 'darwin')[0]).toBe(
+      '/opt/android'
+    );
+  });
+
+  it('returns the first root that actually holds the tool', () => {
+    const present = '/opt/android/platform-tools/adb';
+    expect(androidToolPath('adb', ['/nope', '/opt/android'], (p) => p === present, 'darwin')).toBe(
+      present
+    );
+  });
+
+  it('knows the tools live in different folders, and are .exe on Windows', () => {
+    expect(androidToolPath('emulator', ['/sdk'], () => true, 'darwin')).toBe(
+      '/sdk/emulator/emulator'
+    );
+    expect(androidToolPath('adb', ['C:\\sdk'], () => true, 'win32')).toContain('adb.exe');
+  });
+
+  it('is null when there is no SDK, rather than a path that is not there', () => {
+    expect(androidToolPath('adb', ['/nope'], () => false, 'darwin')).toBeNull();
   });
 });

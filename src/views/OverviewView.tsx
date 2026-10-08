@@ -227,14 +227,18 @@ function ClientRun({
   const running = c.runningClient === component.name;
   const { ios, android, devices } = c.runTargets;
   const phone = component.kind === 'mobile';
-  const choices: Array<{ label: string; target: string }> = [];
+  const choices: Array<{ label: string; target: string; blocked?: boolean }> = [];
   if (phone) {
     // A phone plugged in by cable comes first: it is the one somebody went and
     // did something physical for, so it is almost certainly what they meant.
     for (const device of devices.slice(0, 3))
       choices.push({
-        label: `${device.label} — plugged in`,
+        label: device.ready ? `${device.label} — plugged in` : `${device.label} — ${device.why}`,
         target: `the connected device ${device.serial}`,
+        // Shown but not startable: a phone waiting to be trusted is the whole
+        // reason this is on screen, and the one thing that would make it
+        // usable is on the phone, not here.
+        ...(device.ready ? {} : { blocked: true }),
       });
     // Every simulator and emulator, not just the first: a machine with four
     // iPhones in it has four because the difference matters to somebody.
@@ -284,18 +288,24 @@ function ClientRun({
       </button>
       {open && (
         <div className="flex flex-col items-end gap-1">
-          {choices.map((choice) => (
-            <button
-              key={choice.label}
-              onClick={() => {
-                setOpen(false);
-                void c.runClient(component, choice.target);
-              }}
-              className="text-[11.5px] text-muted hover:text-body"
-            >
-              {choice.label}
-            </button>
-          ))}
+          {choices.map((choice) =>
+            choice.blocked ? (
+              <span key={choice.label} className="text-[11.5px] text-warn-text">
+                {choice.label}
+              </span>
+            ) : (
+              <button
+                key={choice.label}
+                onClick={() => {
+                  setOpen(false);
+                  void c.runClient(component, choice.target);
+                }}
+                className="text-[11.5px] text-muted hover:text-body"
+              >
+                {choice.label}
+              </button>
+            )
+          )}
         </div>
       )}
     </div>

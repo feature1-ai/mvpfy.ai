@@ -165,7 +165,7 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   runTargets: {
     ios: string[];
     android: string[];
-    devices: Array<{ serial: string; label: string }>;
+    devices: Array<{ serial: string; label: string; ready: boolean; why?: string }>;
   };
   /** Ask the machine again — a phone plugged in a minute ago was not there. */
   refreshRunTargets(): void;

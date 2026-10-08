@@ -61,7 +61,7 @@ export interface ProjectActions {
   runTargets: {
     ios: string[];
     android: string[];
-    devices: Array<{ serial: string; label: string }>;
+    devices: Array<{ serial: string; label: string; ready: boolean; why?: string }>;
   };
   /** Ask the machine again — a phone plugged in a minute ago was not there. */
   refreshRunTargets(): void;
@@ -121,7 +121,7 @@ export function useProjectActions(
   const [runTargets, setRunTargets] = useState<{
     ios: string[];
     android: string[];
-    devices: Array<{ serial: string; label: string }>;
+    devices: Array<{ serial: string; label: string; ready: boolean; why?: string }>;
   }>({ ios: [], android: [], devices: [] });
   // Asked again on request, not only once: a phone is plugged in at the moment
   // somebody wants to use it, which is after this screen opened. Probed on

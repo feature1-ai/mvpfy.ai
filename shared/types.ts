@@ -605,7 +605,7 @@ export interface MvpfyApi {
   simulators(): Promise<{
     ios: string[];
     android: string[];
-    devices: Array<{ serial: string; label: string }>;
+    devices: Array<{ serial: string; label: string; ready: boolean; why?: string }>;
   }>;
   /** A desktop notification, shown only while mvpfy is not the focused window. */
   notify(notice: { title: string; body: string }): Promise<boolean>;

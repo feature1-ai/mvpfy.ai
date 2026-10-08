@@ -54,19 +54,28 @@ describe('parseAvds', () => {
 });
 
 describe('parseAdbDevices', () => {
-  it('lists what is actually connected and trusted', () => {
+  it('lists what is connected and trusted', () => {
     const out = 'List of devices attached\nemulator-5554\tdevice\n39081FDJG\tdevice\n';
-    expect(parseAdbDevices(out)).toEqual(['emulator-5554', '39081FDJG']);
+    expect(parseAdbDevices(out).map((d) => d.serial)).toEqual(['emulator-5554', '39081FDJG']);
+    expect(parseAdbDevices(out).every((d) => d.ready)).toBe(true);
   });
 
-  it('skips a phone the builder has not trusted yet', () => {
-    // Installing to it fails in a way that reads as mvpfy being broken.
-    const out = 'List of devices attached\n39081FDJG\tunauthorized\nZY22\toffline\n';
-    expect(parseAdbDevices(out)).toEqual([]);
+  it('keeps a phone it cannot use yet, and says why', () => {
+    // Dropping it was the first instinct and the wrong one: a phone that is
+    // physically plugged in and absent from the list is indistinguishable
+    // from mvpfy not looking, and the person staring at the cable cannot tell
+    // which. This is the case that looks exactly like a broken lookup.
+    const out = 'List of devices attached\nRZ8R407DRGF\tunauthorized\nZY22\toffline\n';
+    const found = parseAdbDevices(out);
+    expect(found.map((d) => d.serial)).toEqual(['RZ8R407DRGF', 'ZY22']);
+    expect(found.every((d) => d.ready)).toBe(false);
+    expect(found[0].why).toMatch(/unlock it and tap Allow/);
+    expect(found[1].why).toMatch(/not responding/);
   });
 
   it('is empty when adb is not here at all', () => {
     expect(parseAdbDevices('')).toEqual([]);
+    expect(parseAdbDevices('List of devices attached\n\n')).toEqual([]);
   });
 });
 

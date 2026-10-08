@@ -27,7 +27,7 @@ export interface SimulatorTargets {
    * where it can be read. A serial is not something anybody recognises as
    * their own phone; "Pixel 7" is.
    */
-  devices: Array<{ serial: string; label: string }>;
+  devices: Array<{ serial: string; label: string; ready: boolean; why?: string }>;
 }
 
 /**
@@ -71,17 +71,36 @@ export function parseAvds(text: string): string[] {
 }
 
 /**
- * Serials out of `adb devices`. Anything not in state `device` is skipped —
- * an unauthorised phone is one the builder has not tapped "trust" on yet, and
- * installing to it fails in a way that reads as mvpfy being broken.
+ * What adb can see, including the phones it cannot use yet.
+ *
+ * A phone in state `unauthorized` is plugged in and waiting for somebody to
+ * unlock it and tap Allow; one in `offline` is plugged in and not talking.
+ * Dropping both was the first instinct and the wrong one: a phone that is
+ * physically connected and absent from the list is indistinguishable from
+ * mvpfy not looking, and the person staring at the cable has no way to tell
+ * which. They are kept, marked not ready, and the reason is said.
  */
-export function parseAdbDevices(text: string): string[] {
+export function parseAdbDevices(
+  text: string
+): Array<{ serial: string; state: string; ready: boolean; why?: string }> {
+  const reasons: Record<string, string> = {
+    unauthorized: 'unlock it and tap Allow',
+    offline: 'plugged in but not responding',
+    authorizing: 'still connecting',
+    recovery: 'in recovery mode',
+    bootloader: 'in bootloader mode',
+  };
   return text
     .split('\n')
     .slice(1)
     .map((line) => line.trim().split(/\s+/))
-    .filter((parts) => parts.length >= 2 && parts[1] === 'device')
-    .map((parts) => parts[0]);
+    .filter((parts) => parts.length >= 2 && /^[\w.:-]+$/.test(parts[0]))
+    .map((parts) => ({
+      serial: parts[0],
+      state: parts[1],
+      ready: parts[1] === 'device',
+      ...(parts[1] === 'device' ? {} : { why: reasons[parts[1]] ?? parts[1] }),
+    }));
 }
 
 /** A device's own name for itself, when adb will say. */
@@ -168,12 +187,18 @@ export function simulatorTargets(): SimulatorTargets {
   const adb = androidTool('adb');
   const android = emulator ? parseAvds(ask(`${emulator} -list-avds`)) : [];
   const devices = adb
-    ? parseAdbDevices(ask(`${adb} devices`)).map((serial) => ({
-        serial,
-        label: deviceLabel(
-          serial,
-          ask(`${adb} -s ${shellQuote(serial)} shell getprop ro.product.model`)
-        ),
+    ? parseAdbDevices(ask(`${adb} devices`)).map((device) => ({
+        serial: device.serial,
+        // Only a usable phone is asked its name: getprop on one that has not
+        // been trusted hangs on the same permission it is waiting for.
+        label: device.ready
+          ? deviceLabel(
+              device.serial,
+              ask(`${adb} -s ${shellQuote(device.serial)} shell getprop ro.product.model`)
+            )
+          : device.serial,
+        ready: device.ready,
+        ...(device.why ? { why: device.why } : {}),
       }))
     : [];
   return { ios, android, devices };

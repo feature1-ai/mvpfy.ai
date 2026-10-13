@@ -71,11 +71,11 @@ remaining agent allowance.
 `stage` says what is being asked for, because the work is not always from the
 beginning:
 
-| stage | what the runner does |
-| --- | --- |
-| `plan` | pull the feature, write the spec and stories, stop for agreement |
-| `implement` | work through the agreed stories, one after another |
-| `revise` | apply review feedback to a branch that already exists |
+| stage       | what the runner does                                             |
+| ----------- | ---------------------------------------------------------------- |
+| `plan`      | pull the feature, write the spec and stories, stop for agreement |
+| `implement` | work through the agreed stories, one after another               |
+| `revise`    | apply review feedback to a branch that already exists            |
 
 **Exactly one runner holds an assignment at a time**, enforced by the lease. A
 runner renews the lease through its heartbeat; if it cannot, it loses the claim
@@ -117,13 +117,13 @@ report_blocked({ assignment_id, questions: [ { id, kind, text, options? } ] })
 
 The questions that actually occur, all of which exist in mvpfy today:
 
-| kind | asked when |
-| --- | --- |
-| `component_missing` | the code expects a part the workspace does not hold — another repository, an address, a stand-in, or not wanted |
-| `tenant_unknown` | the product reads a customer from the request and nothing says which one to be here |
-| `setup_question` | setting up could not work something out and wrote its questions down |
-| `conflict_unresolved` | the trunk and the feature changed the same code in ways that could not be combined |
-| `agent_unavailable` | the agent is not signed in, or its allowance is exhausted beyond waiting |
+| kind                  | asked when                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `component_missing`   | the code expects a part the workspace does not hold — another repository, an address, a stand-in, or not wanted |
+| `tenant_unknown`      | the product reads a customer from the request and nothing says which one to be here                             |
+| `setup_question`      | setting up could not work something out and wrote its questions down                                            |
+| `conflict_unresolved` | the trunk and the feature changed the same code in ways that could not be combined                              |
+| `agent_unavailable`   | the agent is not signed in, or its allowance is exhausted beyond waiting                                        |
 
 This is the rule the whole protocol turns on. Every one of these is correct
 behaviour with somebody at the screen and a silent stall without one — and a

@@ -235,7 +235,7 @@ describe('restartServiceCommand', () => {
     // `docker compose restart` stops and starts the container it already has,
     // environment and all — the new value reaches nothing.
     const cmd = restartServiceCommand('backend');
-    expect(cmd).toContain('up -d --force-recreate');
+    expect(cmd).toContain('--force-recreate');
     expect(cmd).not.toMatch(/compose[^&]*\srestart\b/);
   });
 
@@ -258,5 +258,15 @@ describe('restartServiceCommand', () => {
     expect(() => restartServiceCommand('backend; rm -rf /')).toThrow(/not a service name/);
     expect(() => restartServiceCommand('$(whoami)')).toThrow();
     expect(() => restartServiceCommand('')).toThrow();
+  });
+});
+
+describe('restartServiceCommand and build-time variables', () => {
+  it('rebuilds as well as recreates, for a value baked into the image', () => {
+    // Recreating picks up what the app reads at startup. A frontend that
+    // inlines its API address at build time, or an ARG in the Dockerfile,
+    // needs the image built again — otherwise the button appears to work and
+    // changes nothing, which is the failure this whole path exists to avoid.
+    expect(restartServiceCommand('web')).toContain('--build');
   });
 });

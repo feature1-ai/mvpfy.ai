@@ -291,9 +291,14 @@ export function restartServiceCommand(service: string, linked = false): string {
   const base = linked
     ? 'docker compose -f .mvpfy/docker-compose.mvpfy.yml --project-directory .'
     : 'docker compose -f docker-compose.mvpfy.yml';
+  // --build as well as --force-recreate: a value the app reads at startup is
+  // picked up by recreating, but one baked into the image at build time — a
+  // frontend that inlines its API address, an ARG in the Dockerfile — is not,
+  // and the button would appear to work while changing nothing. With an
+  // unchanged build context this costs a layer-cache hit and seconds.
   return (
     `${ENSURE_DAEMON} && echo ${shellQuote(`── restarting ${service.trim()}`)} && ` +
-    `${base} up -d --force-recreate --no-deps ${shellQuote(service.trim())}`
+    `${base} up -d --build --force-recreate --no-deps ${shellQuote(service.trim())}`
   );
 }
 

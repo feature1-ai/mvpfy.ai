@@ -1,0 +1,67 @@
+# The mvpfy worker: a headless builder that claims work from Feature1 and
+# returns pull requests. No Electron, no display, no inbound port.
+#
+# Build:  docker build -f Dockerfile.worker -t mvpfy-worker .
+# Run:    see docs/worker-docker.md — it has the full invocation and says
+#         what each mount and variable is for.
+
+FROM node:22-bookworm-slim AS build
+WORKDIR /build
+# Dependencies first, so a source change does not re-resolve them.
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tsconfig.worker.json ./
+COPY shared ./shared
+COPY worker ./worker
+RUN npx tsc -p tsconfig.worker.json
+
+FROM node:22-bookworm-slim
+# git and gh are what the worker shells out to; ca-certificates is what lets
+# it reach GitHub at all. openssh-client only for ssh clone URLs.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl git openssh-client \
+ && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends gh \
+ && apt-get purge -y curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# The coding agents. Pinned, because an agent that changes under a worker
+# nobody is watching changes what it builds.
+ARG CLAUDE_CODE_VERSION=latest
+ARG CODEX_VERSION=latest
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+ && npm cache clean --force
+
+WORKDIR /app
+# The compiled worker and nothing else. It imports only node builtins and its
+# own files — verified by what the build actually requires — so there is no
+# node_modules in this image at all, and nothing from the desktop app.
+COPY --from=build /build/dist-worker ./dist-worker
+
+# Never root. The worker clones repositories and runs an agent that executes
+# code from them; root in the container is one bug away from root on the
+# volume, and anything mounted into it.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin mvpfy \
+ && mkdir -p /var/lib/mvpfy \
+ && chown -R mvpfy:mvpfy /var/lib/mvpfy /app
+USER mvpfy
+
+# Everything durable lives here: the clones, the worktrees, the checkpoints.
+# Mount it, or a restart loses work that was in flight.
+VOLUME ["/var/lib/mvpfy"]
+ENV MVPFY_WORKER_ROOT=/var/lib/mvpfy \
+    HOME=/home/mvpfy \
+    NODE_ENV=production
+
+# No EXPOSE, and nothing listens. Every connection the worker makes is
+# outbound; there is no inbound execution endpoint to authenticate.
+
+# Draining takes as long as the execution in flight, so the signal has to
+# reach node rather than a shell that would ignore it.
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["node", "dist-worker/worker/index.js"]

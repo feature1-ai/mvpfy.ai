@@ -1,9 +1,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { DEFAULT_STATE, RunAgentMcp, RunAgentRequest } from '../../shared/types';
+import { RunAgentMcp, RunAgentRequest } from '../../shared/types';
 import { ensureDirs, isAllowedWorkspace, TMP_DIR } from '../paths';
 import { startRun } from './runs';
 import { cdTo, shellQuote } from './shell';
+import {
+  CommandShell,
+  claudeCommandFor as buildClaudeCommand,
+  codexCommandFor as buildCodexCommand,
+} from '../../shared/agentCommands';
+
+/** The user's own shell: cmd.exe on Windows, their login shell elsewhere. */
+const desktopShell: CommandShell = { quote: shellQuote, cd: cdTo };
 
 /** Spawning of the external coding agents (Claude Code / Codex CLI). */
 
@@ -78,66 +86,23 @@ export function removeQuietly(targets: string[]): void {
 }
 
 /**
- * The claude invocation for one run. Pure and exported so the flag assembly —
- * three optional flags whose order matters to the CLI — can be tested without
- * spawning anything.
+ * The agent invocations now live in shared/agentCommands.ts, so the headless
+ * worker can build the same commands without importing the desktop's
+ * services. Re-exported here, bound to the user's own shell, because that is
+ * what every caller and test in the Electron app already asks for.
  */
 export function claudeCommandFor(
   req: Pick<RunAgentRequest, 'model' | 'session'>,
   opts: { repoPath: string; promptFile: string; mcpConfig?: string }
 ): string {
-  const q = shellQuote;
-  const mcpFlag = opts.mcpConfig ? `--mcp-config ${q(opts.mcpConfig)} ` : '';
-  // No --model unless one was chosen: claude then uses the model the user has
-  // already configured, which never goes stale as the models change.
-  const modelFlag = req.model ? `--model ${q(req.model)} ` : '';
-  // --session-id names the conversation on the run that opens it; --resume
-  // continues it. mvpfy chooses the id, so the two always agree.
-  const sessionFlag = req.session
-    ? req.session.resume
-      ? `--resume ${q(req.session.id)} `
-      : `--session-id ${q(req.session.id)} `
-    : '';
-  return (
-    `${cdTo(opts.repoPath)} && claude ${mcpFlag}${modelFlag}${sessionFlag}` +
-    `-p --verbose --output-format stream-json --dangerously-skip-permissions ` +
-    `< ${q(opts.promptFile)}`
-  );
+  return buildClaudeCommand(req, opts, desktopShell);
 }
 
-/**
- * The codex invocation for one run.
- *
- * Codex cannot be told which id to give a new conversation, only which
- * existing one to continue — so a feature's first run opens a thread and
- * mvpfy reads the id out of the stream, where `codex exec --json` announces
- * it on the first line as `thread.started`. Every run after that resumes it,
- * which is what spares each story re-reading what the last one already read.
- *
- * `resume` takes the prompt as an argument or on stdin exactly as `exec`
- * does, so the two differ only in the subcommand and the id.
- */
 export function codexCommandFor(
   req: Pick<RunAgentRequest, 'model' | 'session' | 'images'>,
   opts: { repoPath: string; promptFile: string; mcpFlag?: string }
 ): string {
-  const q = shellQuote;
-  // No model named means codex uses its own configured one, which is the
-  // only choice that cannot be wrong about somebody else's account.
-  const model = (req.model || DEFAULT_STATE.settings.codexModel).trim();
-  const modelFlag = model ? `--model ${q(model)} ` : '';
-  // Codex attaches images to the prompt rather than opening them from a
-  // path, so a design has to be handed over as arguments. The prompt names
-  // the same files regardless, which is what Claude Code reads.
-  const imageFlags = (req.images ?? []).map((f) => `--image ${q(f)} `).join('');
-  // Only ever resume: an id mvpfy invented would name no thread, and codex
-  // would open a fresh one under a different id without saying so.
-  const resume = req.session?.resume ? `resume ${q(req.session.id)} ` : '';
-  return (
-    `${cdTo(opts.repoPath)} && codex exec ${resume}${opts.mcpFlag ?? ''}${imageFlags}` +
-    `${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - ` +
-    `< ${q(opts.promptFile)}`
-  );
+  return buildCodexCommand(req, opts, desktopShell);
 }
 
 export function runAgent(req: RunAgentRequest): void {

@@ -3,6 +3,11 @@
 How a machine running mvpfy takes work from Feature1 and builds it, with nobody
 pressing the buttons.
 
+> **Superseded.** [`runner-contract-v1.md`](runner-contract-v1.md) is the
+> version that was built against, with typed schemas, fixtures and a fake
+> server. This page is the original sketch and is kept for the reasoning.
+> Where the two disagree, the contract wins.
+
 This is mvpfy's side of the contract: the verbs it calls, the states it reports,
 and the rules it holds itself to. It is written so the other side can be built
 against it. Payload shapes are a proposal; the states and the rules are not —

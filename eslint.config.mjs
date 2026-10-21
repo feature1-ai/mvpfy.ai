@@ -8,6 +8,7 @@ export default tseslint.config(
     ignores: [
       'dist/**',
       'dist-electron/**',
+      'dist-worker/**',
       'release/**',
       'node_modules/**',
       '*.cjs',

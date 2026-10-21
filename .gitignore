@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-electron/
+dist-worker/
 release/
 *.log
 .DS_Store

@@ -1,7 +1,7 @@
 {
   "name": "mvpfy",
   "version": "1.0.0-beta.45",
-  "description": "The IDE for PMs, by feature1 — describe any change to your existing product, see it running locally, ship it as a pull request. Powered by Claude Code and Codex CLI.",
+  "description": "The IDE for PMs, by feature1 \u2014 describe any change to your existing product, see it running locally, ship it as a pull request. Powered by Claude Code and Codex CLI.",
   "private": true,
   "license": "MIT",
   "homepage": "https://mvpfy.ai",
@@ -15,12 +15,14 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:renderer": "tsc --noEmit -p tsconfig.json && vite build",
     "build": "npm run build:electron && npm run build:renderer",
+    "build:worker": "tsc -p tsconfig.worker.json",
+    "worker": "npm run build:worker && node dist-worker/worker/index.js",
     "package": "npm run build && electron-builder --mac --dir",
     "package:all": "npm run build && electron-builder --mac --win --linux",
     "test": "vitest run",
     "test:codex": "npm run build:electron && node scripts/test-codex.mjs",
-    "lint": "eslint . && prettier --check \"{src,electron,shared}/**/*.{ts,tsx}\"",
-    "format": "prettier --write \"{src,electron,shared}/**/*.{ts,tsx}\"",
+    "lint": "eslint . && prettier --check \"{src,electron,shared,worker}/**/*.{ts,tsx}\"",
+    "format": "prettier --write \"{src,electron,shared,worker}/**/*.{ts,tsx}\"",
     "media:gif": "node scripts/make-gif.mjs"
   },
   "dependencies": {

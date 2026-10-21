@@ -59,13 +59,26 @@ export class FakeFeature1 implements Feature1Transport {
    */
   attachOverride = new Map<string, PrOwnerRef>();
 
-  offer(...assignments: Assignment[]): void {
+  /**
+   * Record an assignment without queueing it.
+   *
+   * Separate from `offer` because a worker resuming after a restart reports
+   * on work it was handed before the process existed — the server knows the
+   * assignment, and there is nothing left to claim.
+   */
+  known(...assignments: Assignment[]): void {
     for (const assignment of assignments) {
-      this.queue.push(assignment);
       this.executionFor.set(assignment.assignmentId, assignment.executionId);
-      this.liveToken.set(assignment.executionId, assignment.attemptToken);
+      if (!this.liveToken.has(assignment.executionId)) {
+        this.liveToken.set(assignment.executionId, assignment.attemptToken);
+      }
       this.leases.set(assignment.assignmentId, assignment.leaseExpiresAt);
     }
+  }
+
+  offer(...assignments: Assignment[]): void {
+    this.known(...assignments);
+    for (const assignment of assignments) this.queue.push(assignment);
   }
 
   /** Hand the execution to a newer attempt, as a reassignment would. */

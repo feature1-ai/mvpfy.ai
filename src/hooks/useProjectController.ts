@@ -18,6 +18,7 @@ import {
   StrandedFeature,
   ServiceState,
   configDirFor,
+  notesFileFor,
   planFileFor,
   specFileFor,
 } from '../../shared/types';
@@ -358,7 +359,11 @@ export function useProjectController(
           BOOTSTRAP_FILE,
           READINESS_FILE,
           LAUNCH_FILE,
-          ...planSlugs.flatMap((slug) => [planFileFor(slug), specFileFor(slug)]),
+          ...planSlugs.flatMap((slug) => [
+            planFileFor(slug),
+            specFileFor(slug),
+            notesFileFor(slug),
+          ]),
           ...ENV_FILE_CANDIDATES,
         ].map(pf),
       ])

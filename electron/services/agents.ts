@@ -105,6 +105,41 @@ export function claudeCommandFor(
   );
 }
 
+/**
+ * The codex invocation for one run.
+ *
+ * Codex cannot be told which id to give a new conversation, only which
+ * existing one to continue — so a feature's first run opens a thread and
+ * mvpfy reads the id out of the stream, where `codex exec --json` announces
+ * it on the first line as `thread.started`. Every run after that resumes it,
+ * which is what spares each story re-reading what the last one already read.
+ *
+ * `resume` takes the prompt as an argument or on stdin exactly as `exec`
+ * does, so the two differ only in the subcommand and the id.
+ */
+export function codexCommandFor(
+  req: Pick<RunAgentRequest, 'model' | 'session' | 'images'>,
+  opts: { repoPath: string; promptFile: string; mcpFlag?: string }
+): string {
+  const q = shellQuote;
+  // No model named means codex uses its own configured one, which is the
+  // only choice that cannot be wrong about somebody else's account.
+  const model = (req.model || DEFAULT_STATE.settings.codexModel).trim();
+  const modelFlag = model ? `--model ${q(model)} ` : '';
+  // Codex attaches images to the prompt rather than opening them from a
+  // path, so a design has to be handed over as arguments. The prompt names
+  // the same files regardless, which is what Claude Code reads.
+  const imageFlags = (req.images ?? []).map((f) => `--image ${q(f)} `).join('');
+  // Only ever resume: an id mvpfy invented would name no thread, and codex
+  // would open a fresh one under a different id without saying so.
+  const resume = req.session?.resume ? `resume ${q(req.session.id)} ` : '';
+  return (
+    `${cdTo(opts.repoPath)} && codex exec ${resume}${opts.mcpFlag ?? ''}${imageFlags}` +
+    `${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - ` +
+    `< ${q(opts.promptFile)}`
+  );
+}
+
 export function runAgent(req: RunAgentRequest): void {
   const repoPath = path.resolve(req.repoPath);
   if (!isAllowedWorkspace(repoPath)) {
@@ -143,7 +178,6 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
   // Everything written for this run only, removed when it ends.
   const scratch: string[] = [promptFile];
 
-  const q = shellQuote;
   let command: string;
   let env: NodeJS.ProcessEnv | undefined;
   if (req.agent === 'claude') {
@@ -162,17 +196,13 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
       mcpConfig: needsMcpConfig ? scratch[scratch.length - 1] : undefined,
     });
   } else {
-    // No model named means codex uses its own configured one, which is the
-    // only choice that cannot be wrong about somebody else's account.
-    const model = (req.model || DEFAULT_STATE.settings.codexModel).trim();
-    const modelFlag = model ? `--model ${q(model)} ` : '';
     const mcpConfig = req.mcp ? codexMcpConfig(req.mcp) : undefined;
     env = mcpConfig?.env;
-    // Codex attaches images to the prompt rather than opening them from a
-    // path, so a design has to be handed over as arguments. The prompt names
-    // the same files regardless, which is what Claude Code reads.
-    const imageFlags = (req.images ?? []).map((f) => `--image ${q(f)} `).join('');
-    command = `${cdTo(repoPath)} && codex exec ${mcpConfig?.flag ?? ''}${imageFlags}${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - < ${q(promptFile)}`;
+    command = codexCommandFor(req, {
+      repoPath,
+      promptFile,
+      mcpFlag: mcpConfig?.flag,
+    });
   }
   startRun(req.runId, command, repoPath, () => removeQuietly(scratch), env);
 }

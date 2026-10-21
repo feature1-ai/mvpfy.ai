@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { claudeCommandFor, codexMcpConfig, sweepRunArtifacts } from './agents';
+import { claudeCommandFor, codexCommandFor, codexMcpConfig, sweepRunArtifacts } from './agents';
 import { shellQuote } from './shell';
 
 let dir: string;
@@ -102,5 +102,42 @@ describe('session flags', () => {
   it('keeps the flag ahead of -p, where claude expects its options', () => {
     const command = build({ id: 'abc', resume: true });
     expect(command.indexOf('--resume')).toBeLessThan(command.indexOf(' -p '));
+  });
+});
+
+describe('codexCommandFor', () => {
+  const opts = { repoPath: '/w/proj', promptFile: '/tmp/p.txt' };
+
+  it('opens a new thread when the feature has none yet', () => {
+    // Codex cannot be handed an id for a thread that does not exist, so the
+    // first run of a feature must not try.
+    const cmd = codexCommandFor({}, opts);
+    expect(cmd).toContain('codex exec --sandbox');
+    expect(cmd).not.toContain('resume');
+  });
+
+  it('continues the feature thread once one is known', () => {
+    const cmd = codexCommandFor({ session: { id: 'thread-1', resume: true } }, opts);
+    expect(cmd).toContain("codex exec resume 'thread-1'");
+  });
+
+  it('never invents an id for a thread codex has not opened', () => {
+    // resume:false means mvpfy minted the id (the Claude path). Handing it to
+    // codex would resume nothing and silently open a second conversation.
+    const cmd = codexCommandFor({ session: { id: 'invented', resume: false } }, opts);
+    expect(cmd).not.toContain('resume');
+    expect(cmd).not.toContain('invented');
+  });
+
+  it('keeps resume ahead of the flags, where the subcommand belongs', () => {
+    const cmd = codexCommandFor(
+      { session: { id: 't', resume: true }, model: 'gpt-5', images: ['/tmp/a.png'] },
+      { ...opts, mcpFlag: '--mcp x ' }
+    );
+    expect(cmd).toMatch(/codex exec resume 't' --mcp x --image '\/tmp\/a\.png' --model 'gpt-5'/);
+  });
+
+  it('reads the prompt from the file rather than the command line', () => {
+    expect(codexCommandFor({}, opts)).toContain("--json - < '/tmp/p.txt'");
   });
 });

@@ -421,6 +421,11 @@ export const LAUNCH_FILE = 'mvpfy-launch.json';
 export const PLAN_FILE = 'mvpfy-plan.json';
 /** Human-readable product spec generated alongside the plan. */
 export const SPEC_FILE = 'mvpfy-spec.md';
+/**
+ * What the run that planned the feature learned about the code, written down
+ * so the stories do not each go and learn it again.
+ */
+export const NOTES_FILE = 'mvpfy-notes.md';
 
 /**
  * A project can hold one plan per feature, each in its own file pair so
@@ -432,6 +437,9 @@ export function planFileFor(slug: string): string {
 }
 export function specFileFor(slug: string): string {
   return slug ? `mvpfy-spec.${slug}.md` : SPEC_FILE;
+}
+export function notesFileFor(slug: string): string {
+  return slug ? `mvpfy-notes.${slug}.md` : NOTES_FILE;
 }
 
 /**

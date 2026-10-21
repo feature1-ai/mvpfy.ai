@@ -30,6 +30,7 @@ import {
   RunSession,
   Settings,
   configDirFor,
+  notesFileFor,
   planFileFor,
   specFileFor,
 } from '../../shared/types';
@@ -166,7 +167,31 @@ export type RunKind =
  * and the spec carry everything that mattered.
  */
 export function lostConversation(log: string | null | undefined): boolean {
-  return /No conversation found with session ID/i.test(log ?? '');
+  const text = log ?? '';
+  // Claude names the id it could not find; codex calls the stored transcript
+  // a rollout. Same situation, and the same repair.
+  return (
+    /No conversation found with session ID/i.test(text) ||
+    /no rollout found for thread id/i.test(text)
+  );
+}
+
+/**
+ * The conversation codex just opened, announced on the first line of its
+ * output as `{"type":"thread.started","thread_id":"..."}`.
+ *
+ * Claude is handed an id before it starts; codex cannot be, so the id has to
+ * be read back out. Catching it is the whole reason a codex feature can share
+ * one conversation across its stories rather than opening a new one — and
+ * reading the product again — for every story in it.
+ *
+ * Only the head of the log is searched: the line is the first thing codex
+ * prints, and this runs on every chunk of a stream that grows to megabytes.
+ */
+export function codexThreadId(log: string | null | undefined): string | null {
+  const head = (log ?? '').slice(0, 4000);
+  const match = /"type"\s*:\s*"thread\.started"[^}]*?"thread_id"\s*:\s*"([^"]+)"/.exec(head);
+  return match ? match[1] : null;
 }
 
 /**
@@ -427,15 +452,37 @@ export async function startShipChangeRun(project: Project, settings: Settings): 
  * A failure here reads as "not empty", which is the instruction mvpfy has
  * always given — so the worst case is the behaviour that shipped for months.
  */
-async function groundingFor(project: Project, settings: Settings, kind: 'spec' | 'implement') {
+async function groundingFor(
+  project: Project,
+  settings: Settings,
+  kind: 'spec' | 'implement',
+  notesFile?: string
+) {
   let empty: boolean;
   try {
     empty = await window.mvpfy.workspaceEmpty(project.repos.map((r) => r.dir));
   } catch {
     empty = false;
   }
-  const g = { empty, stack: settings.defaultStack };
+  const g = { empty, stack: settings.defaultStack, ...(notesFile ? { notesFile } : {}) };
   return kind === 'spec' ? specGrounding(g) : implementGrounding(g);
+}
+
+/**
+ * The feature's map of the code, when the run that planned it wrote one.
+ *
+ * Features planned before notes existed have no such file, and must still
+ * implement — so a missing one is an ordinary case, not an error, and the
+ * story falls back to reading the product itself.
+ */
+async function notesFileFound(project: Project, planSlug: string): Promise<string | undefined> {
+  const relative = configDirFor(project.mode) + notesFileFor(planSlug);
+  try {
+    const [file] = await window.mvpfy.readRepoFiles(project.localPath, [relative]);
+    return file?.exists ? relative : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -490,6 +537,7 @@ export async function startPlanSpecRun(
       featureDescription,
       planFile,
       specFile,
+      notesFile: configDirFor(project.mode) + notesFileFor(planSlug),
       refinementBlock: refinement
         ? `A spec already exists (${specFile} / ${planFile}). Revise it per this instruction, preserving existing story codes and the lanes/prUrl/feedback of stories that survive:\n---\n${refinement}\n---`
         : '',
@@ -525,6 +573,7 @@ export async function startPullFeatureRun(
       featureRef,
       planFile: cfg + planFileFor(planSlug),
       specFile: cfg + specFileFor(planSlug),
+      notesFile: cfg + notesFileFor(planSlug),
     }),
     ...agentFor(settings),
     mcp,
@@ -703,14 +752,21 @@ export async function startPlanStoryRun(
   const runId = makeRunId('planstory');
   const checkouts = Object.entries(worktrees);
   const art = await designFor(project, planSlug, design);
+  const notesFile = await notesFileFound(project, planSlug);
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
     promptText: fillTemplate(planImplementTemplate, {
-      groundingBlock: await groundingFor(project, settings, 'implement'),
+      groundingBlock: await groundingFor(project, settings, 'implement', notesFile),
       resumeNote: resumeNoteFor(session),
       repoPath: project.localPath,
       storyCode,
+      notesAlso: notesFile ? `, ${notesFile}` : '',
+      // The one mvpfy file a story may write: a map it found to be wrong is
+      // worth more corrected than left to mislead every story after it.
+      notesException: notesFile
+        ? ` The one exception is ${notesFile}: correct a part of it you find to be wrong.`
+        : '',
       planFile: configDirFor(project.mode) + planFileFor(planSlug),
       specFile: configDirFor(project.mode) + specFileFor(planSlug),
       // One branch per FEATURE: every story in it commits here, and the

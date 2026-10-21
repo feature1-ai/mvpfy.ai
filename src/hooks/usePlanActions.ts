@@ -11,6 +11,7 @@ import {
   startResolveMergeRun,
   startAutoMergeRun,
   isAmbientRun,
+  codexThreadId,
   lostConversation,
   makeRunId,
   startGitAuthRun,
@@ -440,13 +441,18 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
    * everything after continues it, so refining a spec knows why the spec says
    * what it does instead of re-deriving it from the file.
    *
-   * Claude only — codex can resume a conversation but cannot be told which id
-   * to give a new one, so there is nothing to hand it up front.
+   * Both agents, by different routes. Claude is handed an id for the
+   * conversation it is about to open. Codex cannot be — it can only continue
+   * one that exists — so its first run opens a thread unasked and the id is
+   * read back out of the output; everything after it resumes that.
    */
   const sessionFor = useCallback(
     (slug: string, open: boolean): RunSession | undefined => {
-      if (state.settings.defaultAgent !== 'claude') return undefined;
       const existing = project.featureSessions?.[slug];
+      if (state.settings.defaultAgent === 'codex') {
+        return existing ? { id: existing, resume: true } : undefined;
+      }
+      if (state.settings.defaultAgent !== 'claude') return undefined;
       if (existing && !open) return { id: existing, resume: true };
       const id = existing && open ? existing : crypto.randomUUID();
       if (id !== existing) {
@@ -521,6 +527,28 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [failedRuns]);
+
+  // Codex announces the thread it opened on the first line it prints. Catching
+  // it is what lets the rest of a feature's stories continue that conversation
+  // instead of each opening its own and reading the product over again.
+  useEffect(() => {
+    if (state.settings.defaultAgent !== 'codex') return;
+    for (const run of projectRuns) {
+      const slug = run.handle.planSlug;
+      if (slug === undefined || project.featureSessions?.[slug]) continue;
+      const id = codexThreadId(run.log);
+      if (!id) continue;
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.id === project.id
+            ? { ...p, featureSessions: { ...(p.featureSessions ?? {}), [slug]: id } }
+            : p
+        ),
+      }));
+      return;
+    }
+  }, [projectRuns, project.id, project.featureSessions, state.settings.defaultAgent, updateState]);
 
   const generateSpec = (description: string) =>
     guarded(async () => {

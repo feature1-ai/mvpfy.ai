@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildShipFeaturePrompt,
   isAmbientRun,
+  codexThreadId,
   lostConversation,
   extractPrUrl,
   startInstructRun,
@@ -389,5 +390,101 @@ describe('lostConversation', () => {
     expect(lostConversation('usage limit reached')).toBe(false);
     expect(lostConversation('')).toBe(false);
     expect(lostConversation(null)).toBe(false);
+  });
+});
+
+describe('codexThreadId', () => {
+  it('reads the thread codex says it opened', () => {
+    // Verified against codex-cli 0.155.1: this is the first line of
+    // `codex exec --json`, before any model output.
+    const log = '{"type":"thread.started","thread_id":"01a15f63-9840-7923-b234-467203792ce8"}\n';
+    expect(codexThreadId(log)).toBe('01a15f63-9840-7923-b234-467203792ce8');
+  });
+
+  it('is not fooled by a thread id belonging to some other event', () => {
+    expect(codexThreadId('{"type":"turn.started","thread_id":"nope"}')).toBeNull();
+  });
+
+  it('says nothing when there is nothing to say', () => {
+    expect(codexThreadId('')).toBeNull();
+    expect(codexThreadId(null)).toBeNull();
+    expect(codexThreadId('claude output, no threads here')).toBeNull();
+  });
+
+  it('only looks at the head of a log that grows to megabytes', () => {
+    // Runs on every chunk of a live stream, so it must not scan the whole of
+    // one. The line it wants is the first thing codex prints.
+    const buried = 'x'.repeat(20_000) + '{"type":"thread.started","thread_id":"late"}';
+    expect(codexThreadId(buried)).toBeNull();
+  });
+});
+
+describe('lostConversation', () => {
+  it('recognises a conversation neither agent can find', () => {
+    // Both messages observed from the CLIs themselves.
+    expect(lostConversation('No conversation found with session ID: abc')).toBe(true);
+    expect(
+      lostConversation('Error: thread/resume failed: no rollout found for thread id 000')
+    ).toBe(true);
+  });
+
+  it('does not treat an ordinary failure as a lost conversation', () => {
+    // This one retries by itself, so a false positive silently runs a story
+    // twice.
+    expect(lostConversation('error: tests failed')).toBe(false);
+    expect(lostConversation(null)).toBe(false);
+  });
+});
+
+describe('the feature map in a story prompt', () => {
+  async function promptFor(notesExists: boolean): Promise<string> {
+    let captured = '';
+    vi.stubGlobal('window', {
+      mvpfy: {
+        runAgent: async (req: { promptText: string }) => {
+          captured = req.promptText;
+        },
+        readRepoFiles: async (_repo: string, paths: string[]) =>
+          paths.map((relativePath) => ({ relativePath, exists: notesExists, content: '' })),
+        workspaceEmpty: async () => false,
+      },
+    });
+    try {
+      await startPlanStoryRun(
+        { id: 'p', localPath: '/repo', repos: [] } as unknown as Project,
+        { ...DEFAULT_STATE.settings },
+        'paging',
+        'US-03'
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return captured;
+  }
+
+  it('names the map, and lets the story correct it', async () => {
+    const prompt = await promptFor(true);
+    expect(prompt).toContain('mvpfy-notes.paging.md');
+    // The one mvpfy file a story may write: a wrong map left in place misleads
+    // every story after this one.
+    expect(prompt).toMatch(/exception is mvpfy-notes\.paging\.md/);
+  });
+
+  it('leaves no placeholder behind, in either case', async () => {
+    // fillTemplate leaves an unknown {placeholder} exactly as it found it, so
+    // a forgotten one ships to the agent as literal braces and nothing says
+    // so. Both branches, because each fills a different set.
+    for (const exists of [true, false]) {
+      expect(await promptFor(exists)).not.toMatch(/\{[a-zA-Z]\w*\}/);
+    }
+  });
+
+  it('does not send a story to a map the feature does not have', async () => {
+    const prompt = await promptFor(false);
+    expect(prompt).not.toContain('mvpfy-notes.paging.md');
+    expect(prompt).not.toMatch(/exception is/);
+    expect(prompt).toMatch(/match its patterns/i);
+    // Other features' maps are still off limits, map of its own or not.
+    expect(prompt).toContain('mvpfy-notes.*');
   });
 });

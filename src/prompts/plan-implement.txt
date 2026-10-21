@@ -4,6 +4,8 @@ Workspace: {repoPath}
 {resumeNote}
 Read {planFile} and {specFile} in the workspace root. Implement story {storyCode}:
 every acceptance criterion, plus tests, in the appropriate repository within the workspace.
+Read only story {storyCode} and the spec context it needs — the other stories in the plan
+belong to other runs.
 {feedbackBlock}
 {designBlock}
 {continuationBlock}
@@ -17,8 +19,8 @@ Follow this sequence:
    Read the product's code there, make every change there, and run every git command there.
    Never edit the product's code in {repoPath} — that copy is what the product manager has
    running, and changing it under them would swap the app they are testing.
-   The mvpfy files named above ({planFile}, {specFile}) stay in {repoPath}. Read them from
-   there; do not copy them into a checkout.
+   The mvpfy files named above ({planFile}, {specFile}{notesAlso}) stay in {repoPath}. Read
+   them from there; do not copy them into a checkout.
 3. Implement every acceptance criterion, with tests. Run the repo's test command and only
    proceed when tests pass.
 4. Commit in the checkout, with the message "{storyCode}: <story title>" — the story code is
@@ -28,8 +30,8 @@ Follow this sequence:
 
 Hard rules:
 • Touch only what this story needs. Never modify {planFile}, {specFile}, or any
-  mvpfy-* file — the app owns those, and other mvpfy-plan.* / mvpfy-spec.* files
-  belong to other planned features.
+  mvpfy-* file — the app owns those, and other mvpfy-plan.* / mvpfy-spec.* /
+  mvpfy-notes.* files belong to other planned features.{notesException}
 • Never COMMIT mvpfy's own files either, even if they show as untracked: mvpfy.yml,
   docker-compose.mvpfy.yml, .env.mvpfy.example, .env, mvpfy-*.md, mvpfy-*.json and
   anything under mvpfy/. They are local scaffolding, not part of the product, and a

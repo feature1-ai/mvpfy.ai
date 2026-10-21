@@ -47,3 +47,39 @@ describe('implementGrounding', () => {
     expect(implementGrounding({ empty: true })).toContain(DEFAULT_STACK);
   });
 });
+
+describe('implementGrounding and the feature map', () => {
+  it('sends a story to the map instead of searching the workspace again', () => {
+    // The point of the map: six stories in a feature used to study the same
+    // codebase six times over, each paying to find where things are.
+    const out = implementGrounding({ empty: false, notesFile: 'mvpfy-notes.billing.md' });
+    expect(out).toMatch(/mvpfy-notes\.billing\.md/);
+    expect(out).toMatch(/instead of searching/i);
+  });
+
+  it('still makes the story read the code the map points at', () => {
+    // A map that replaced reading would be a map that implemented from
+    // memory. It replaces the search, not the reading.
+    const out = implementGrounding({ empty: false, notesFile: 'mvpfy-notes.billing.md' });
+    expect(out).toMatch(/read those properly/i);
+    expect(out).toMatch(/trust the code/i);
+  });
+
+  it('keeps the old instruction for a feature planned before maps existed', () => {
+    // Those features still have to implement, and have no file to read.
+    const out = implementGrounding({ empty: false });
+    expect(out).toMatch(/match its patterns/i);
+    expect(out).not.toMatch(/mvpfy-notes/);
+  });
+
+  it('asks the first story in an empty repo to write the conventions down', () => {
+    // Story one chooses them; every story after is told to match them, which
+    // only works if they were recorded somewhere.
+    const out = implementGrounding({ empty: true, notesFile: 'mvpfy-notes.billing.md' });
+    expect(out).toMatch(/write what you chose into mvpfy-notes\.billing\.md/i);
+  });
+
+  it('leaves an empty repo alone when there is no map to write to', () => {
+    expect(implementGrounding({ empty: true })).not.toMatch(/mvpfy-notes/);
+  });
+});

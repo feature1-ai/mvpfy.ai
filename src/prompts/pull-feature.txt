@@ -20,7 +20,7 @@ Do this in order:
 
 2. {groundingBlock}
 
-3. Write exactly two files in the workspace root:
+3. Write exactly three files in the workspace root:
 
    {specFile} — the human-readable spec, in this order and nothing more:
    # <Feature name>
@@ -61,6 +61,26 @@ Do this in order:
   ]
 }
 
+   {notesFile} — the map of the code, for the runs that implement these stories. You have
+   just read this product to write the spec; write down what you learned so each story
+   does not go and learn it again. Nobody non-technical reads this file.
+
+   ## Where things are
+   Per repository: what it is, the directories that matter for this feature, and the one
+   command that runs its tests.
+   ## Conventions to match
+   How this product already declares a route, a model, a migration, a component, a test —
+   naming one existing file to copy for each.
+   ## What this feature touches
+   Per story code, the files it will most likely change and the existing code it extends.
+   Say where you are guessing.
+   ## Traps
+   What would mislead somebody reading this code for the first time.
+
+   Under 150 lines. A map, not a copy of the code: where to look, never what the code
+   says. If the workspace is empty, write the headings with "nothing here yet — the first
+   story sets this" under each.
+
 Rules:
 • One plan story per Feature1 user story — keep Feature1's own decomposition; do not merge
   or split stories, and do not invent stories that Feature1 did not plan.
@@ -70,6 +90,6 @@ Rules:
 • Estimate points from 1, 2, 5, 8, 13 only. Every story starts in lane "todo".
 • Every inScope item, flow, and functional requirement should appear in some story's
   "addresses".
-• Do not modify any other file — other mvpfy-plan.* / mvpfy-spec.* files belong to other
-  features. Do not implement anything, do not run docker or git, and make NO writes back
+• Do not modify any other file — other mvpfy-plan.* / mvpfy-spec.* / mvpfy-notes.* files
+  belong to other features. Do not implement anything, do not run docker or git, and make NO writes back
   to Feature1 in this run.

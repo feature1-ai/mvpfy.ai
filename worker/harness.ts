@@ -27,8 +27,14 @@ import { ScriptedRunner } from './exec';
 const SHA = (seed: string): string => seed.repeat(40).slice(0, 40);
 
 export class FakeGit {
-  /** repositoryId → what the agent "changed" in it. */
+  /** repositoryId → what the agent left uncommitted in it. */
   changes = new Map<string, string[]>();
+  /** repositoryId → HEAD, when the branch has moved off the base commit. */
+  heads = new Map<string, string>();
+  /** Repositories where committing will not work. */
+  failCommit = new Set<string>();
+  /** Repositories that still have uncommitted work after the commit step. */
+  leavesDirt = new Set<string>();
   unclonable = new Set<string>();
   pushes: Array<{ dir: string; branch: string; base: string }> = [];
   failPush = new Set<string>();
@@ -62,13 +68,28 @@ export class FakeGit {
   }
 
   async commit(dir: string, _message: string, paths: string[]): Promise<string | null> {
+    const id = this.idOf(dir);
+    if (this.failCommit.has(id)) throw new Error('nothing to commit, working tree clean');
     if (paths.length === 0) return null;
-    this.changes.set(this.idOf(dir), []);
-    return SHA(String(++this.commitCounter % 10));
+    if (!this.leavesDirt.has(id)) this.changes.set(id, []);
+    const sha = SHA(String(++this.commitCounter % 10));
+    this.heads.set(id, sha);
+    return sha;
   }
 
-  async headCommit(_dir: string): Promise<string> {
-    return SHA(String(this.commitCounter % 10 || 1));
+  /** The branch tip: the base until something commits, whoever commits it. */
+  async headCommit(dir: string): Promise<string> {
+    return this.heads.get(this.idOf(dir)) ?? this.base;
+  }
+
+  async hasUncommittedChanges(dir: string): Promise<boolean> {
+    return (this.changes.get(this.idOf(dir)) ?? []).length > 0;
+  }
+
+  /** The agent committed its own work, leaving a clean tree behind. */
+  agentCommitted(repositoryId: string): void {
+    this.changes.set(repositoryId, []);
+    this.heads.set(repositoryId, SHA('9'));
   }
 
   async commitsSince(dir: string): Promise<Array<{ sha: string; subject: string }>> {
@@ -154,6 +175,8 @@ export interface Harness {
   engine: ExecutionEngine;
   checkpoint: (execution: Execution) => ReturnType<typeof freshCheckpoint>;
   prBelongsElsewhereOnFirstPr: () => void;
+  /** Cancel the run the first time the worker sends a matching body. */
+  cancelWhen: (pattern: RegExp, executionId: string) => void;
   claim: (execution: Execution) => Promise<Execution>;
   now: () => number;
   setNow: (iso: string) => void;
@@ -213,6 +236,17 @@ export function makeHarness(opts: { nowIso?: string } = {}): Harness {
       if (!claimed) throw new Error('the fake offered nothing');
       return claimed;
     },
+    /**
+     * Cancel as a particular message goes out, so the cancellation lands
+     * mid-publish rather than conveniently between steps.
+     */
+    cancelWhen: (pattern: RegExp, executionId: string) => {
+      const original = transport.progress.bind(transport);
+      transport.progress = async (id, lease, body) => {
+        if (pattern.test(JSON.stringify(body))) transport.cancel(executionId);
+        return original(id, lease, body);
+      };
+    },
     /** Make the server refuse the first pull request, as a wrong repo would. */
     prBelongsElsewhereOnFirstPr: () => {
       const original = prs.ensure.bind(prs);
@@ -234,6 +268,22 @@ export function makeHarness(opts: { nowIso?: string } = {}): Harness {
 export function agentChanges(harness: Harness, ...repositoryIds: string[]): void {
   for (const repositoryId of repositoryIds) {
     harness.git.changes.set(repositoryId, [`src/${repositoryId}.ts`]);
+  }
+}
+
+/** Add a lint script, so discovery finds a second check beside the test. */
+export function withLintScript(
+  harness: Harness,
+  execution: Execution,
+  ...repositoryIds: string[]
+): void {
+  for (const repositoryId of repositoryIds) {
+    const dir = harness.layout.worktreeDir(execution.tenant_id, execution.id, repositoryId);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'vitest run', lint: 'eslint .' } })
+    );
   }
 }
 

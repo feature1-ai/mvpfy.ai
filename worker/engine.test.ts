@@ -7,7 +7,13 @@ import {
   standaloneStoryExecution,
   standaloneTaskExecution,
 } from '../shared/runner/fixtures';
-import { Harness, agentChanges, makeHarness, withDiscoverableTests } from './harness';
+import {
+  Harness,
+  agentChanges,
+  makeHarness,
+  withDiscoverableTests,
+  withLintScript,
+} from './harness';
 
 let h: Harness;
 beforeEach(() => {
@@ -370,5 +376,120 @@ describe('what the worker never does', () => {
         local.cleanup();
       }
     }
+  });
+});
+
+describe('deciding whether a repository changed', () => {
+  it('publishes work the agent committed itself, instead of calling it no_changes', async () => {
+    // The agent is told not to commit. One that does anyway leaves a clean
+    // working tree, and reading "clean" as "nothing happened" reported
+    // no_changes for a repository with real work in it, skipped its pull
+    // request, and claimed base and head were the same commit.
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    h.agent.onRun = () => h.git.agentCommitted(IDS.repoApi);
+
+    const ending = await h.engine.run(checkpoint, never);
+
+    expect(ending).toBe('ready_for_testing');
+    expect(h.prs.creates).toHaveLength(1);
+    const result = h.transport.resultsOf(claimed.id)[IDS.repoApi];
+    expect(result.outcome).toBe('pr_created');
+    expect(result.head_commit).not.toBe(result.base_commit);
+  });
+
+  it('fails the repository when its work could not be committed', async () => {
+    // Logged and shrugged off, this became a silent no_changes — the work
+    // existed, and nothing published it or said so.
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.git.failCommit.add(IDS.repoApi);
+
+    const ending = await h.engine.run(checkpoint, never);
+
+    expect(ending).toBe('failed');
+    expect(h.prs.creates).toHaveLength(0);
+    expect(Object.keys(h.transport.resultsOf(claimed.id))).toHaveLength(0);
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/[Cc]ould not commit/);
+  });
+
+  it('refuses to push a branch that is missing work left in the checkout', async () => {
+    // A pull request missing part of the work it claims to be is worse
+    // than no pull request.
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.git.leavesDirt.add(IDS.repoApi);
+
+    const ending = await h.engine.run(checkpoint, never);
+
+    expect(ending).toBe('failed');
+    expect(h.git.pushes).toHaveLength(0);
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/left uncommitted/);
+  });
+
+  it('still reports a genuinely untouched repository as no_changes', async () => {
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('ready_for_testing');
+    const result = h.transport.resultsOf(claimed.id)[IDS.repoApi];
+    expect(result.outcome).toBe('no_changes');
+    expect(result.base_commit).toBe(result.head_commit);
+  });
+});
+
+describe('a cancellation that arrives while publishing', () => {
+  it('does not mark a repository reported that the server discarded', async () => {
+    // A cancelling run accepts nothing but the acknowledgement: the server
+    // throws the result away and answers cancel_requested. Believing the
+    // call landed left Feature1 cancelling forever while the worker
+    // considered itself finished.
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    // Cancel after the work is done, as the publishing step begins.
+    h.cancelWhen(/opening_prs/, claimed.id);
+
+    const ending = await h.engine.run(checkpoint, never);
+
+    expect(ending).toBe('cancelled');
+    expect(h.transport.stateOf(claimed.id)).toBe('cancelled');
+    expect(Object.keys(h.transport.resultsOf(claimed.id))).toHaveLength(0);
+    expect(h.store.load(claimed.tenant_id, claimed.id)?.repositories[0].reported).toBe(false);
+  });
+
+  it('does not claim ready_for_testing that the server never accepted', async () => {
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    // Cancel at the very last moment, as the terminal state goes out.
+    h.cancelWhen(/ready_for_testing/, claimed.id);
+
+    const ending = await h.engine.run(checkpoint, never);
+
+    expect(ending).toBe('cancelled');
+    expect(h.transport.stateOf(claimed.id)).toBe('cancelled');
+  });
+});
+
+describe('the summary a product manager reads', () => {
+  it('counts the checks rather than claiming they all passed', async () => {
+    // Feature1 needs only one passing command per repository, so a
+    // repository can be handed over with its tests green and its lint
+    // never run. "Ready for testing" is already easy to misread.
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.runner.when(/npm run lint/, { code: 127, stderr: 'eslint: not found' });
+    withLintScript(h, checkpoint.execution, IDS.repoApi);
+
+    const ending = await h.engine.run(checkpoint, never);
+
+    expect(ending).toBe('ready_for_testing');
+    const summary = h.transport.progressCalls.at(-1)?.body.message ?? '';
+    expect(summary).not.toMatch(/all .* checks passed/);
+    expect(summary).toMatch(/could not run/);
+  });
+
+  it('says all passed only when they did', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    await h.engine.run(checkpoint, never);
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/all 1 check passed/);
   });
 });

@@ -30,11 +30,13 @@ RUN apt-get update \
  && apt-get purge -y curl \
  && rm -rf /var/lib/apt/lists/*
 
-# The coding agents. Pinned, because an agent that changes under a worker
-# nobody is watching changes what it builds.
+# Both coding agents, because MVPFY_AGENT selects between them at runtime
+# and an image that carries only one makes the other setting a lie.
 ARG CLAUDE_CODE_VERSION=latest
 ARG CODEX_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+RUN npm install -g \
+      @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+      @openai/codex@${CODEX_VERSION} \
  && npm cache clean --force
 
 WORKDIR /app

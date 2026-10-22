@@ -14,13 +14,12 @@ at a screen; this is the same factory with nobody there.
 docker build -f Dockerfile.worker -t mvpfy-worker .
 ```
 
-The image carries `git`, the GitHub CLI, a coding agent, and the compiled
-worker. It has **no `node_modules`**: the worker imports only node builtins and
+The image carries `git`, the GitHub CLI, **both coding agents** (Claude Code
+and Codex, so `MVPFY_AGENT` can select either), and the compiled worker. It has **no `node_modules`**: the worker imports only node builtins and
 its own files, so there is nothing else to ship or to patch.
 
-Built and smoke-tested at about 680 MB — it runs as uid 10001, starts
-read-only with only a tmpfs for `/tmp`, registers against the fake, and drains
-on `SIGTERM`.
+Built and smoke-tested — it runs as uid 10001, starts read-only with only a
+tmpfs for `/tmp`, claims against the fake, and drains on `SIGTERM`.
 
 ## Run
 

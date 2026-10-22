@@ -64,6 +64,25 @@ export interface EngineDeps {
 /** Why an execution stopped. What the worker tells Feature1 last. */
 export type Ending = 'ready_for_testing' | 'blocked' | 'failed' | 'cancelled';
 
+/**
+ * Feature1 answered `cancel_requested` instead of doing what was asked.
+ *
+ * Thrown rather than returned, because it was returned once and the two
+ * call sites that mattered — reporting a repository and reporting the final
+ * state — both ignored it. The server had recorded nothing and the worker
+ * marked itself finished, so an execution somebody cancelled sat in
+ * Feature1 as `cancelling` forever while the worker believed it was done.
+ *
+ * As an exception there is no call site to forget: every call goes through
+ * one place, and the only body exempt is the acknowledgement itself.
+ */
+export class CancellationRequested extends Error {
+  constructor() {
+    super('Feature1 asked for this execution to be cancelled');
+    this.name = 'CancellationRequested';
+  }
+}
+
 export class ExecutionEngine {
   private readonly now: () => Date;
   private readonly retry: <T>(operation: () => Promise<T>) => Promise<T>;
@@ -92,18 +111,24 @@ export class ExecutionEngine {
   private async say(
     checkpoint: ExecutionCheckpoint,
     body: Parameters<Feature1Transport['progress']>[2]
-  ): Promise<{ cancelRequested: boolean }> {
+  ): Promise<void> {
     const { execution } = checkpoint;
     const response = await this.retry(() =>
       this.deps.transport.progress(execution.id, execution.lease_token, body)
     );
     const until = Date.parse(response?.lease_until ?? '');
     if (!Number.isNaN(until)) this.leaseUntil = until;
+    // A cancelling run accepts nothing but the acknowledgement: the server
+    // discards whatever was sent and answers this flag. Believing the call
+    // landed is how a repository gets marked reported that the server never
+    // recorded.
+    if (response?.cancel_requested && body.state !== 'cancelled') {
+      throw new CancellationRequested();
+    }
     if (body.state) {
       checkpoint.state = body.state;
       this.deps.store.save(checkpoint, this.now());
     }
-    return { cancelRequested: Boolean(response?.cancel_requested) };
   }
 
   /**
@@ -123,7 +148,13 @@ export class ExecutionEngine {
 
   /** A heartbeat, for the loop that keeps the lease alive while work runs. */
   async beat(checkpoint: ExecutionCheckpoint): Promise<{ cancelRequested: boolean }> {
-    return this.say(checkpoint, {});
+    try {
+      await this.say(checkpoint, {});
+      return { cancelRequested: false };
+    } catch (error) {
+      if (error instanceof CancellationRequested) return { cancelRequested: true };
+      throw error;
+    }
   }
 
   /**
@@ -146,6 +177,12 @@ export class ExecutionEngine {
         this.deps.store.save(checkpoint, this.now());
         throw error;
       }
+      if (error instanceof CancellationRequested) {
+        // Wherever it was noticed, the answer is the same: stop, and say so
+        // in the one way the server will accept.
+        this.log(`${execution.id}: cancelled`);
+        return this.finish(checkpoint, 'cancelled', 'Cancelled before it finished');
+      }
       const message = this.deps.redactor.line((error as Error).message ?? String(error));
       this.log(`${execution.id} failed: ${message}`);
       return this.finish(checkpoint, 'failed', `The execution stopped: ${message}`);
@@ -156,9 +193,7 @@ export class ExecutionEngine {
     const { execution } = checkpoint;
 
     // -- prepare ------------------------------------------------------------
-    if (await this.cancelled(checkpoint, 'preparing', 'Setting up the checkouts')) {
-      return this.finish(checkpoint, 'cancelled', 'Cancelled before it started');
-    }
+    await this.stage(checkpoint, 'preparing', 'Setting up the checkouts');
     const worktrees: Record<string, string> = {};
     for (const repo of execution.repositories) {
       const row = this.deps.store.repository(checkpoint, repo.id);
@@ -201,12 +236,11 @@ export class ExecutionEngine {
       if (signal.aborted) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
       if (checkpoint.completedUnits.includes(unit.id)) continue;
       const label = `${unit.code ?? unit.id} — ${unit.title ?? 'work'}`;
-      const cancelled = await this.cancelled(
+      await this.stage(
         checkpoint,
         'implementing',
         `Building ${label} (${index + 1} of ${units.length})`
       );
-      if (cancelled) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
 
       const outcome = await this.deps.agent.run({
         kind: this.deps.agentKind,
@@ -238,9 +272,7 @@ export class ExecutionEngine {
 
     // -- verify -------------------------------------------------------------
     if (signal.aborted) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
-    if (await this.cancelled(checkpoint, 'verifying', 'Running the checks')) {
-      return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
-    }
+    await this.stage(checkpoint, 'verifying', 'Running the checks');
     const verification: Record<string, VerificationResult[]> = {};
     for (const repositoryId of Object.keys(worktrees)) {
       const rows = await this.deps.verifier.verifyRepository(repositoryId, { worktrees, signal });
@@ -258,9 +290,7 @@ export class ExecutionEngine {
 
     // -- publish ------------------------------------------------------------
     if (signal.aborted) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
-    if (await this.cancelled(checkpoint, 'opening_prs', 'Opening pull requests')) {
-      return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
-    }
+    await this.stage(checkpoint, 'opening_prs', 'Opening pull requests');
     const blockedBy: string[] = [];
     for (const repositoryId of Object.keys(worktrees)) {
       const problem = await this.publishRepository(
@@ -289,22 +319,33 @@ export class ExecutionEngine {
     return this.finish(checkpoint, 'ready_for_testing', this.summaryFor(checkpoint));
   }
 
-  /** Set a stage, and notice if somebody cancelled while we were working. */
-  private async cancelled(
+  /** Move to a stage. Throws CancellationRequested if somebody cancelled. */
+  private async stage(
     checkpoint: ExecutionCheckpoint,
     state: ExecutionState,
     message: string
-  ): Promise<boolean> {
+  ): Promise<void> {
     this.log(`${checkpoint.execution.id} → ${state}: ${message}`);
     checkpoint.lastMessage = message;
-    const { cancelRequested } = await this.say(checkpoint, {
-      state,
-      message: this.deps.redactor.line(message, 2000),
-    });
-    return cancelRequested;
+    await this.say(checkpoint, { state, message: this.deps.redactor.line(message, 2000) });
   }
 
-  /** Commit whatever the agent changed, per repository. */
+  /**
+   * Commit whatever the agent left uncommitted, per repository.
+   *
+   * Note what this does NOT decide: whether the repository changed. The
+   * agent is told not to commit, and mostly does not, but an agent that
+   * commits anyway leaves a clean working tree — and reading "clean" as
+   * "nothing happened" reported `no_changes` for a repository with real
+   * work in it, skipped its pull request, and claimed base and head were
+   * the same commit when they were not. That question is answered from the
+   * branch instead, in `changedSince`.
+   *
+   * A commit that fails is recorded against the repository rather than
+   * logged and forgotten, for the same reason: work that is not committed
+   * is not on the branch, and the honest outcome is a repository that did
+   * not finish.
+   */
   private async commitUnit(
     checkpoint: ExecutionCheckpoint,
     worktrees: Record<string, string>,
@@ -321,17 +362,27 @@ export class ExecutionEngine {
           commitMessageFor(checkpoint.execution, unit),
           paths
         );
-        if (sha) {
-          row.changed = true;
-          row.headCommit = sha;
-        }
+        if (sha) row.headCommit = sha;
       } catch (error) {
-        this.log(
-          `${repositoryId}: could not commit — ${this.deps.redactor.line((error as Error).message)}`
-        );
+        row.error = `Could not commit the work in this repository: ${this.deps.redactor.line(
+          (error as Error).message
+        )}`;
+        this.log(`${repositoryId}: ${row.error}`);
       }
     }
     this.deps.store.save(checkpoint, this.now());
+  }
+
+  /**
+   * Does this branch hold anything the base does not?
+   *
+   * Asked of git rather than inferred from the working tree, so it is true
+   * whoever made the commits — the worker, or an agent that ignored the
+   * instruction not to.
+   */
+  private async changedSince(tree: string, baseCommit: string): Promise<boolean> {
+    const head = await this.deps.git.headCommit(tree);
+    return head !== baseCommit;
   }
 
   /**
@@ -364,17 +415,32 @@ export class ExecutionEngine {
       return `${repo.name}: ${verdict.reason}.`;
     }
 
+    // A commit that would not happen means the work is not on the branch.
+    // Reporting the repository anyway would publish less than was built.
+    if (row.error) return `${repo.name}: ${row.error}`;
+
     try {
       const baseCommit =
         row.baseCommit ?? (await this.deps.git.baseCommit(execution.tenant_id, repo));
       row.baseCommit = baseCommit;
+      row.changed = await this.changedSince(tree, baseCommit);
 
       if (!row.changed) {
-        // Nothing to do here, and that is an ordinary outcome. The server
-        // insists base and head match, which they do by construction.
+        // Nothing here, and that is an ordinary outcome. Feature1 insists
+        // base and head match for it, which they do because the branch is
+        // still sitting on the base commit.
         row.headCommit = baseCommit;
         row.outcome = 'no_changes';
         return this.reportRepository(checkpoint, row, verification, []);
+      }
+
+      // Anything left uncommitted at this point never reached the branch,
+      // and pushing would open a pull request missing part of the work it
+      // claims to be.
+      if (await this.deps.git.hasUncommittedChanges(tree)) {
+        row.error = 'Work was left uncommitted in this checkout and is not on the branch';
+        this.deps.store.save(checkpoint, this.now());
+        return `${repo.name}: ${row.error}.`;
       }
 
       this.assertLive(`pushing ${repo.name}`);
@@ -467,14 +533,29 @@ export class ExecutionEngine {
     return null;
   }
 
+  /**
+   * The one sentence a product manager reads.
+   *
+   * It used to end "all checks passed" unconditionally, which was a lie in
+   * the ordinary case: Feature1 needs only one passing command per
+   * repository, so a repository can be handed over with its tests green and
+   * its lint never run. "Ready for testing" is already easy to read as
+   * "checked"; the summary must not help.
+   */
   private summaryFor(checkpoint: ExecutionCheckpoint): string {
     const rows = checkpoint.repositories;
     const opened = rows.filter((r) => r.pullRequestUrl).length;
     const untouched = rows.filter((r) => r.outcome === 'no_changes').length;
+    const checks = rows.flatMap((r) => r.checks);
+    const ran = checks.filter((c) => c.outcome === 'passed').length;
+    const missed = checks.filter((c) => c.outcome !== 'passed');
     return [
       `${opened} pull request${opened === 1 ? '' : 's'} opened`,
       ...(untouched ? [`${untouched} repository needed no change`] : []),
-      'all checks passed',
+      missed.length === 0
+        ? `all ${ran} check${ran === 1 ? '' : 's'} passed`
+        : `${ran} check${ran === 1 ? '' : 's'} passed, ${missed.length} could not run ` +
+          `(${[...new Set(missed.map((c) => c.name))].join(', ')})`,
     ].join('; ');
   }
 
@@ -498,7 +579,16 @@ export class ExecutionEngine {
     checkpoint.state = state;
     checkpoint.lastMessage = message;
     this.deps.store.save(checkpoint, this.now());
-    await this.say(checkpoint, { state, message: this.deps.redactor.line(message, 2000) });
+    try {
+      await this.say(checkpoint, { state, message: this.deps.redactor.line(message, 2000) });
+    } catch (error) {
+      if (!(error instanceof CancellationRequested)) throw error;
+      // Somebody cancelled while this was being written. The server took
+      // none of it, so saying it was reported would be false — acknowledge
+      // the cancellation instead, which is the only thing it will accept.
+      this.log(`${checkpoint.execution.id}: cancelled while reporting ${state}`);
+      return this.finish(checkpoint, 'cancelled', 'Cancelled before it finished');
+    }
     checkpoint.reported = true;
     this.deps.store.save(checkpoint, this.now());
     this.log(`${checkpoint.execution.id} → ${state}: ${message}`);

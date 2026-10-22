@@ -99,6 +99,14 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   startAppLogs(): Promise<boolean>;
   /** Pull the latest changes from each repo's remote into the clone. */
   syncRepos(): Promise<boolean>;
+  /** Clone more repositories into this project's workspace. */
+  addRepos(urls: string[]): Promise<{ added: number; error?: string }>;
+  /** Repositories sitting in the workspace that the project does not hold. */
+  unlistedRepos: Array<{ url: string; dir: string }>;
+  /** Take the ones found above into the project. */
+  adoptRepos(dirs: string[]): Promise<void>;
+  /** A repository was added after the environment was generated. */
+  reposChangedSinceSetup: boolean;
   /** Point one repo at a remote and push what it has. */
   addRemote(dir: string, url: string): Promise<boolean>;
   /** The public address this app is shared on, while a share is running. */

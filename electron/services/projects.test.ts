@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { isWorktreePath, PROJECTS_DIR, setLinkedRoots, WORKTREES_DIR } from '../paths';
 import {
   addRemoteCommand,
+  addRepositories,
+  discoverRepositories,
   checkoutDefaultCommand,
   commitFeatureWorkCommand,
   deleteFeatureFiles,
@@ -775,4 +777,162 @@ describe('updating a feature from the trunk', () => {
     const [, rowB] = featureGitStatus([a.dir, b.dir], key, 'paging', 'mvpfy/paging');
     expect(rowB.behind).toBe(0);
   }, 120_000);
+});
+
+describe('growing a project by a repository', () => {
+  const git = (args: string[], cwd: string) =>
+    execFileSync('git', args, {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+    })
+      .toString()
+      .trim();
+
+  /** A workspace mvpfy is allowed to touch, with a repo already in it. */
+  function workspace(opts: { rootIsRepo: boolean }): { root: string; tmp: string } {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-grow-'));
+    const root = path.join(tmp, 'shop');
+    fs.mkdirSync(root, { recursive: true });
+    if (opts.rootIsRepo) {
+      git(['init', '-q', '-b', 'main'], root);
+      git(['config', 'user.email', 't@e.com'], root);
+      git(['config', 'user.name', 'T'], root);
+      fs.writeFileSync(path.join(root, 'README.md'), '# shop\n');
+      git(['add', '.'], root);
+      git(['commit', '-q', '-m', 'first'], root);
+    }
+    setLinkedRoots([root]);
+    return { root, tmp };
+  }
+
+  /** A bare-ish source repository to clone from. */
+  function source(tmp: string, name: string): string {
+    const dir = path.join(tmp, name);
+    fs.mkdirSync(dir, { recursive: true });
+    git(['init', '-q', '-b', 'main'], dir);
+    git(['config', 'user.email', 't@e.com'], dir);
+    git(['config', 'user.name', 'T'], dir);
+    fs.writeFileSync(path.join(dir, 'index.js'), '//\n');
+    git(['add', '.'], dir);
+    git(['commit', '-q', '-m', 'first'], dir);
+    return dir;
+  }
+
+  it('clones a repository into a project that already exists', async () => {
+    const { root, tmp } = workspace({ rootIsRepo: false });
+    try {
+      const from = source(tmp, 'payments');
+      const result = await addRepositories(root, [from]);
+      expect(result.error).toBeUndefined();
+      expect(result.repos).toHaveLength(1);
+      expect(result.repos[0].ok).toBe(true);
+      expect(fs.existsSync(path.join(result.repos[0].dir, '.git'))).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('adds what worked and names what did not', async () => {
+    // Three addresses with one typo should add two, not none.
+    const { root, tmp } = workspace({ rootIsRepo: false });
+    try {
+      const good = source(tmp, 'payments');
+      const result = await addRepositories(root, [good, path.join(tmp, 'nothing-here')]);
+      expect(result.repos.filter((r) => r.ok)).toHaveLength(1);
+      expect(result.error).toMatch(/nothing-here/);
+      // Nothing half-cloned is left for the next scan to find.
+      expect(fs.existsSync(path.join(root, 'nothing-here'))).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('does not let a second repository collide with a folder already there', async () => {
+    const { root, tmp } = workspace({ rootIsRepo: false });
+    try {
+      const first = source(tmp, 'payments');
+      await addRepositories(root, [first]);
+      const second = source(path.join(tmp, 'other'), 'payments');
+      const result = await addRepositories(root, [second]);
+      expect(result.repos[0].ok).toBe(true);
+      expect(result.repos[0].dir).not.toBe(path.join(root, 'payments'));
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('hides a nested repository from the one around it', async () => {
+    // A single-repository project puts that repository AT the workspace
+    // root, so a second lives inside it — and without this the outer
+    // repository offers the whole thing up as untracked files, which is
+    // how one product gets committed into another.
+    const { root, tmp } = workspace({ rootIsRepo: true });
+    try {
+      const from = source(tmp, 'payments');
+      const result = await addRepositories(root, [from]);
+      expect(result.repos[0].ok).toBe(true);
+      const exclude = fs.readFileSync(path.join(root, '.git', 'info', 'exclude'), 'utf8');
+      expect(exclude).toContain('/payments/');
+      // The outer repository now sees nothing to commit.
+      expect(git(['status', '--porcelain'], root)).toBe('');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a workspace mvpfy does not manage', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-grow-'));
+    try {
+      setLinkedRoots([]);
+      const result = await addRepositories(path.join(tmp, 'somebody-elses'), ['https://x/y.git']);
+      expect(result.error).toMatch(/only be added to a project mvpfy manages/);
+      expect(result.repos).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('discoverRepositories', () => {
+  const git = (args: string[], cwd: string) =>
+    execFileSync('git', args, {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+    });
+
+  it('finds a repository somebody dropped in, and ignores the known ones', () => {
+    // Linking scans once, at creation, and never again — so a repository
+    // cloned into the folder afterwards was invisible forever.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-scan-'));
+    try {
+      const root = path.join(tmp, 'shop');
+      for (const name of ['api', 'web']) {
+        const dir = path.join(root, name);
+        fs.mkdirSync(dir, { recursive: true });
+        git(['init', '-q'], dir);
+      }
+      // Not a repository, and mvpfy's own scaffolding.
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      fs.mkdirSync(path.join(root, 'node_modules'), { recursive: true });
+      fs.mkdirSync(path.join(root, '.mvpfy'), { recursive: true });
+      setLinkedRoots([root]);
+
+      const found = discoverRepositories(root, [path.join(root, 'api')]);
+      expect(found.map((r) => path.basename(r.dir))).toEqual(['web']);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('finds nothing in a workspace mvpfy does not manage', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-scan-'));
+    try {
+      setLinkedRoots([]);
+      expect(discoverRepositories(tmp, [])).toEqual([]);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

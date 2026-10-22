@@ -29,6 +29,15 @@ export interface Project {
   /** Slugs of planned features (one plan/spec file pair per slug). */
   planSlugs?: string[];
   /**
+   * When a repository was last added to a project that already existed.
+   *
+   * Kept so the overview can say that what is running was generated before
+   * it. Regenerating somebody's environment because they added a repository
+   * is not a decision to make for them, but letting them believe the new
+   * part is running would be worse.
+   */
+  reposAddedAt?: string;
+  /**
    * The PM has seen the app running with its demo login and accepted the
    * setup — the human gate on the last bootstrap card. Kept in mvpfy's own
    * state, never in the agent-written flow file, so no run can fake it.
@@ -520,6 +529,19 @@ export interface MvpfyApi {
   keychainSet(entry: string, value: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   createProject(repoUrls: string[], link?: boolean): Promise<CreateProjectResult>;
+  /**
+   * Add repositories to a project that already exists. Partial success is a
+   * real outcome: three addresses with one typo add two and say which failed.
+   */
+  addRepos(
+    workspacePath: string,
+    repoUrls: string[]
+  ): Promise<{ repos: RepoCloneOutcome[]; error?: string }>;
+  /** Repositories already in the workspace that the project does not hold. */
+  discoverRepos(
+    workspacePath: string,
+    knownDirs: string[]
+  ): Promise<Array<{ url: string; dir: string }>>;
   /** True when no repository in the workspace holds a product yet. */
   workspaceEmpty(dirs: string[]): Promise<boolean>;
   /**

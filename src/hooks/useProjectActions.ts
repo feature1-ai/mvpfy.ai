@@ -75,6 +75,17 @@ export interface ProjectActions {
   syncRepos(): Promise<boolean>;
   /** Point one repo at a remote and push what it has. */
   addRemote(dir: string, url: string): Promise<boolean>;
+  /** Clone more repositories into this project's workspace. */
+  addRepos(urls: string[]): Promise<{ added: number; error?: string }>;
+  /** Repositories sitting in the workspace that the project does not hold. */
+  unlistedRepos: Array<{ url: string; dir: string }>;
+  /** Take the ones found above into the project. */
+  adoptRepos(dirs: string[]): Promise<void>;
+  /**
+   * The repositories changed since the environment was set up, so what is
+   * running does not include all of them.
+   */
+  reposChangedSinceSetup: boolean;
   /** The public address this app is shared on, while a share is running. */
   shareUrl: string | null;
   /** True once a share has started but before its address exists. */
@@ -589,6 +600,73 @@ export function useProjectActions(
   // The way back for a project started with no remote. Everything but raising
   // a pull request works without one, so "none for now" is a real choice —
   // which it only is if there is somewhere to change your mind.
+  /**
+   * Put new repositories into the project, by address or by adoption.
+   *
+   * Both routes end in the same place — the project's repository list — and
+   * both leave the running environment behind, because it was generated for
+   * the set that existed before. That is said in the interface rather than
+   * fixed silently: regenerating somebody's compose file because they added
+   * a repository is not a decision to make for them.
+   */
+  const recordRepos = (added: Array<{ url: string; dir: string }>) => {
+    if (added.length === 0) return;
+    updateState((prev) => ({
+      ...prev,
+      projects: prev.projects.map((p) => {
+        if (p.id !== project.id) return p;
+        const known = new Set(p.repos.map((r) => r.dir));
+        const fresh = added.filter((r) => !known.has(r.dir));
+        if (fresh.length === 0) return p;
+        return {
+          ...p,
+          repos: [...p.repos, ...fresh],
+          // What is running was built without these. Recorded so the
+          // overview can say so instead of quietly being wrong.
+          reposAddedAt: new Date().toISOString(),
+        };
+      }),
+    }));
+  };
+
+  const addRepos = async (urls: string[]): Promise<{ added: number; error?: string }> => {
+    // Carried out rather than returned through `guarded`, which reports
+    // only whether it ran: partial success is a real outcome here, and two
+    // of three cloned is two repositories added and one address to correct.
+    let outcome: { added: number; error?: string } = { added: 0 };
+    const ran = await guarded(async () => {
+      const wanted = urls.map((u) => u.trim()).filter(Boolean);
+      if (wanted.length === 0) return;
+      const result = await window.mvpfy.addRepos(project.localPath, wanted);
+      const ok = result.repos.filter((r) => r.ok).map((r) => ({ url: r.url, dir: r.dir }));
+      recordRepos(ok);
+      outcome = { added: ok.length, ...(result.error ? { error: result.error } : {}) };
+    });
+    return ran ? outcome : { added: 0, error: 'Something else is running; try again in a moment' };
+  };
+
+  const [unlistedRepos, setUnlistedRepos] = useState<Array<{ url: string; dir: string }>>([]);
+  const knownDirs = project.repos.map((r) => r.dir).join('|');
+  useEffect(() => {
+    let live = true;
+    void window.mvpfy
+      .discoverRepos(project.localPath, knownDirs ? knownDirs.split('|') : [])
+      .then((found) => live && setUnlistedRepos(found))
+      .catch(() => live && setUnlistedRepos([]));
+    return () => {
+      live = false;
+    };
+  }, [project.localPath, knownDirs]);
+
+  const adoptRepos = async (dirs: string[]) => {
+    const wanted = new Set(dirs);
+    recordRepos(unlistedRepos.filter((r) => wanted.has(r.dir)));
+    setUnlistedRepos((prev) => prev.filter((r) => !wanted.has(r.dir)));
+  };
+
+  // Generated at setup, so a repository added afterwards is not in it.
+  const reposChangedSinceSetup = Boolean(project.reposAddedAt && project.generatedFiles.length > 0);
+
   const addRemote = (dir: string, url: string) =>
     guarded(async () => {
       const address = url.trim();
@@ -679,6 +757,10 @@ export function useProjectActions(
     });
 
   return {
+    addRepos,
+    unlistedRepos,
+    adoptRepos,
+    reposChangedSinceSetup,
     bootstrap,
     saveAnswersAndRerun,
     dismissQuestions,

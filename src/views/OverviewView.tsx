@@ -1278,6 +1278,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                 );
               })}
             </div>
+            <AddRepository c={c} />
           </section>
 
           {cred && (
@@ -1380,6 +1381,127 @@ function PortItem({ label, port }: { label: string; port: number }) {
  * request works without one — which is only a real choice if there is a way to
  * change your mind later. This is that way.
  */
+/**
+ * Growing a project by a repository.
+ *
+ * A project's repositories were fixed when it was created, which is wrong in
+ * the ordinary case: products grow a service, and "make a second project"
+ * is not an answer — the features, the plans and the running environment all
+ * belong to this one.
+ *
+ * Two routes, because there are two ways it actually happens. Somebody has
+ * an address for a repository that is not here yet, or somebody already
+ * cloned one into the folder and mvpfy has been ignoring it ever since,
+ * because linking scans once and never again.
+ *
+ * What it says afterwards matters as much as what it does. The environment
+ * that is running was generated for the repositories that existed before,
+ * so the new one is not in it — said plainly, with the button that fixes it,
+ * rather than regenerating somebody's compose file on their behalf.
+ */
+function AddRepository({ c }: { c: ProjectController }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState('');
+  const [problem, setProblem] = useState('');
+  const found = c.unlistedRepos;
+
+  const send = () => {
+    if (!url.trim() || c.busy) return;
+    setProblem('');
+    void c.addRepos([url]).then((result) => {
+      if (result.added > 0) {
+        setUrl('');
+        setOpen(false);
+      }
+      setProblem(result.error ?? '');
+    });
+  };
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-line-subtle pt-3">
+      {found.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[11.5px] text-muted">
+            {found.length === 1 ? 'A repository is' : `${found.length} repositories are`} here that
+            this project does not know about.
+          </p>
+          {found.map((r) => (
+            <div key={r.dir} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">
+                {r.dir.split('/').pop()}/
+              </span>
+              <button
+                onClick={() => void c.adoptRepos([r.dir])}
+                disabled={c.busy}
+                className="btn-secondary h-[24px] shrink-0 px-2 text-[11px] disabled:opacity-50"
+              >
+                Add it
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {c.reposChangedSinceSetup && (
+        <div className="flex flex-col gap-1.5 rounded-md border border-line bg-surface px-2.5 py-2">
+          <p className="text-[11.5px] leading-snug text-body">
+            What is running was set up before this repository was added, so it is not part of it
+            yet.
+          </p>
+          <button
+            onClick={() => void c.rebootstrap()}
+            disabled={c.busy}
+            className="btn-secondary h-[26px] self-start px-2.5 text-[11.5px] disabled:opacity-50"
+          >
+            Set up again
+          </button>
+        </div>
+      )}
+
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="self-start text-[11.5px] text-go hover:underline"
+        >
+          Add a repository
+        </button>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && send()}
+            placeholder="https://github.com/acme/payments.git"
+            disabled={c.busy}
+            spellCheck={false}
+            autoFocus
+            className="h-[30px] w-full rounded-md border border-line bg-surface px-2.5 font-mono text-[11.5px] outline-none placeholder:text-faint focus:border-muted"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={send}
+              disabled={c.busy || !url.trim()}
+              className="btn-primary h-[26px] px-2.5 text-[11.5px] disabled:opacity-50"
+            >
+              Clone it here
+            </button>
+            <button
+              onClick={() => {
+                setOpen(false);
+                setProblem('');
+              }}
+              className="text-[11.5px] text-muted hover:text-body"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {problem && <p className="text-[11px] leading-snug text-stop">{problem}</p>}
+    </div>
+  );
+}
+
 function AddRemote({ c, dir }: { c: ProjectController; dir: string }) {
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState('');

@@ -182,6 +182,138 @@ export async function createProject(repoUrls: string[]): Promise<CreateProjectRe
 }
 
 /**
+ * Repositories already sitting in the workspace that the project does not
+ * know about.
+ *
+ * The common way a project grows: somebody clones a second repository into
+ * the folder they linked, and mvpfy carries on as though it were not there.
+ * Linking scans once, at creation, and never again — so this is that scan,
+ * offered whenever it finds something new.
+ *
+ * Only immediate children, and never the workspace root itself: the root is
+ * either already a repository the project knows about, or a container.
+ */
+export function discoverRepositories(
+  workspacePath: string,
+  knownDirs: string[]
+): Array<{ url: string; dir: string }> {
+  const root = path.resolve(expandHome(workspacePath.trim()));
+  if (!isAllowedWorkspace(root)) return [];
+  const known = new Set(knownDirs.map((d) => path.resolve(d)));
+  const found: Array<{ url: string; dir: string }> = [];
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    // mvpfy's own scaffolding, and the places tools leave checkouts.
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    const dir = path.join(root, entry.name);
+    if (known.has(dir)) continue;
+    if (!fs.existsSync(path.join(dir, '.git'))) continue;
+    const res = spawnShellSync(`git -C ${shellQuote(dir)} remote get-url origin`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    found.push({ url: res.status === 0 ? res.stdout.trim() : '', dir });
+  }
+  return found;
+}
+
+/**
+ * Keep a nested repository out of the one around it.
+ *
+ * A single-repository project puts that repository AT the workspace root, so
+ * a second one has to live in a folder inside it — and the outer repository
+ * then offers the whole thing up as untracked files, which is how somebody
+ * commits one product into another. `.git/info/exclude` is the right place
+ * for this: it is local, it is not the team's `.gitignore`, and nothing the
+ * builder wrote is touched.
+ */
+function excludeFromOuterRepo(root: string, folderName: string): void {
+  const exclude = path.join(root, '.git', 'info', 'exclude');
+  if (!fs.existsSync(path.dirname(exclude))) return;
+  const line = `/${folderName}/`;
+  let current = '';
+  try {
+    current = fs.readFileSync(exclude, 'utf8');
+  } catch {
+    // No exclude file yet, which is ordinary.
+  }
+  if (current.split('\n').some((l) => l.trim() === line)) return;
+  const prefix = current && !current.endsWith('\n') ? '\n' : '';
+  fs.appendFileSync(
+    exclude,
+    `${prefix}# Added by mvpfy: a separate repository of this project.\n${line}\n`,
+    'utf8'
+  );
+}
+
+/**
+ * Add repositories to a project that already exists.
+ *
+ * A project's repositories were fixed at creation, which is wrong in the
+ * ordinary case: products grow a service, and the answer should not be
+ * "make a second project". Each URL is cloned into its own folder in the
+ * workspace, exactly as a multi-repository project is built.
+ *
+ * Partial success is a real outcome and is reported as such — three URLs
+ * where one is a typo should add two, not none.
+ */
+export async function addRepositories(
+  workspacePath: string,
+  repoUrls: string[]
+): Promise<{ repos: RepoCloneOutcome[]; error?: string }> {
+  const root = path.resolve(expandHome(workspacePath.trim()));
+  if (!isAllowedWorkspace(root)) {
+    return { repos: [], error: 'Repositories can only be added to a project mvpfy manages' };
+  }
+  if (!fs.existsSync(root)) return { repos: [], error: `Workspace does not exist: ${root}` };
+  const urls = repoUrls.map((u) => u.trim()).filter(Boolean);
+  if (urls.length === 0) return { repos: [], error: 'No repository address given' };
+
+  // The root is a repository in a single-repository project, and the new
+  // folders have to be hidden from it.
+  const rootIsRepo = fs.existsSync(path.join(root, '.git'));
+  const taken = new Set(
+    fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+  );
+
+  const repos: RepoCloneOutcome[] = [];
+  for (const url of urls) {
+    const base = slugFromRepoUrl(url);
+    let slug = base;
+    let n = 2;
+    while (taken.has(slug)) slug = `${base}-${n++}`;
+    taken.add(slug);
+    const dir = path.join(root, slug);
+    const res = await cloneSource(url, dir);
+    if (res.ok) {
+      // A repository that arrived empty cannot hold a worktree, and every
+      // feature begins with one.
+      ensureInitialCommit(dir);
+      if (rootIsRepo) excludeFromOuterRepo(root, slug);
+    } else {
+      // Leave nothing half-cloned behind for the next scan to find.
+      fs.rmSync(dir, { recursive: true, force: true });
+      taken.delete(slug);
+    }
+    repos.push({ url, dir, ...res });
+  }
+  const failed = repos.filter((r) => !r.ok);
+  return {
+    repos,
+    ...(failed.length > 0 ? { error: failed.map((r) => `${r.url}: ${r.error}`).join('\n') } : {}),
+  };
+}
+
+/**
  * True when there is no product here yet — every repository in the workspace
  * tracks nothing but mvpfy's own files.
  *

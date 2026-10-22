@@ -42,7 +42,9 @@ import { hasCloudflared, tunnelCommand } from './services/share';
 import { findFreePort, mcpFetch, probeUrl } from './services/net';
 import {
   createBlankProject,
+  addRepositories,
   createProject,
+  discoverRepositories,
   deleteFeatureFiles,
   workspaceIsEmpty,
   deleteProject,
@@ -87,6 +89,12 @@ export function registerIpc(): void {
     }
     return shell.openExternal(url);
   });
+  ipcMain.handle('add-repos', (_ev, workspacePath: string, repoUrls: string[]) =>
+    addRepositories(workspacePath, repoUrls)
+  );
+  ipcMain.handle('discover-repos', (_ev, workspacePath: string, knownDirs: string[]) =>
+    discoverRepositories(workspacePath, knownDirs)
+  );
   ipcMain.handle('create-project', (_ev, repoUrls: string[], link?: boolean) =>
     link ? linkProject(repoUrls[0] ?? '') : createProject(repoUrls)
   );

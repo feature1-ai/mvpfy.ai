@@ -1401,29 +1401,52 @@ function PortItem({ label, port }: { label: string; port: number }) {
  */
 function AddRepository({ c }: { c: ProjectController }) {
   const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState('');
+  const [text, setText] = useState('');
+  const [adding, setAdding] = useState(false);
   const [problem, setProblem] = useState('');
   const found = c.unlistedRepos;
 
+  // Same shape as adding a project: one per line, addresses or folders.
+  const entries = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
   const send = () => {
-    if (!url.trim() || c.busy) return;
+    if (entries.length === 0 || adding) return;
     setProblem('');
-    void c.addRepos([url]).then((result) => {
-      if (result.added > 0) {
-        setUrl('');
-        setOpen(false);
-      }
-      setProblem(result.error ?? '');
-    });
+    setAdding(true);
+    void c
+      .addRepos(entries)
+      .then((result) => {
+        if (result.added > 0 && !result.error) {
+          setText('');
+          setOpen(false);
+        }
+        setProblem(result.error ?? '');
+      })
+      .finally(() => setAdding(false));
   };
+
+  const browse = () =>
+    void window.mvpfy.pickDirectory().then((dirs) => {
+      if (!dirs?.length) return;
+      setText((prev) => {
+        const existing = prev
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean);
+        return [...existing, ...dirs.filter((d) => !existing.includes(d))].join('\n');
+      });
+    });
 
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-line-subtle pt-3">
       {found.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-[11.5px] text-muted">
-            {found.length === 1 ? 'A repository is' : `${found.length} repositories are`} here that
-            this project does not know about.
+          <p className="text-[11.5px] leading-snug text-muted">
+            {found.length === 1 ? 'A repository is' : `${found.length} repositories are`} already in
+            this project&rsquo;s folder but not part of it.
           </p>
           {found.map((r) => (
             <div key={r.dir} className="flex items-center gap-2">
@@ -1445,8 +1468,7 @@ function AddRepository({ c }: { c: ProjectController }) {
       {c.reposChangedSinceSetup && (
         <div className="flex flex-col gap-1.5 rounded-md border border-line bg-surface px-2.5 py-2">
           <p className="text-[11.5px] leading-snug text-body">
-            What is running was set up before this repository was added, so it is not part of it
-            yet.
+            What is running was set up before this was added, so it is not part of it yet.
           </p>
           <button
             onClick={() => void c.rebootstrap()}
@@ -1467,34 +1489,44 @@ function AddRepository({ c }: { c: ProjectController }) {
         </button>
       ) : (
         <div className="flex flex-col gap-1.5">
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && send()}
-            placeholder="https://github.com/acme/payments.git"
-            disabled={c.busy}
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={'https://github.com/org/payments\n~/code/local-service'}
+            disabled={adding}
             spellCheck={false}
             autoFocus
-            className="h-[30px] w-full rounded-md border border-line bg-surface px-2.5 font-mono text-[11.5px] outline-none placeholder:text-faint focus:border-muted"
+            className="h-[60px] w-full resize-y rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[11.5px] leading-[1.6] outline-none placeholder:text-faint focus:border-muted"
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={send}
-              disabled={c.busy || !url.trim()}
+              disabled={adding || entries.length === 0}
               className="btn-primary h-[26px] px-2.5 text-[11.5px] disabled:opacity-50"
             >
-              Clone it here
+              {adding ? 'Adding…' : entries.length > 1 ? `Add ${entries.length}` : 'Add'}
+            </button>
+            <button
+              onClick={browse}
+              disabled={adding}
+              className="btn-secondary h-[26px] px-2.5 text-[11.5px] disabled:opacity-50"
+            >
+              Choose a folder
             </button>
             <button
               onClick={() => {
                 setOpen(false);
                 setProblem('');
               }}
-              className="text-[11.5px] text-muted hover:text-body"
+              disabled={adding}
+              className="text-[11.5px] text-muted hover:text-body disabled:opacity-50"
             >
               Cancel
             </button>
           </div>
+          <p className="text-[11px] leading-snug text-faint">
+            One per line. A GitHub address or a folder already on this machine.
+          </p>
         </div>
       )}
       {problem && <p className="text-[11px] leading-snug text-stop">{problem}</p>}

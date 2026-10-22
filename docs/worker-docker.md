@@ -29,9 +29,8 @@ docker run -d --name mvpfy-worker \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=256m \
   -v mvpfy-work:/var/lib/mvpfy \
-  -e MVPFY_TENANT_ID=acme \
   -e MVPFY_FEATURE1_URL=https://acme.feature1.ai \
-  -e MVPFY_RUNNER_TOKEN=... \
+  -e MVPFY_RUNNER_TOKEN=<64 hex, from an organisation admin> \
   -e GH_TOKEN=... \
   -e ANTHROPIC_API_KEY=... \
   mvpfy-worker
@@ -39,19 +38,20 @@ docker run -d --name mvpfy-worker \
 
 ### Configuration
 
-| Variable                      | Default                  | What it is                                                                                                    |
-| ----------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `MVPFY_TENANT_ID`             | — **required**           | The one tenant this worker serves. An assignment for any other is refused and given back.                     |
-| `MVPFY_FEATURE1_URL`          | — required unless faking | Feature1's base URL. Must be https, except `localhost`.                                                       |
-| `MVPFY_RUNNER_TOKEN`          | —                        | The worker's own credential. Registered as a secret at start-up, so it can never appear in a log or a report. |
-| `MVPFY_WORKER_ROOT`           | `/var/lib/mvpfy`         | Everything durable. Mount it.                                                                                 |
-| `MVPFY_CONCURRENCY`           | `1`                      | Executions at once. Above 8 is refused as a typo.                                                             |
-| `MVPFY_AGENT`                 | `claude`                 | `claude` or `codex`.                                                                                          |
-| `MVPFY_AGENT_MODEL`           | the agent's own          | Leave unset to use whatever the agent is configured with.                                                     |
-| `MVPFY_CLAIM_INTERVAL_MS`     | `15000`                  | How often it asks for work.                                                                                   |
-| `MVPFY_HEARTBEAT_INTERVAL_MS` | `30000`                  | How often it says it is alive.                                                                                |
-| `MVPFY_WORKER_NAME`           | `mvpfy worker`           | Shown in Feature1.                                                                                            |
-| `MVPFY_FAKE_FEATURE1`         | —                        | `1` runs against the in-process fake. No server, no network, nothing real.                                    |
+| Variable                      | Default                  | What it is                                                                                                                                                                                          |
+| ----------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MVPFY_FEATURE1_URL`          | — required unless faking | The tenant's Feature1 URL. Must be https, except `localhost`.                                                                                                                                       |
+| `MVPFY_RUNNER_TOKEN`          | — required unless faking | The 64-hex runner credential, minted by an organisation admin and **valid for 24 hours**. The worker cannot renew it. Registered as a secret at start-up, so it never appears in a log or a report. |
+| `MVPFY_WORKER_ROOT`           | `/var/lib/mvpfy`         | Everything durable. Mount it.                                                                                                                                                                       |
+| `MVPFY_AGENT`                 | `claude`                 | `claude` or `codex`.                                                                                                                                                                                |
+| `MVPFY_AGENT_MODEL`           | the agent's own          | Leave unset to use whatever the agent is configured with.                                                                                                                                           |
+| `MVPFY_CLAIM_INTERVAL_MS`     | `15000`                  | How often it asks for work when idle.                                                                                                                                                               |
+| `MVPFY_HEARTBEAT_INTERVAL_MS` | `45000`                  | How often it renews the lease while working. The lease is three minutes, so anything above 120000 is refused.                                                                                       |
+| `MVPFY_WORKER_NAME`           | `mvpfy worker`           | For this worker's own logs.                                                                                                                                                                         |
+| `MVPFY_FAKE_FEATURE1`         | —                        | `1` runs against the in-process fake. No server, no credential, nothing real.                                                                                                                       |
+
+There is no tenant setting and no concurrency setting: the credential decides
+the tenant, and Feature1 hands out one execution at a time.
 
 A bad configuration stops the worker at start-up rather than an hour later in
 the middle of somebody's execution.
@@ -103,10 +103,11 @@ So the container is the security boundary, not the agent. What that requires:
 
 - **Non-root.** The image runs as uid 10001 and the entrypoint does not change
   that. Do not run it with `--user root`.
-- **One tenant per worker.** A worker holds one tenant's credentials and serves
-  one tenant's work. Two tenants on one worker means one tenant's agent can
-  reach the other's checkouts and tokens. The code refuses the assignment; the
-  container is what makes the refusal meaningful.
+- **One tenant per worker.** The runner credential belongs to one tenant and
+  authorises only the two worker endpoints, never general Feature1 APIs. Run a
+  separate worker per tenant: two sharing one means one tenant's agent can
+  reach the other's checkouts and tokens, and no server-side scoping helps
+  once they share a filesystem.
 - **A boundary you would trust with untrusted code.** The default Docker
   isolation is a shared kernel. For work from a tenant you do not fully trust,
   run the worker on a dedicated VM, or under gVisor or Kata — the same decision
@@ -138,13 +139,13 @@ docker stop --time 600 mvpfy-worker
 ## Checking it without Feature1
 
 ```sh
-docker run --rm -e MVPFY_TENANT_ID=acme -e MVPFY_FAKE_FEATURE1=1 mvpfy-worker
+docker run --rm -e MVPFY_FAKE_FEATURE1=1 mvpfy-worker
 ```
 
-The fake is the same one every test uses. It keeps the state a real server
-would — which attempt is live, which idempotency keys it has seen, where a pull
-request was attached — so it exercises the worker properly rather than agreeing
-with everything.
+The fake is the same one every test uses, and it re-implements the rules the
+real server enforces: the lease comparison, the stage ordering, the
+green-results rule, the every-repository rule, and reclaim with the accepted
+results intact. It exercises the worker rather than agreeing with it.
 
 ## What a worker will not do
 

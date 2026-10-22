@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { validId } from '../shared/runner/validate';
+import { validUuid } from '../shared/runner/validate';
 
 /**
  * Where a worker keeps things on disk.
@@ -26,10 +26,11 @@ export class Layout {
   }
 
   private static check(kind: string, value: string): string {
-    // These become directory names. A value that is not path-safe is refused
-    // rather than sanitised: sanitising two different ids to the same name is
-    // how one execution writes into another's directory.
-    if (!validId(value)) throw new Error(`${kind} is not usable in a path: ${value}`);
+    // These become directory names. Feature1 keys everything by UUID, so a
+    // UUID is what a path segment must be — refused rather than sanitised,
+    // because sanitising two different ids to one name is how an execution
+    // writes into another's directory.
+    if (!validUuid(value)) throw new Error(`${kind} is not a UUID: ${value}`);
     return value;
   }
 

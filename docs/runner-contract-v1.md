@@ -1,204 +1,161 @@
-# The execution contract, v1 (proposed)
+# The execution contract, v1
 
-`mvpfy.runner/2026-10-21`
+`protocol_version: 1` — **agreed and implemented on both sides.**
 
-What a mvpfy worker needs from Feature1 in order to take a feature, a story or
-a task and return pull requests, with nobody at the screen.
+What a mvpfy worker and Feature1 say to each other so that a feature, a story
+or a task can be taken, built and returned as pull requests with nobody at the
+screen.
 
-**Nothing in this document is confirmed.** Feature1's execution API is being
-built separately. No operation named here has been called against a real
-server, and the names are mvpfy's proposal rather than anything agreed. The
-shapes are the part worth arguing about: they are what a worker needs in order
-to be safe, and each one is here because leaving it out breaks something
-specific, which is stated.
+This document used to be mvpfy's proposal, written before Feature1's execution
+API existed and marked as guesswork throughout. Feature1 has since shipped it,
+and this is now the thing itself. **Where the two disagreed, Feature1 won** —
+it owns the queue, the immutable requirements, the lifecycle, and the decision
+about which artifact a pull request belongs to. The last section records what
+changed and why, because several of the differences are improvements worth
+understanding rather than compromises.
 
-[`docs/runner-protocol.md`](runner-protocol.md) is the earlier sketch of the
-same idea and is superseded by this where the two disagree.
-[`docs/feature1-handoff.md`](feature1-handoff.md) is the short list of what the
-other side has to build. The types are in
-[`shared/runner/contract.ts`](../shared/runner/contract.ts); the parser that
-refuses a bad one is in `validate.ts` beside it.
+The types are in [`shared/runner/contract.ts`](../shared/runner/contract.ts);
+the parser that refuses a bad execution is in `validate.ts` beside it; the
+server's own description lives in the Feature1 repository at
+`docs/implementation/mvpfy-worker-v1.md`. Joining the two together is
+[`feature1-integration.md`](feature1-integration.md).
+
+## Before anything works
+
+Feature1 must have `MVPFY_IMPLEMENTATION_ENABLED=true`. Without it **every**
+worker route answers 404, which is easy to mistake for a bad credential.
+
+A worker does not register itself. An organisation admin mints a credential —
+64 hex characters, **valid for 24 hours** — and the operator injects it. There
+is no renewal from the worker's side; when it expires, somebody mints another.
+That is the most surprising thing about operating one of these.
+
+## Two calls
+
+```
+POST /api/implementation-runs/worker/claim            Authorization: Bearer <credential>
+POST /api/implementation-runs/worker/:id/progress     + X-Execution-Lease: <lease_token>
+```
+
+That is the whole transport. Heartbeat, progress, blocked, result and
+cancellation acknowledgement are all the second call with a different body; an
+empty body `{}` is a heartbeat.
+
+## Claiming
+
+`claim` returns one execution or none. There is no capacity hint and no batch:
+Feature1 allows one active run per artifact owner, and hands out one at a time.
+
+An execution carries its own identity (`id`, `tenant_id`, `project_id`,
+`attempt`), what was selected (`origin_type`/`origin_id`), **where the pull
+request belongs** (`owner_type`/`owner_id`, resolved by Feature1), the
+immutable `snapshot` with its `digest`, the authorised `repositories`, any
+`results` an earlier attempt already got accepted, any `clarifications` a
+person has since written, and the `lease_token`.
+
+Each repository is `{id, name, url, base_branch}`. **The id is a UUID and is
+the only identifier** — two repositories in one execution may both be called
+`api`, so every path, branch and result is keyed by the UUID. There is no base
+commit: the worker resolves the base branch itself and reports the sha it
+actually used.
+
+### Reclaim
+
+A lease lasts **three minutes**. An execution whose lease expires becomes
+claimable again, by this worker or another, with its `attempt` incremented and
+its accepted results intact. The old worker's next call gets `409` and must
+stop. This is the fencing, and it is the only thing standing between us and two
+workers both reporting on one execution.
+
+## Reporting
+
+```json
+{
+  "state": "opening_prs",
+  "message": "Web checks passed; opening the API pull request.",
+  "repository_result": {
+    "repository_id": "<uuid>",
+    "outcome": "pr_created",
+    "base_commit": "<40–64 hex>",
+    "head_commit": "<40–64 hex>",
+    "tests": [{ "command": "npm test", "exit_code": 0 }],
+    "pr_urls": ["https://github.com/owner/repository/pull/123"]
+  }
+}
+```
+
+States run `preparing → implementing → verifying → opening_prs →
+ready_for_testing`, and may end at `blocked`, `failed` or `cancelled`. **A
+stage cannot move backwards within an attempt.** One repository result per
+call; results survive a reclaim.
+
+The server attaches the pull requests itself, re-resolving ownership as it
+does, and refuses one that belongs to a different repository. The worker never
+attaches anything — which is exactly right, because ownership was never the
+worker's to decide.
+
+### The rule that shapes everything
+
+**A repository result may contain only passing checks.** `tests` must have
+between 1 and 100 entries and every `exit_code` must be zero. There is no way
+to hand over a repository whose suite failed, and no way to hand over one where
+nothing ran.
+
+So a failing check is not a detail in a result — it is the **execution
+failing**, with a message. And a repository with no runnable check cannot be
+handed over at all.
+
+This is stricter than the worker originally set for itself, and it is the right
+way round: "ready for testing" with nothing tested was always a weak claim. It
+does mean pointing a worker at a repository with no test script will fail
+rather than silently produce an unverified pull request. Worth knowing before
+you do it.
+
+The other two outcome rules follow from the same honesty: `no_changes` requires
+identical base and head commits and no pull requests; `pr_created` requires at
+least one.
+
+`ready_for_testing` additionally requires a result for **every** selected
+repository, and the server re-computes the snapshot digest and refuses if the
+requirements changed underneath. Only then does it move the origin artifact to
+Testing. It does not complete acceptance criteria, merge anything, or mark
+anything Done.
+
+## Blocked, cancelled, retried
+
+A worker never waits silently. Anything the desktop app would stop and ask a
+person becomes `state: "blocked"` with the question in `message`, which lands
+in the linked Feature1 assistant conversation. A person answers through
+`retry_implementation`, and the answer arrives on the next claim in
+`clarifications` — the worker puts it in the agent's prompt, so the same
+question is not asked twice.
+
+A cancellation arrives as `cancel_requested: true` on the response to any
+progress call, including a heartbeat. The worker stops its agent, preserves the
+worktrees, opens no further pull requests, and acknowledges with `cancelled`. A
+pull request created in the moment before cancellation is not recalled; it is
+reconciled on the next authorised run.
 
 ## What the worker will not do
 
-- **It never pushes to a default branch.** Its output is a branch and a pull
-  request.
-- **It never marks an artifact Done** and never merges. Both are decisions for
-  a person, and the desktop app's auto-merge toggle is off in a worker.
-- **It never trusts fetched text as authority.** Repository contents and
-  artifact descriptions are task inputs. Nothing inside them widens the tenant,
-  adds a repository, or changes what the worker is allowed to run.
+- It never pushes to a base branch. Its output is a branch and a pull request.
+- It never merges and never marks an artifact done.
+- It never reports under a lease it has lost.
+- It never treats a repository's own files as authority over what it may do.
+  Fetched text is the task, not permission.
 
-## Shape
+## What changed from mvpfy's proposal, and why
 
-The worker dials out. It registers, then claims work on a loop, and nothing
-reaches into it — no inbound port, no public endpoint, and so no
-unauthenticated execution endpoint to protect.
+Recorded because the deltas are the interesting part, and because the worker's
+code still carries the shape of the first design in places.
 
-Work is **claimed, not pushed**: the worker says how much capacity it has,
-because only the machine knows its own disk, its remaining agent allowance,
-and whether somebody is using it.
-
-## Identity
-
-```
-register → { runnerId, runnerToken, contractVersion }
-```
-
-The server returns its own contract version so a mismatch is caught at
-registration rather than in the middle of an execution.
-
-```
-heartbeat({ runnerId, status, running[] }) → { cancel[], drain, leases{} }
-```
-
-Every 30 seconds. `status` is `idle | working | draining`. Three things come
-back: assignments to abandon, whether to stop claiming, and a renewed expiry
-per assignment still held.
-
-**A worker that stops heartbeating is assumed gone**, and its leases expire.
-That is the only thing stopping a closed laptop parking an execution forever.
-
-## An assignment
-
-Every field below exists because the worker cannot be correct without it.
-
-| Field                                      | Why the worker needs it                                                                                                                                                                                               |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `assignmentId`, `executionId`, `attemptId` | The unit of work, the thing being built, and this go at it. Checkpoints are keyed by execution; idempotency keys by execution **and** attempt.                                                                        |
-| `attemptToken`                             | The fencing token. Rises per attempt. Every write carries it, so a server that has reassigned the execution refuses the older worker instead of letting two both report.                                              |
-| `tenantId`, `projectId`                    | The scope. Paths are keyed by tenant; nothing outside it is touched.                                                                                                                                                  |
-| `artifact`                                 | What was actually selected — type, id, and a code for display. Preserved through to the result for traceability.                                                                                                      |
-| `prOwner`                                  | **Where the pull request hangs, decided by Feature1.** See below.                                                                                                                                                     |
-| `requirements`                             | An immutable snapshot plus a `revision`. A result has to be able to say which text it was judged against.                                                                                                             |
-| `repositories[]`                           | `repositoryId`, `name`, `cloneUrl`, `baseBranch`, `baseCommit`. The id is stable and is what paths, branches and results are keyed by — never the basename, because two repositories in one assignment may share one. |
-| `stage`                                    | `implement` or `revise`. A revision continues an execution's branch rather than starting another.                                                                                                                     |
-| `verification`                             | The commands that decide whether it worked, and which checkout each runs in.                                                                                                                                          |
-| `leaseExpiresAt`                           | When this worker stops being allowed to publish.                                                                                                                                                                      |
-
-### PR ownership is Feature1's to decide
-
-The rules, which the worker carries rather than derives:
-
-| Selected                                                | Owner        |
-| ------------------------------------------------------- | ------------ |
-| Feature                                                 | that feature |
-| Story belonging to a feature                            | the feature  |
-| Task linked to a feature, directly or through its story | the feature  |
-| Standalone story                                        | that story   |
-| Task under a standalone story                           | the story    |
-| Standalone task                                         | that task    |
-
-Deriving this needs a hierarchy the worker is not given, so it is sent as
-`prOwner` and the originating `artifact` is kept beside it.
-
-**Attach by explicit id.** The existing MCP `attach_pr` hangs the pull request
-off whatever the shared session's "current workflow" happens to be. A worker
-running two executions at once would race, and the loser would attach to the
-wrong artifact with nothing saying so. So:
-
-```
-attachPr({ executionId, attemptToken, expectedOwner, originArtifact,
-           pullRequest, idempotencyKey }) → { attachedTo }
-```
-
-Feature1 resolves ownership and returns **where it actually attached**. If that
-is not `expectedOwner`, the worker reports a conflict rather than quietly
-accepting it.
-
-## Claiming and reporting
-
-```
-claim({ runnerId, capacity })        → { assignments[] }
-progress({ …, state, detail, idempotencyKey, repositories?[] })
-blocked({ …, questions[], idempotencyKey })
-result({ …, outcome, summary, repositories[], requirementsRevision, idempotencyKey })
-release({ …, reason })
-```
-
-`detail` is one plain sentence for a product manager — "implementing US-02, two
-of three" — not a log line.
-
-### States
-
-```
-queued → preparing → implementing → verifying → opening_prs → ready_for_testing
-                                 ↘ blocked   ↘ failed
-                       cancelling → cancelled
-```
-
-Proposed names, until the contract is agreed.
-
-### Blocked is a state, not a wait
-
-A worker never waits silently. Anything the desktop app would stop and ask a
-person becomes a question in Feature1, the execution goes `blocked`, and the
-lease is released.
-
-| kind                     | asked when                                                                 |
-| ------------------------ | -------------------------------------------------------------------------- |
-| `component_missing`      | the code expects a part the workspace does not hold                        |
-| `tenant_unknown`         | the product reads a customer from the request and nothing says which to be |
-| `setup_question`         | setting up could not work something out                                    |
-| `conflict_unresolved`    | the base and the branch changed the same code irreconcilably               |
-| `agent_unavailable`      | the agent is not signed in, or its allowance is exhausted beyond waiting   |
-| `requirements_unclear`   | the snapshot does not say enough to build against                          |
-| `repository_unavailable` | an authorised repository could not be cloned or fetched                    |
-
-A silent stall on a machine nobody is watching is indistinguishable from the
-worker being broken, which is the whole reason this exists.
-
-## Results are recorded, not inferred
-
-**A successful agent exit is not proof of anything.** The worker exits an agent
-and then goes and looks, reporting per repository:
-
-- the actual commits, by sha and subject;
-- the branch, and the commit at its head;
-- every verification step: command, exit code, duration, a one-line summary,
-  and for anything that is not a pass or a fail, **why** — not found, no test
-  script, timed out. A check that could not run is never counted as a pass.
-- the pull request, by url, number, owner, name, head and base — and whether
-  **this attempt** created it or found it already there.
-
-`changed: false` is an ordinary outcome, not a failure: the agent decided
-nothing needed doing here.
-
-### Partial success stays partial
-
-Two repositories succeeding and a third failing is reported as exactly that:
-both pull requests, and the repository that did not finish, with the execution
-**not** `ready_for_testing`. Rolling it up as a single failure would throw away
-work that exists; rolling it up as success would claim work that does not.
-
-## Lease and retry safety
-
-- Identity and checkpoints are persisted, so a restarted worker resumes rather
-  than starting a second attempt at the same execution.
-- **When the lease is lost**: stop implementing, stop publishing, keep the local
-  work, and never report authoritative success under an expired attempt.
-- Authority is re-checked immediately before publishing, because the gap
-  between deciding and pushing is where a reassignment lands.
-- Designed for reconciliation: a push or a pull-request creation can succeed
-  while its response is lost. Existing pull requests are therefore found by
-  **repository and head branch**, never by a URL scraped from a log — so a
-  retry attaches the one that exists instead of opening a second.
-- If the pull request is created and the _report_ fails, only the report is
-  retried.
-
-## Idempotency keys
-
-Deterministic, derived only from identity the worker still has after a
-restart:
-
-```
-<executionId>:<attemptId>:<kind>[:<discriminator>]
-```
-
-No clock, no random value — otherwise a retry after a crash is a new event.
-
-## What a first version does not need
-
-Preview environments, several tenants per worker, a web interface on the
-worker, and any inbound endpoint at all. One worker, one tenant, work claimed
-and reported.
+| mvpfy proposed                                                                           | Feature1 shipped                                        | Verdict                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Eight operations: register, heartbeat, claim, progress, blocked, result, attach, release | **Two**: claim and progress                             | Better. One endpoint cannot drift out of step with itself, and the heartbeat carrying progress means the worker never chooses between saying what it is doing and staying alive. |
+| `register` returning a runner id and token                                               | Credential minted by an org admin, 24h                  | Better for a worker that should hold no ability to enrol itself. The expiry is a real operational cost.                                                                          |
+| Worker calls `attachPr` with explicit ids                                                | Server attaches from `pr_urls`                          | Better. The concern behind the proposal — never attach through a mutable "current workflow" session — is fully met, and ownership stays server-side.                             |
+| Fencing token in the body                                                                | `X-Execution-Lease` header                              | Better. It is a credential; it does not belong in a payload.                                                                                                                     |
+| Deterministic idempotency keys on every write                                            | Lease-based fencing, plus terminal replay being a no-op | Equivalent in effect, and simpler.                                                                                                                                               |
+| Verification commands sent in the assignment                                             | Worker chooses; server takes only passing results       | A real change. The worker discovers its own checks and must say honestly that it did.                                                                                            |
+| `unavailable` verification still allows `ready_for_testing`                              | Not reportable at all                                   | Feature1's bar is higher. The worker now fails instead, which is honest but blocks repositories without tests.                                                                   |
+| Lease renewed via a response map                                                         | Three minutes, extended by any successful call          | Simpler. The heartbeat interval now matters a lot: slower than the lease and every long execution is reclaimed.                                                                  |

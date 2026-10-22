@@ -1,49 +1,37 @@
 /**
- * The contract between a mvpfy worker and Feature1, as mvpfy proposes it.
+ * The contract between a mvpfy worker and Feature1.
  *
- * NOTHING HERE IS CONFIRMED. Feature1's execution API is being built
- * separately, and no operation named in this file has been called against a
- * real server. The names are mvpfy's proposal; the shapes are what a worker
- * genuinely needs in order to be safe, and those are the part worth arguing
- * about. `docs/runner-contract-v1.md` says the same thing in prose, and
- * `docs/feature1-handoff.md` lists what the other side has to provide.
+ * AGREED AND IMPLEMENTED ON BOTH SIDES. This file used to hold mvpfy's
+ * proposal; Feature1 has since shipped its execution API, and what follows is
+ * that API rather than a suggestion about it. Where the two disagreed,
+ * Feature1 won — it owns the queue, the requirements, and the decision about
+ * which artifact a pull request belongs to.
  *
- * The worker therefore never calls an endpoint unless it has been given one
- * explicitly (see `worker/httpTransport.ts`), and every test in this
- * repository runs against the in-process fake. A green test suite here is
- * evidence that the worker behaves, not that the integration works.
+ * Feature1's own description of it lives in that repository, at
+ * `docs/implementation/mvpfy-worker-v1.md`. `docs/runner-contract-v1.md`
+ * here is the worker's side and records what changed from the proposal and
+ * why.
  */
 
-/** Bumped when a field changes meaning. Sent on every request. */
-export const CONTRACT_VERSION = 'mvpfy.runner/2026-10-21';
+/** Sent by the server on every claim. A worker refuses anything else. */
+export const PROTOCOL_VERSION = 1;
 
 // -- Identity ---------------------------------------------------------------
 
-/**
- * What Feature1 asked for. The worker never decides this: a task that belongs
- * to a story that belongs to a feature is a `task` here, and which artifact
- * the pull request hangs off is a separate question with a separate field.
- */
+/** What Feature1 asked for. */
 export type ArtifactType = 'feature' | 'story' | 'task';
 
-export interface ArtifactRef {
-  type: ArtifactType;
-  id: string;
-  /** Human reference (FEA-142, US-03). Display only; never an identifier. */
-  code?: string;
-  title?: string;
-}
-
 /**
- * Where the pull request hangs, decided by Feature1 and not by the worker.
+ * Where the pull request hangs.
  *
- * The rules are Feature1's: a feature, or a story or task belonging to one,
- * all roll up to the feature; a standalone story owns its own; a task under a
- * standalone story rolls up to that story; a standalone task owns its own.
- * The worker carries the answer rather than deriving it, because deriving it
- * requires knowing a hierarchy the worker is not told and must not guess.
+ * Resolved by Feature1 and sent as `owner_type`/`owner_id`: a story or task
+ * under a feature rolls up to the feature, a standalone one owns its own.
+ * The worker carries the answer and never derives it — deriving it needs a
+ * hierarchy the worker is not given. In practice the worker does not even
+ * send it back: the server attaches pull requests itself and re-checks
+ * ownership at the moment it does.
  */
-export interface PrOwnerRef {
+export interface OwnerRef {
   type: ArtifactType;
   id: string;
 }
@@ -51,116 +39,67 @@ export interface PrOwnerRef {
 // -- What to build ----------------------------------------------------------
 
 export interface AcceptanceCriterion {
-  id: string;
-  text: string;
-}
-
-export interface WorkItem {
-  id: string;
-  type: ArtifactType;
-  code?: string;
-  title: string;
+  id?: string;
+  text?: string;
   description?: string;
-  acceptanceCriteria: AcceptanceCriterion[];
-  /** Ids of items in this same snapshot that must be built first. */
-  dependsOn?: string[];
-  /** A task may carry literal steps; a story normally does not. */
-  executionSteps?: string[];
+  [key: string]: unknown;
 }
 
 /**
- * The requirements as they stood when the assignment was made.
+ * One artifact's requirements, as Feature1 froze them.
  *
- * Immutable and revisioned on purpose: an execution that reports success has
- * to be able to say which text it was judged against, and Feature1 may have
- * moved on. A revision that does not match a resumed execution's checkpoint
- * is a new attempt, not a continuation.
+ * A feature carries its PRD in `requirements` and its unfinished stories in
+ * `stories`, in generation order. A standalone story or task carries its own
+ * description and criteria and nothing else — it is built directly, and must
+ * never be made to write a feature document first.
  */
-export interface RequirementsSnapshot {
-  revision: string;
-  title: string;
-  description?: string;
-  /**
-   * Acceptance criteria for the artifact itself. A standalone story or task
-   * carries its own here and needs no further planning — mvpfy must not make
-   * a standalone item write a feature PRD before it can start.
-   */
-  acceptanceCriteria: AcceptanceCriterion[];
-  /** Selected stories/tasks under a feature, in dependency order. */
-  items: WorkItem[];
-}
-
-// -- Where to build it ------------------------------------------------------
-
-/**
- * A repository the assignment authorises. The id is stable and is what every
- * path, branch record and result is keyed by — never the basename, because
- * two repositories in one assignment may share one.
- */
-export interface RepositoryRef {
-  repositoryId: string;
-  /** Display name. Not unique, not an identifier. */
-  name: string;
-  cloneUrl: string;
-  baseBranch: string;
-  /** The commit the requirements were written against. */
-  baseCommit: string;
-}
-
-export type VerificationKind = 'test' | 'lint' | 'build' | 'typecheck' | 'other';
-
-export interface VerificationStep {
+export interface Snapshot {
+  type: ArtifactType;
   id: string;
-  kind: VerificationKind;
-  /** Shown to a person. */
+  code?: string | null;
+  title?: string | null;
+  description?: string | null;
+  acceptanceCriteria?: AcceptanceCriterion[];
+  executionSteps?: string[];
+  taskGoal?: string | null;
+  /** The approved PRD. Features only. */
+  requirements?: unknown;
+  dependencies?: unknown[];
+  /** Child stories of a feature, already filtered to the unfinished ones. */
+  stories?: Snapshot[];
+  /** Free text the person typed when queueing. */
+  instructions?: string;
+  /** sha256 of the snapshot. Re-checked by the server before Testing. */
+  digest: string;
+  revision?: string | null;
+}
+
+/** A repository this execution authorises, as the run carries it. */
+export interface ExecutionRepository {
+  /** UUID. The only identifier — two may share a name. */
+  id: string;
   name: string;
-  command: string;
-  /** Which repository's checkout to run it in. */
-  repositoryId: string;
-  /** A failure here does not fail the execution, but is still reported. */
-  optional?: boolean;
-  timeoutMs?: number;
+  url: string;
+  base_branch: string;
 }
 
-export interface VerificationSpec {
-  steps: VerificationStep[];
-  /**
-   * When Feature1 supplies no steps, the worker may discover them from the
-   * repository. Discovery is reported as such, because "tests passed" from a
-   * command nobody specified is a weaker claim than one that was asked for.
-   */
-  allowDiscovery?: boolean;
+/** An answer a person gave after a previous attempt stopped to ask. */
+export interface Clarification {
+  answer: string;
+  at?: string;
 }
 
-/** What is being asked of this attempt. */
-export type ExecutionStage = 'implement' | 'revise';
-
-// -- The assignment ---------------------------------------------------------
-
-export interface Assignment {
-  contractVersion: string;
-  assignmentId: string;
-  executionId: string;
-  attemptId: string;
-  /**
-   * The fencing token. Rises with each attempt. Every write-shaped call
-   * carries it, and a server that has handed the execution to a newer attempt
-   * rejects the older one rather than letting two workers both report.
-   */
-  attemptToken: string;
-  tenantId: string;
-  projectId: string;
-  artifact: ArtifactRef;
-  prOwner: PrOwnerRef;
-  requirements: RequirementsSnapshot;
-  repositories: RepositoryRef[];
-  stage: ExecutionStage;
-  verification: VerificationSpec;
-  /** ISO 8601. The worker stops publishing once this passes unrenewed. */
-  leaseExpiresAt: string;
+/** What a previous attempt already finished, keyed by repository UUID. */
+export interface RepositoryResultRecord {
+  outcome: RepositoryOutcome;
+  tests: VerificationRecord[];
+  base_commit: string;
+  head_commit: string;
+  pr_urls: string[];
+  attempt?: number;
 }
 
-// -- What the worker reports ------------------------------------------------
+// -- The claimed execution --------------------------------------------------
 
 export type ExecutionState =
   | 'queued'
@@ -174,7 +113,14 @@ export type ExecutionState =
   | 'cancelling'
   | 'cancelled';
 
-/** States from which no further work happens without a new assignment. */
+/** The stages a worker may report while it is still working, in order. */
+export const STAGES: readonly ExecutionState[] = [
+  'preparing',
+  'implementing',
+  'verifying',
+  'opening_prs',
+];
+
 export const TERMINAL_STATES: readonly ExecutionState[] = [
   'ready_for_testing',
   'blocked',
@@ -186,214 +132,114 @@ export function isTerminal(state: ExecutionState): boolean {
   return TERMINAL_STATES.includes(state);
 }
 
-export type VerificationOutcome = 'passed' | 'failed' | 'skipped' | 'unavailable';
-
-export interface VerificationResult {
-  stepId: string;
-  kind: VerificationKind;
-  name: string;
-  command: string;
-  repositoryId: string;
-  outcome: VerificationOutcome;
-  exitCode: number | null;
-  durationMs: number;
-  /** One line a person can read. Redacted before it leaves the worker. */
-  summary: string;
+export interface Execution {
+  protocol_version: number;
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  requested_by: string;
+  origin_type: ArtifactType;
+  origin_id: string;
+  owner_type: ArtifactType;
+  owner_id: string;
+  assistant_thread_id: string | null;
+  request_key: string;
+  snapshot: Snapshot;
+  repositories: ExecutionRepository[];
+  state: ExecutionState;
+  attempt: number;
+  /** Results a previous attempt already reported. They survive a reclaim. */
+  results: Record<string, RepositoryResultRecord>;
+  clarifications: Clarification[];
+  message: string | null;
   /**
-   * Why an outcome that is not pass/fail happened — the command was not
-   * found, no test script exists, it timed out. A verification that could not
-   * run is reported as such and never silently counted as a pass.
+   * The fencing token, returned only by claim. Sent on every progress call
+   * in the `X-Execution-Lease` header, never in a body and never logged.
    */
-  reason?: string;
-  /** True when the worker chose this command rather than being given it. */
-  discovered?: boolean;
+  lease_token: string;
+  /** ISO. Three minutes, extended by each successful progress call. */
+  lease_until: string | null;
 }
 
-export interface CommitRecord {
-  sha: string;
-  subject: string;
-}
+// -- What the worker reports ------------------------------------------------
 
-export interface PullRequestRecord {
-  url: string;
-  number: number;
-  /** Owner and name as GitHub knows them, read back rather than assumed. */
-  repositoryOwner: string;
-  repositoryName: string;
-  headBranch: string;
-  baseBranch: string;
-  /** False when this attempt found an existing pull request and reused it. */
-  createdByThisAttempt: boolean;
+/**
+ * A repository outcome, and there are only two.
+ *
+ * Notably there is no "it failed" here. A repository result is a statement
+ * that this repository is finished and its checks passed; a repository that
+ * did not get there is reported by failing the execution instead, with a
+ * message. The server enforces that — see VerificationRecord.
+ */
+export type RepositoryOutcome = 'no_changes' | 'pr_created';
+
+/**
+ * A check that ran and passed.
+ *
+ * The server rejects any result containing a non-zero `exit_code`, so this
+ * type is only ever evidence of success. The worker's own richer record of
+ * what ran, what failed and what could not run lives in its checkpoint and
+ * in the pull request body.
+ */
+export interface VerificationRecord {
+  command: string;
+  exit_code: number;
 }
 
 export interface RepositoryResult {
-  repositoryId: string;
-  /** False means the agent touched nothing here. Not a failure. */
-  changed: boolean;
-  headBranch: string | null;
-  headCommit: string | null;
-  commits: CommitRecord[];
-  verification: VerificationResult[];
-  pullRequest: PullRequestRecord | null;
-  /** Set when this repository did not finish. The others still report. */
-  error?: string;
+  repository_id: string;
+  outcome: RepositoryOutcome;
+  /** 40–64 hex. Equal to head_commit when nothing changed. */
+  base_commit: string;
+  head_commit: string;
+  /** At least one, all passing. */
+  tests: VerificationRecord[];
+  /** Empty for no_changes, at least one for pr_created, at most 20. */
+  pr_urls: string[];
 }
 
-export type BlockedKind =
-  | 'component_missing'
-  | 'tenant_unknown'
-  | 'setup_question'
-  | 'conflict_unresolved'
-  | 'agent_unavailable'
-  | 'requirements_unclear'
-  | 'repository_unavailable';
-
-export interface BlockedQuestion {
-  id: string;
-  kind: BlockedKind;
-  text: string;
-  options?: string[];
+/** The body of a progress call. Everything is optional; `{}` is a heartbeat. */
+export interface ProgressBody {
+  state?: ExecutionState;
+  /** One plain sentence for a product manager. At most 2000 characters. */
+  message?: string;
+  repository_result?: RepositoryResult;
 }
 
-// -- Operations -------------------------------------------------------------
-
-export interface RegisterRequest {
-  contractVersion: string;
-  name: string;
-  workerVersion: string;
-  capabilities: {
-    agents: string[];
-    concurrency: number;
-    /** Repository ids this worker already holds a clone of. */
-    repositories: string[];
+export interface ProgressResponse {
+  success: boolean;
+  execution: Execution & {
+    /** Set when somebody cancelled: stop, then acknowledge with `cancelled`. */
+    cancel_requested?: boolean;
   };
 }
 
-export interface RegisterResponse {
-  runnerId: string;
-  runnerToken: string;
-  /** Server's contract version, so a mismatch is caught at registration. */
-  contractVersion: string;
-}
-
-export interface HeartbeatRequest {
-  contractVersion: string;
-  runnerId: string;
-  status: 'idle' | 'working' | 'draining';
-  running: Array<{ assignmentId: string; attemptToken: string; state: ExecutionState }>;
-}
-
-export interface HeartbeatResponse {
-  /** Assignments the server wants abandoned. */
-  cancel: string[];
-  /** Stop claiming new work. */
-  drain: boolean;
-  /** Renewed expiry per assignment still held. */
-  leases: Record<string, string>;
-}
-
-export interface ClaimRequest {
-  contractVersion: string;
-  runnerId: string;
-  /** How many more the worker will take right now. */
-  capacity: number;
-}
-
 export interface ClaimResponse {
-  assignments: Assignment[];
-}
-
-export interface ProgressRequest {
-  contractVersion: string;
-  runnerId: string;
-  assignmentId: string;
-  attemptToken: string;
-  state: ExecutionState;
-  /** One plain sentence for a product manager. */
-  detail: string;
-  /** Deterministic, so a retried send is not a second event. */
-  idempotencyKey: string;
-  repositories?: RepositoryResult[];
-}
-
-export interface BlockedRequest {
-  contractVersion: string;
-  runnerId: string;
-  assignmentId: string;
-  attemptToken: string;
-  questions: BlockedQuestion[];
-  idempotencyKey: string;
-}
-
-export type ExecutionOutcome = 'ready_for_testing' | 'failed' | 'cancelled' | 'blocked';
-
-export interface ResultRequest {
-  contractVersion: string;
-  runnerId: string;
-  assignmentId: string;
-  attemptToken: string;
-  outcome: ExecutionOutcome;
-  /** One sentence. Never a log, never a credential. */
-  summary: string;
-  repositories: RepositoryResult[];
-  requirementsRevision: string;
-  idempotencyKey: string;
-}
-
-/**
- * Attach one pull request to the artifact Feature1 says owns it.
- *
- * Explicit ids on every call. The existing MCP `attach_pr` hangs the pull
- * request off whatever workflow the shared session happens to be pointing at,
- * which is unusable from a worker running several executions at once — two
- * concurrent attaches would race and the loser would attach to the wrong
- * artifact without either side noticing.
- */
-export interface AttachPrRequest {
-  contractVersion: string;
-  runnerId: string;
-  executionId: string;
-  attemptToken: string;
-  /** Where the worker was told it belongs. */
-  expectedOwner: PrOwnerRef;
-  /** Where the work actually came from, kept for traceability. */
-  originArtifact: ArtifactRef;
-  pullRequest: PullRequestRecord;
-  idempotencyKey: string;
-}
-
-export interface AttachPrResponse {
-  /** Where Feature1 actually attached it. Authoritative. */
-  attachedTo: PrOwnerRef;
-}
-
-export interface ReleaseRequest {
-  contractVersion: string;
-  runnerId: string;
-  assignmentId: string;
-  attemptToken: string;
-  reason: string;
+  success: boolean;
+  execution: Execution | null;
 }
 
 // -- Errors the worker must tell apart --------------------------------------
 
 /**
- * The attempt is no longer the live one. Distinct from a transport failure,
- * because the repair is the opposite: a transport failure is retried, and
- * this must never be.
+ * The lease is gone: expired, or the execution was reclaimed by a newer
+ * attempt. The server answers 409 and the worker MUST stop — not retry.
+ * Retrying is how two workers end up both reporting on one execution.
  */
 export class StaleAttemptError extends Error {
-  constructor(message = 'This attempt is no longer the live one') {
+  constructor(message = 'Lease expired or superseded; stop this attempt') {
     super(message);
     this.name = 'StaleAttemptError';
   }
 }
 
-/** The server does not speak this contract version. */
-export class ContractMismatchError extends Error {
-  constructor(theirs: string) {
-    super(`Feature1 speaks ${theirs}; this worker speaks ${CONTRACT_VERSION}`);
-    this.name = 'ContractMismatchError';
+/** The server speaks a protocol this worker does not. */
+export class ProtocolMismatchError extends Error {
+  constructor(theirs: unknown) {
+    super(
+      `Feature1 sent protocol_version ${String(theirs)}; this worker speaks ${PROTOCOL_VERSION}`
+    );
+    this.name = 'ProtocolMismatchError';
   }
 }
 

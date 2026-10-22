@@ -22,15 +22,14 @@ import { Worker } from './worker';
  */
 
 function log(message: string): void {
-  // One line, with a timestamp, to stdout. A container's logs are the only
+  // One line with a timestamp, to stdout. A container's logs are the only
   // place anybody will look.
   process.stdout.write(`${new Date().toISOString()} ${message}\n`);
 }
 
 export async function main(): Promise<void> {
   if (process.platform === 'win32') {
-    // Every command is built for and run through /bin/sh. Saying so beats
-    // emitting commands that silently mean something else.
+    // Every command is built for and run through /bin/sh.
     throw new Error('The mvpfy worker runs on Linux or macOS, not Windows');
   }
   const config = configFromEnv();
@@ -43,64 +42,67 @@ export async function main(): Promise<void> {
     ? new FakeFeature1()
     : new HttpFeature1Transport({
         baseUrl: config.feature1BaseUrl,
-        ...(config.runnerToken ? { runnerToken: config.runnerToken } : {}),
+        runnerToken: config.runnerToken,
       });
 
   if (config.fake) {
     log('running against the in-process fake Feature1 — no real server is involved');
   }
 
+  const engine = new ExecutionEngine({
+    transport,
+    store,
+    layout,
+    git: new Git(runner, layout),
+    verifier: new Verifier(runner, redactor),
+    pullRequests: new PullRequests(runner, redactor),
+    agent: new CliAgentRunner(runner),
+    redactor,
+    agentKind: config.agent,
+    ...(config.agentModel ? { agentModel: config.agentModel } : {}),
+    log,
+  });
+
   const worker = new Worker({
     transport,
     store,
     redactor,
+    engine,
     log,
     options: {
       name: config.name,
-      workerVersion: process.env.npm_package_version ?? 'dev',
-      tenantId: config.tenantId,
-      concurrency: config.concurrency,
       claimIntervalMs: config.claimIntervalMs,
       heartbeatIntervalMs: config.heartbeatIntervalMs,
-      agents: [config.agent],
     },
-    makeEngine: (runnerId) =>
-      new ExecutionEngine({
-        transport,
-        store,
-        layout,
-        git: new Git(runner, layout),
-        verifier: new Verifier(runner, redactor),
-        pullRequests: new PullRequests(runner, redactor),
-        agent: new CliAgentRunner(runner),
-        redactor,
-        agentKind: config.agent,
-        ...(config.agentModel ? { agentModel: config.agentModel } : {}),
-        runnerId,
-        log,
-      }),
   });
 
-  await worker.register();
-  const resumed = await worker.recover();
-  if (resumed > 0) log(`resumed ${resumed} execution(s) left over from a previous run`);
+  const waiting = worker.recoverable();
+  if (waiting.length > 0) {
+    // Not resumed directly: a lease lasts three minutes and a restart takes
+    // longer, so Feature1 owns the decision and hands the run back on a
+    // claim. What matters is that the checkpoint — including any pull
+    // request already opened — is still here when it does.
+    log(
+      `${waiting.length} execution(s) left unfinished by a previous run; their checkpoints are ` +
+        `kept, and Feature1 will offer them again once their leases expire`
+    );
+  }
 
   let shuttingDown = false;
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.on(signal, () => {
       if (shuttingDown) {
-        // The second signal: the operator is asking again, usually because
-        // the container is going away regardless.
         log(`${signal} again — cancelling what is running`);
         void worker.shutdown({ force: true }).then(() => process.exit(1));
         return;
       }
       shuttingDown = true;
-      log(`${signal} — draining; executions in flight will finish and report`);
+      log(`${signal} — draining; anything in flight will finish and report`);
       void worker.shutdown().then(() => process.exit(0));
     });
   }
 
+  log(`${config.name} is claiming work every ${Math.round(config.claimIntervalMs / 1000)}s`);
   await worker.loop();
 }
 

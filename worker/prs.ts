@@ -1,6 +1,23 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { PullRequestRecord } from '../shared/runner/contract';
+/**
+ * A pull request as the worker records it.
+ *
+ * Richer than what Feature1 takes — it accepts a URL and resolves the rest
+ * itself — because the worker has to recognise its own pull request on a
+ * later attempt, and a URL alone does not say which repository or branch it
+ * belongs to.
+ */
+export interface PullRequestRecord {
+  url: string;
+  number: number;
+  repositoryOwner: string;
+  repositoryName: string;
+  headBranch: string;
+  baseBranch: string;
+  /** False when this attempt found an existing pull request and reused it. */
+  createdByThisAttempt: boolean;
+}
 import { CommandRunner } from './exec';
 import { posixQuote, parseGitHubRepo } from './git';
 import { Redactor } from './redact';

@@ -1,11 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import {
-  Assignment,
-  ExecutionState,
-  PullRequestRecord,
-  RepositoryResult,
-} from '../shared/runner/contract';
+import { Execution, ExecutionState, RepositoryOutcome } from '../shared/runner/contract';
+import { CommitRecord } from './git';
 import { Layout } from './layout';
 
 /**
@@ -17,55 +13,75 @@ import { Layout } from './layout';
  * request opens a second one, and nothing in GitHub stops it.
  */
 
+/** What the worker knows about one repository, and keeps knowing. */
 export interface RepositoryCheckpoint {
   repositoryId: string;
   /** The worktree exists and is on the execution branch. */
   prepared: boolean;
-  /** The agent has been run for this repository. */
-  implemented: boolean;
+  /** The sha the base branch was on when this execution started. */
+  baseCommit: string | null;
   headCommit: string | null;
   changed: boolean;
   pushed: boolean;
-  pullRequest: PullRequestRecord | null;
-  /** Filled as the execution finishes; this is what gets reported. */
-  result: RepositoryResult | null;
+  commits: CommitRecord[];
+  /** The pull request, recorded the moment it exists. */
+  pullRequestUrl: string | null;
+  /**
+   * Everything that ran here, pass or fail, with the reason a check could
+   * not run. Richer than what Feature1 accepts — it only takes passing
+   * commands — and it is what the pull request body is written from.
+   */
+  checks: Array<{
+    command: string;
+    name: string;
+    outcome: 'passed' | 'failed' | 'skipped' | 'unavailable';
+    exitCode: number | null;
+    reason?: string;
+  }>;
+  outcome: RepositoryOutcome | null;
+  /** Accepted by Feature1, so a resumed attempt does not re-send it. */
+  reported: boolean;
+  /** Why this repository did not finish. The others still report. */
+  error?: string;
 }
 
 export interface ExecutionCheckpoint {
-  version: 1;
-  assignment: Assignment;
+  version: 2;
+  execution: Execution;
   state: ExecutionState;
-  /** Set once the final result has been accepted by Feature1. */
+  /** Set once a terminal state has been accepted by Feature1. */
   reported: boolean;
-  /** Items already built, by id, so a resumed run does not redo them. */
-  completedItems: string[];
+  /** Stories already built, by id, so a resumed run does not redo them. */
+  completedUnits: string[];
   repositories: RepositoryCheckpoint[];
-  /** ISO. Advanced by every heartbeat that renews it. */
-  leaseExpiresAt: string;
   startedAt: string;
   updatedAt: string;
   /** Last thing said to Feature1, so a resume does not repeat it. */
-  lastDetail?: string;
+  lastMessage?: string;
 }
 
-export function freshCheckpoint(assignment: Assignment, now = new Date()): ExecutionCheckpoint {
+export function freshCheckpoint(execution: Execution, now = new Date()): ExecutionCheckpoint {
   return {
-    version: 1,
-    assignment,
-    state: 'queued',
+    version: 2,
+    execution,
+    state: execution.state,
     reported: false,
-    completedItems: [],
-    repositories: assignment.repositories.map((repo) => ({
-      repositoryId: repo.repositoryId,
+    completedUnits: [],
+    repositories: execution.repositories.map((repo) => ({
+      repositoryId: repo.id,
       prepared: false,
-      implemented: false,
+      baseCommit: null,
       headCommit: null,
       changed: false,
       pushed: false,
-      pullRequest: null,
-      result: null,
+      commits: [],
+      pullRequestUrl: null,
+      checks: [],
+      outcome: null,
+      // Results Feature1 already holds from an earlier attempt survive a
+      // reclaim, and re-sending one would be a second attach.
+      reported: Boolean(execution.results?.[repo.id]),
     })),
-    leaseExpiresAt: assignment.leaseExpiresAt,
     startedAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
@@ -75,10 +91,7 @@ export class ExecutionStore {
   constructor(private readonly layout: Layout) {}
 
   private fileFor(checkpoint: ExecutionCheckpoint): string {
-    return this.layout.checkpointFile(
-      checkpoint.assignment.tenantId,
-      checkpoint.assignment.executionId
-    );
+    return this.layout.checkpointFile(checkpoint.execution.tenant_id, checkpoint.execution.id);
   }
 
   /**
@@ -111,7 +124,7 @@ export class ExecutionStore {
       const parsed = JSON.parse(raw) as ExecutionCheckpoint;
       // A checkpoint from a version that is not this one is not understood,
       // and guessing at it would be worse than starting again.
-      return parsed?.version === 1 ? parsed : null;
+      return parsed?.version === 2 ? parsed : null;
     } catch {
       return null;
     }

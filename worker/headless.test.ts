@@ -41,45 +41,58 @@ describe('the worker runs without Electron', () => {
 });
 
 describe('configFromEnv', () => {
-  const base = { MVPFY_TENANT_ID: 'acme', MVPFY_FEATURE1_URL: 'https://acme.feature1.ai' };
+  const base = {
+    MVPFY_FEATURE1_URL: 'https://acme.feature1.ai',
+    MVPFY_RUNNER_TOKEN: 'a'.repeat(64),
+  };
 
   it('reads a workable configuration', () => {
     const config = configFromEnv({ ...base, MVPFY_WORKER_ROOT: '/var/lib/mvpfy' });
-    expect(config.tenantId).toBe('acme');
-    expect(config.concurrency).toBe(1);
+    expect(config.runnerToken).toBe('a'.repeat(64));
     expect(config.agent).toBe('claude');
+    // Comfortably inside the three-minute lease.
+    expect(config.heartbeatIntervalMs).toBeLessThan(120_000);
   });
 
   it('refuses to start half-configured, rather than failing an hour in', () => {
-    expect(() => configFromEnv({})).toThrow(/MVPFY_TENANT_ID/);
-    expect(() => configFromEnv({ MVPFY_TENANT_ID: 'acme' })).toThrow(/MVPFY_FEATURE1_URL/);
+    expect(() => configFromEnv({})).toThrow(/MVPFY_FEATURE1_URL/);
     expect(() => configFromEnv({ ...base, MVPFY_WORKER_ROOT: 'relative' })).toThrow(/absolute/);
     expect(() => configFromEnv({ ...base, MVPFY_AGENT: 'gemini' })).toThrow(/claude or codex/);
-    expect(() => configFromEnv({ ...base, MVPFY_CONCURRENCY: '0' })).toThrow(/positive/);
-    expect(() => configFromEnv({ ...base, MVPFY_CONCURRENCY: 'lots' })).toThrow(/positive/);
   });
 
-  it('refuses a concurrency nobody meant to type', () => {
-    // Each execution holds checkouts, an agent and a build.
-    expect(() => configFromEnv({ ...base, MVPFY_CONCURRENCY: '64' })).toThrow(/mistake/);
+  it('refuses a credential that is not the shape Feature1 mints', () => {
+    // 64 hex characters, valid for 24 hours. Anything else is a 401 that
+    // looks exactly like an outage.
+    expect(() => configFromEnv({ ...base, MVPFY_RUNNER_TOKEN: 'not-a-credential' })).toThrow(
+      /64-character runner credential/
+    );
+    expect(() => configFromEnv({ MVPFY_FEATURE1_URL: base.MVPFY_FEATURE1_URL })).toThrow(
+      /runner credential/
+    );
   });
 
-  it('runs offline against the fake without a server URL', () => {
-    const config = configFromEnv({ MVPFY_TENANT_ID: 'acme', MVPFY_FAKE_FEATURE1: '1' });
-    expect(config.fake).toBe(true);
+  it('refuses a heartbeat slower than the lease it has to keep alive', () => {
+    // The lease is three minutes; a slower heartbeat loses every long
+    // execution to a reclaim, which looks like random failure.
+    expect(() => configFromEnv({ ...base, MVPFY_HEARTBEAT_INTERVAL_MS: '300000' })).toThrow(
+      /three-minute lease/
+    );
+  });
+
+  it('runs offline against the fake with no server and no credential', () => {
+    expect(configFromEnv({ MVPFY_FAKE_FEATURE1: '1' }).fake).toBe(true);
   });
 
   it('collects every credential that must never be printed', () => {
     const env = {
       ...base,
-      MVPFY_RUNNER_TOKEN: 'runner-token-value',
       GH_TOKEN: 'gh-token-value',
       ANTHROPIC_API_KEY: 'anthropic-key-value',
     };
     const secrets = secretsIn(configFromEnv(env), env);
     expect(secrets).toContain('gh-token-value');
     expect(secrets).toContain('anthropic-key-value');
-    expect(secrets).toContain('runner-token-value');
+    expect(secrets).toContain('a'.repeat(64));
   });
 });
 
@@ -125,16 +138,19 @@ describe('Git, against real git', () => {
         const layout = new Layout(path.join(tmp, 'worker'));
         const git = new Git(new ShellRunner(plainRedactor), layout);
         const repo = {
-          repositoryId: 'repo-api',
+          id: '11111111-1111-1111-1111-111111111111',
           name: 'api',
-          cloneUrl: origin,
-          baseBranch: 'main',
-          baseCommit,
+          url: origin,
+          base_branch: 'main',
         };
         // A local path is not an allowed clone URL in an assignment; here it
         // is handed in directly, which is the only way to test without a
         // network.
-        const tree = await git.prepareWorktree('acme', 'exec-1', repo);
+        const tenant = '22222222-2222-2222-2222-222222222222';
+        const execution = '33333333-3333-3333-3333-333333333333';
+        const tree = await git.prepareWorktree(tenant, execution, repo);
+        // Feature1 sends a branch; the worker resolves and reports the sha.
+        expect(await git.baseCommit(tenant, repo)).toBe(baseCommit);
         expect(fs.existsSync(path.join(tree, 'README.md'))).toBe(true);
         expect(await git.headCommit(tree)).toBe(baseCommit);
 
@@ -148,7 +164,7 @@ describe('Git, against real git', () => {
         expect(commits.map((c) => c.subject)).toEqual(['US-01: add a file']);
 
         // Resuming finds the branch rather than making a second one.
-        const again = await git.prepareWorktree('acme', 'exec-1', repo);
+        const again = await git.prepareWorktree(tenant, execution, repo);
         expect(again).toBe(tree);
         expect(await git.hasUncommittedChanges(tree)).toBe(false);
       } finally {

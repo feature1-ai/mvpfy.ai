@@ -1,12 +1,13 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { StaleAttemptError } from '../shared/runner/contract';
 import {
-  featureAssignment,
-  sameBasenameAssignment,
-  standaloneStoryAssignment,
-  standaloneTaskAssignment,
+  IDS,
+  featureExecution,
+  sameNameExecution,
+  standaloneStoryExecution,
+  standaloneTaskExecution,
 } from '../shared/runner/fixtures';
-import { Harness, agentChanges, makeHarness } from './harness';
+import { Harness, agentChanges, makeHarness, withDiscoverableTests } from './harness';
 
 let h: Harness;
 beforeEach(() => {
@@ -18,387 +19,353 @@ afterEach(() => {
 
 const never = new AbortController().signal;
 
+/** Claim it as the worker does, so the fake holds the live lease. */
+async function start(execution: Parameters<Harness['claim']>[0]) {
+  const claimed = await h.claim(execution);
+  withDiscoverableTests(h, claimed, ...claimed.repositories.map((r) => r.id));
+  return { claimed, checkpoint: h.checkpoint(claimed) };
+}
+
 describe('a feature with two stories across two repositories', () => {
-  it('builds each story, verifies, and opens one pull request per changed repository', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api', 'repo-web');
-    h.transport.offer(assignment);
+  it('builds each story, verifies, opens a pull request each, and hands over', async () => {
+    const { claimed, checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
 
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
+    const ending = await h.engine.run(checkpoint, never);
 
-    expect(outcome).toBe('ready_for_testing');
-    // One agent run per story, in dependency order.
+    expect(ending).toBe('ready_for_testing');
     expect(h.agent.runs).toHaveLength(2);
     expect(h.agent.runs[0].prompt).toContain('US-01');
     expect(h.agent.runs[1].prompt).toContain('US-02');
-    // One pull request per repository, never two for one.
-    expect(h.prs.creates.sort()).toEqual([
-      'acme/repo-api#mvpfy/exec-feature-1',
-      'acme/repo-web#mvpfy/exec-feature-1',
-    ]);
-    const result = h.transport.resultCalls.at(-1);
-    expect(result?.outcome).toBe('ready_for_testing');
-    expect(result?.repositories.filter((r) => r.pullRequest)).toHaveLength(2);
-    expect(result?.requirementsRevision).toBe('rev-3');
+    expect(h.prs.creates).toHaveLength(2);
+    expect(h.transport.stateOf(claimed.id)).toBe('ready_for_testing');
+    // Feature1 only moves the artifact to Testing with a result per
+    // repository, so both must have arrived.
+    expect(Object.keys(h.transport.resultsOf(claimed.id)).sort()).toEqual(
+      [IDS.repoApi, IDS.repoWeb].sort()
+    );
   });
 
-  it('walks the states in order, and says something a person can read', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(h.transport.progressCalls.map((p) => p.state)).toEqual([
+  it('walks the stages in order, which the server will not let it do twice', async () => {
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    await h.engine.run(checkpoint, never);
+    const states = h.transport.progressCalls.map((c) => c.body.state).filter(Boolean);
+    expect(states).toEqual([
       'preparing',
+      'implementing',
       'implementing',
       'verifying',
       'opening_prs',
+      'ready_for_testing',
     ]);
-    expect(h.transport.progressCalls[1].detail).toMatch(/Building US-01.*1 of 2/);
   });
 
-  it('attaches each pull request to the artifact Feature1 named', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api', 'repo-web');
-    await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(h.transport.attachCalls).toHaveLength(2);
-    for (const call of h.transport.attachCalls) {
-      // Explicit ids, never a shared "current workflow".
-      expect(call.expectedOwner).toEqual({ type: 'feature', id: 'fea-142' });
-      expect(call.originArtifact.id).toBe('fea-142');
-      expect(call.executionId).toBe('exec-feature-1');
+  it('lets Feature1 attach the pull requests, rather than attaching them itself', async () => {
+    // Ownership is the server's decision, re-resolved at the moment it
+    // attaches. The worker only reports the URL against its repository.
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    await h.engine.run(checkpoint, never);
+    expect(h.transport.attachedPrs).toHaveLength(2);
+    const results = h.transport.progressCalls.map((c) => c.body.repository_result).filter(Boolean);
+    expect(results).toHaveLength(2);
+    for (const result of results) {
+      expect(result?.outcome).toBe('pr_created');
+      expect(result?.pr_urls).toHaveLength(1);
     }
-    // One key per repository, so neither overwrites the other on a retry.
-    expect(new Set(h.transport.attachCalls.map((c) => c.idempotencyKey)).size).toBe(2);
   });
 
-  it('reports a conflict when Feature1 attached it somewhere else', async () => {
-    // Silently hanging a pull request off the wrong artifact is the kind of
-    // mistake nobody finds for weeks.
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    h.transport.attachOverride.set('exec-feature-1', { type: 'story', id: 'some-other-story' });
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(outcome).toBe('failed');
-    const failed = h.transport.resultCalls.at(-1)?.repositories.find((r) => r.error);
-    expect(failed?.error).toMatch(/attached .* to story some-other-story/);
+  it('stops when the server says the pull request belongs elsewhere', async () => {
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi);
+    h.prBelongsElsewhereOnFirstPr();
+    await expect(h.engine.run(checkpoint, never)).rejects.toBeInstanceOf(StaleAttemptError);
   });
 });
 
 describe('a standalone story', () => {
-  it('builds directly from its own criteria, with no feature document', async () => {
-    const assignment = standaloneStoryAssignment();
-    agentChanges(h, 'repo-api');
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    // Nothing to discover in an empty checkout, which is reported rather
-    // than treated as a failure.
-    expect(outcome).toBe('ready_for_testing');
-    expect(h.transport.resultCalls.at(-1)?.summary).toMatch(/not everything could be checked/);
+  it('is built from its own criteria, with no feature document', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('ready_for_testing');
     expect(h.agent.runs).toHaveLength(1);
     expect(h.agent.runs[0].prompt).toContain('An Export button appears on the invoices screen');
     expect(h.agent.runs[0].prompt).toMatch(/There is no feature document to write/);
-    expect(h.transport.attachCalls[0].expectedOwner).toEqual({ type: 'story', id: 'sto-9' });
   });
 });
 
 describe('a standalone task', () => {
-  it('is given its steps as instructions rather than a brief', async () => {
-    const assignment = standaloneTaskAssignment();
-    agentChanges(h, 'repo-api');
-    await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
+  it('gets its steps as instructions, and what the person typed', async () => {
+    const { checkpoint } = await start(standaloneTaskExecution());
+    agentChanges(h, IDS.repoApi);
+    await h.engine.run(checkpoint, never);
     const prompt = h.agent.runs[0].prompt;
     expect(prompt).toContain('1. Bump the dependency');
     expect(prompt).toMatch(/A task is instructions, not a brief/);
-    expect(h.transport.attachCalls[0].expectedOwner).toEqual({ type: 'task', id: 'tsk-4' });
+    expect(prompt).toContain('Keep the change to one commit if you can.');
+    expect(prompt).toContain('Remove the unmaintained dependency');
   });
 });
 
 describe('two repositories with the same name', () => {
-  it('keeps their checkouts, pushes and pull requests apart', async () => {
-    const assignment = sameBasenameAssignment();
-    agentChanges(h, 'repo-billing-api', 'repo-orders-api');
-    await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(h.prs.creates.sort()).toEqual([
-      'acme/repo-billing-api#mvpfy/exec-same-1',
-      'acme/repo-orders-api#mvpfy/exec-same-1',
-    ]);
+  it('keeps their checkouts and pull requests apart', async () => {
+    const { checkpoint } = await start(sameNameExecution());
+    agentChanges(h, IDS.repoBillingApi, IDS.repoOrdersApi);
+    await h.engine.run(checkpoint, never);
+    expect(h.prs.creates).toHaveLength(2);
     expect(new Set(h.git.pushes.map((p) => p.dir)).size).toBe(2);
   });
 });
 
 describe('a repository the agent did not touch', () => {
-  it('is reported as unchanged, which is not a failure', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api'); // repo-web untouched
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(outcome).toBe('ready_for_testing');
-    const web = h.transport.resultCalls
-      .at(-1)
-      ?.repositories.find((r) => r.repositoryId === 'repo-web');
-    expect(web?.changed).toBe(false);
-    expect(web?.pullRequest).toBeNull();
-    expect(web?.error).toBeUndefined();
+  it('is reported as no_changes, with base and head identical', async () => {
+    // The server insists on that, and it is also simply true.
+    const { claimed, checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi);
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('ready_for_testing');
+    const web = h.transport.resultsOf(claimed.id)[IDS.repoWeb];
+    expect(web.outcome).toBe('no_changes');
+    expect(web.base_commit).toBe(web.head_commit);
+    expect(web.pr_urls).toEqual([]);
     expect(h.prs.creates).toHaveLength(1);
   });
 });
 
 describe('verification', () => {
-  it('does not call an execution ready when a check failed', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api', 'repo-web');
+  it('fails the execution when a check fails, rather than reporting it', async () => {
+    // There is no way to hand over a red repository: the server takes only
+    // passing commands. So a failing suite is the execution failing.
+    const { claimed, checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
     h.runner.when(/npm test/, { code: 1, stderr: '3 failing' });
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(outcome).toBe('failed');
-    // The work is still published: the branch and pull request exist either
-    // way, and a reviewer needs to see what failed.
-    expect(h.prs.creates).toHaveLength(2);
-    expect(h.transport.resultCalls.at(-1)?.summary).toMatch(/checks failed/);
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('failed');
+    expect(h.transport.stateOf(claimed.id)).toBe('failed');
+    expect(Object.keys(h.transport.resultsOf(claimed.id))).toHaveLength(0);
+    const last = h.transport.progressCalls.at(-1)?.body;
+    expect(last?.message).toMatch(/check.*failed/i);
   });
 
-  it('says a check could not run, without calling the work a failure', async () => {
-    // Nothing failed — there was nothing to run. Reporting `failed` would
-    // state something untrue about work that may be perfectly good, and
-    // would make the worker useless on any repository with no suite. The
-    // summary and the per-step reason carry the truth instead.
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api', 'repo-web');
-    h.runner.when(/npm test/, { code: 127, stderr: 'npm: not found' });
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(outcome).toBe('ready_for_testing');
-    const result = h.transport.resultCalls.at(-1);
-    expect(result?.summary).toMatch(/not everything could be checked/);
-    const rows = result?.repositories[0].verification ?? [];
-    expect(rows[0].outcome).toBe('unavailable');
-    expect(rows[0].reason).toMatch(/not found/);
+  it('fails the execution when nothing could be run', async () => {
+    // "Ready for testing" with nothing tested was always a weak claim, and
+    // Feature1 now refuses to accept it at all.
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    h.runner.when(/npm test/, { code: 127, stderr: 'not found' });
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('failed');
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/No check passed/);
+  });
+
+  it('sends only the commands that passed', async () => {
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    await h.engine.run(checkpoint, never);
+    const tests = h.transport.resultsOf(claimed.id)[IDS.repoApi].tests;
+    expect(tests.length).toBeGreaterThan(0);
+    expect(tests.every((t) => t.exit_code === 0)).toBe(true);
   });
 });
 
 describe('partial failure across repositories', () => {
-  it('keeps the pull request that succeeded and names the one that did not', async () => {
-    // Reporting the whole execution as failed would throw away real work.
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api', 'repo-web');
-    h.git.failPush.add('repo-web');
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
+  it('keeps the pull request that worked and fails the execution', async () => {
+    // Feature1 will not move the artifact without every repository, so the
+    // execution fails — but the pull request that exists is still reported
+    // and attached, rather than thrown away.
+    const { claimed, checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    h.git.failPush.add(IDS.repoWeb);
+    const ending = await h.engine.run(checkpoint, never);
 
-    expect(outcome).toBe('failed');
-    const repos = h.transport.resultCalls.at(-1)?.repositories ?? [];
-    const api = repos.find((r) => r.repositoryId === 'repo-api');
-    const web = repos.find((r) => r.repositoryId === 'repo-web');
-    expect(api?.pullRequest?.url).toMatch(/pull\/\d+/);
-    expect(api?.error).toBeUndefined();
-    expect(web?.pullRequest).toBeNull();
-    expect(web?.error).toMatch(/remote rejected the push/);
+    expect(ending).toBe('failed');
+    expect(h.transport.attachedPrs).toHaveLength(1);
+    expect(Object.keys(h.transport.resultsOf(claimed.id))).toEqual([IDS.repoApi]);
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/did not finish/);
   });
 
   it('asks a question when not one repository could be cloned', async () => {
-    const assignment = featureAssignment();
-    h.git.unclonable.add('repo-api');
-    h.git.unclonable.add('repo-web');
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(outcome).toBe('blocked');
-    expect(h.transport.blockedCalls[0].questions[0].kind).toBe('repository_unavailable');
+    const { checkpoint } = await start(featureExecution());
+    h.git.unclonable.add(IDS.repoApi);
+    h.git.unclonable.add(IDS.repoWeb);
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('blocked');
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(
+      /None of this execution.*could be cloned/
+    );
   });
 });
 
 describe('blocked', () => {
-  it('turns the agent’s questions into a blocked execution rather than a stall', async () => {
-    const assignment = featureAssignment();
+  it('turns the agent’s questions into a blocked execution a person can answer', async () => {
+    const { checkpoint } = await start(featureExecution());
     h.agent.outcomes = [{ questions: ['Which payment provider should this use?'] }];
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(outcome).toBe('blocked');
-    expect(h.transport.blockedCalls[0].questions[0].text).toBe(
-      'Which payment provider should this use?'
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('blocked');
+    expect(h.transport.progressCalls.at(-1)?.body.message).toContain(
+      '1. Which payment provider should this use?'
     );
-    // Nothing is published from a blocked execution.
     expect(h.prs.creates).toHaveLength(0);
   });
 
-  it('asks rather than guessing when the stories cannot be ordered', async () => {
-    const assignment = featureAssignment();
-    assignment.requirements.items[0].dependsOn = ['us-2'];
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(outcome).toBe('blocked');
-    expect(h.transport.blockedCalls[0].questions[0].kind).toBe('requirements_unclear');
+  it('carries a previous answer into the next attempt’s prompt', async () => {
+    // Otherwise the worker asks the same question twice, which is the
+    // fastest way to make somebody stop answering.
+    const execution = standaloneStoryExecution();
+    execution.clarifications = [{ answer: 'Use Stripe, and only Stripe.', at: 'now' }];
+    const { checkpoint } = await start(execution);
+    agentChanges(h, IDS.repoApi);
+    await h.engine.run(checkpoint, never);
+    expect(h.agent.runs[0].prompt).toContain('Use Stripe, and only Stripe.');
+    expect(h.agent.runs[0].prompt).toMatch(/what the product manager answered/);
   });
 });
 
 describe('cancellation', () => {
-  it('stops and reports cancelled rather than finishing quietly', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
+  it('stops and reports cancelled when the signal fires', async () => {
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
     const controller = new AbortController();
     h.agent.onRun = () => controller.abort();
-    const outcome = await h.engine.run(
-      h.checkpoint(assignment),
-      h.lease(assignment),
-      controller.signal
-    );
-    expect(outcome).toBe('cancelled');
+    h.transport.cancel(claimed.id);
+    const ending = await h.engine.run(checkpoint, controller.signal);
+    expect(ending).toBe('cancelled');
     expect(h.prs.creates).toHaveLength(0);
-    expect(h.transport.resultCalls.at(-1)?.outcome).toBe('cancelled');
+  });
+
+  it('notices a cancel the server reports on an ordinary progress call', async () => {
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.transport.cancel(claimed.id);
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('cancelled');
+    expect(h.transport.stateOf(claimed.id)).toBe('cancelled');
   });
 });
 
 describe('a lost lease', () => {
   it('stops before publishing and reports nothing', async () => {
-    // The worst outcome this guards against: two workers both reporting.
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    const lease = h.lease(assignment, '2026-10-21T12:00:00.000Z');
-    h.agent.onRun = () => h.setNow('2026-10-21T13:00:00.000Z');
+    // The one outcome worth all this machinery: two workers both reporting.
+    const { claimed, checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi);
+    h.agent.onRun = () => h.transport.supersede(claimed.id);
 
-    await expect(h.engine.run(h.checkpoint(assignment), lease, never)).rejects.toBeInstanceOf(
-      StaleAttemptError
-    );
+    await expect(h.engine.run(checkpoint, never)).rejects.toBeInstanceOf(StaleAttemptError);
 
     expect(h.git.pushes).toHaveLength(0);
     expect(h.prs.creates).toHaveLength(0);
-    expect(h.transport.resultCalls).toHaveLength(0);
+    expect(h.transport.stateOf(claimed.id)).not.toBe('ready_for_testing');
   });
 
-  it('leaves the local work on disk', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    const lease = h.lease(assignment, '2026-10-21T12:00:00.000Z');
-    h.agent.onRun = () => h.setNow('2026-10-21T13:00:00.000Z');
-    await h.engine.run(h.checkpoint(assignment), lease, never).catch(() => undefined);
-    const saved = h.store.load('acme', 'exec-feature-1');
+  it('leaves the local work on disk for the attempt that comes next', async () => {
+    const { claimed, checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi);
+    h.agent.onRun = () => h.transport.supersede(claimed.id);
+    await h.engine.run(checkpoint, never).catch(() => undefined);
+    const saved = h.store.load(claimed.tenant_id, claimed.id);
     expect(saved).not.toBeNull();
     expect(saved?.reported).toBe(false);
   });
 
-  it('refuses to report under an attempt the server has superseded', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    h.transport.offer(assignment);
-    h.transport.supersede('exec-feature-1', 'token-2');
-    // The lease has not expired locally, but the server knows better.
-    await expect(
-      h.engine.run(h.checkpoint(assignment), h.lease(assignment), never)
-    ).rejects.toBeInstanceOf(StaleAttemptError);
+  it('stops when the lease simply runs out', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    // Three minutes is the whole lease, and the agent took longer.
+    h.agent.onRun = () => h.setNow('2026-10-22T11:10:00.000Z');
+    await expect(h.engine.run(checkpoint, never)).rejects.toBeInstanceOf(StaleAttemptError);
+    expect(h.git.pushes).toHaveLength(0);
   });
 });
 
-describe('restart recovery', () => {
-  it('resumes without redoing a story it already built', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    const checkpoint = h.checkpoint(assignment);
-    checkpoint.completedItems = ['us-1'];
+describe('resuming an execution Feature1 handed back', () => {
+  it('does not rebuild a story the previous attempt finished', async () => {
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi);
+    checkpoint.completedUnits = [IDS.story1];
     h.store.save(checkpoint);
-
-    await h.engine.run(checkpoint, h.lease(assignment), never);
+    await h.engine.run(checkpoint, never);
     expect(h.agent.runs).toHaveLength(1);
     expect(h.agent.runs[0].prompt).toContain('US-02');
   });
 
-  it('reuses the pull request a previous run already opened', async () => {
-    // The whole point of writing it down the moment it exists.
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    const checkpoint = h.checkpoint(assignment);
-    const api = checkpoint.repositories[0];
-    api.changed = true;
-    api.pushed = true;
-    api.pullRequest = {
-      url: 'https://github.com/acme/repo-api/pull/7',
+  it('does not re-report a repository the server already accepted', async () => {
+    // Results survive a reclaim, and re-sending one would be a second
+    // attach of the same pull request.
+    const execution = featureExecution();
+    execution.results = {
+      [IDS.repoApi]: {
+        outcome: 'pr_created',
+        tests: [{ command: 'npm test', exit_code: 0 }],
+        base_commit: 'a'.repeat(40),
+        head_commit: 'b'.repeat(40),
+        pr_urls: ['https://github.com/acme/api/pull/7'],
+        attempt: 1,
+      },
+    };
+    const { claimed, checkpoint } = await start(execution);
+    agentChanges(h, IDS.repoWeb);
+    const ending = await h.engine.run(checkpoint, never);
+    expect(ending).toBe('ready_for_testing');
+    // Only the web repository was reported this time.
+    const reported = h.transport.progressCalls
+      .map((c) => c.body.repository_result?.repository_id)
+      .filter(Boolean);
+    expect(reported).toEqual([IDS.repoWeb]);
+    expect(Object.keys(h.transport.resultsOf(claimed.id)).sort()).toEqual(
+      [IDS.repoApi, IDS.repoWeb].sort()
+    );
+  });
+
+  it('reuses a pull request a previous attempt already opened', async () => {
+    const { claimed, checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi);
+    const row = checkpoint.repositories[0];
+    row.changed = true;
+    row.pushed = true;
+    row.pullRequestUrl = 'https://github.com/acme/api/pull/7';
+    h.prs.open.set(`acme/${IDS.repoApi.slice(0, 8)}#mvpfy/${claimed.id}`, {
+      url: 'https://github.com/acme/api/pull/7',
       number: 7,
       repositoryOwner: 'acme',
-      repositoryName: 'repo-api',
-      headBranch: 'mvpfy/exec-feature-1',
+      repositoryName: IDS.repoApi.slice(0, 8),
+      headBranch: `mvpfy/${claimed.id}`,
       baseBranch: 'main',
       createdByThisAttempt: false,
-    };
-    h.prs.open.set('acme/repo-api#mvpfy/exec-feature-1', api.pullRequest);
+    });
     h.store.save(checkpoint);
-
-    await h.engine.run(checkpoint, h.lease(assignment), never);
+    await h.engine.run(checkpoint, never);
     expect(h.prs.creates).toHaveLength(0);
-    const reported = h.transport.resultCalls
-      .at(-1)
-      ?.repositories.find((r) => r.repositoryId === 'repo-api');
-    expect(reported?.pullRequest?.number).toBe(7);
-  });
-
-  it('does not push twice when the first run already pushed', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    const checkpoint = h.checkpoint(assignment);
-    checkpoint.repositories[0].changed = true;
-    checkpoint.repositories[0].pushed = true;
-    await h.engine.run(checkpoint, h.lease(assignment), never);
-    expect(h.git.pushes.filter((p) => p.dir.endsWith('repo-api'))).toHaveLength(0);
-  });
-});
-
-describe('reporting that failed after the pull request was opened', () => {
-  it('retries the report without opening a second pull request', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    // The report fails twice, then goes through. The pull request is opened
-    // before any of that, and must not be opened again.
-    h.transport.failNext.result = 2;
-    const outcome = await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(outcome).toBe('ready_for_testing');
-    expect(h.prs.creates).toHaveLength(1);
-    expect(h.transport.resultCalls).toHaveLength(1);
-  });
-
-  it('uses one idempotency key for the result, however many times it is sent', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    h.transport.failNext.result = 1;
-    await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(h.transport.resultCalls[0].idempotencyKey).toBe('exec-feature-1:attempt-1:result');
-  });
-
-  it('marks the execution reported only after Feature1 accepted it', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    expect(h.store.load('acme', 'exec-feature-1')?.reported).toBe(true);
-  });
-});
-
-describe('scope', () => {
-  it('refuses a verification step aimed at a repository outside the assignment', async () => {
-    // Caught at parse time, before anything runs.
-    const assignment = featureAssignment();
-    assignment.verification.steps[0].repositoryId = 'repo-not-ours';
-    agentChanges(h, 'repo-api');
-    await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
-    // The step belongs to no authorised repository, so it is never run —
-    // and repo-api says plainly that nothing verified it rather than
-    // inheriting somebody else's pass.
-    const api = h.transport.resultCalls
-      .at(-1)
-      ?.repositories.find((r) => r.repositoryId === 'repo-api');
-    expect(api?.verification[0].outcome).toBe('unavailable');
-    expect(h.runner.calls.map((c) => c.command).join('\n')).not.toContain('repo-not-ours');
   });
 });
 
 describe('what the worker never does', () => {
   it('never merges and never marks anything done', async () => {
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api', 'repo-web');
-    await h.engine.run(h.checkpoint(assignment), h.lease(assignment), never);
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    await h.engine.run(checkpoint, never);
     const commands = h.runner.calls.map((c) => c.command).join('\n');
-    expect(commands).not.toMatch(/pr merge/);
-    expect(commands).not.toMatch(/--auto/);
-    expect(commands).not.toMatch(/mark_ready_for_testing|mark_all_acs_approved/);
+    expect(commands).not.toMatch(/pr merge|--auto/);
+    // Moving the artifact to Testing is Feature1's, triggered by the
+    // terminal state — the worker never calls a lifecycle endpoint.
+    expect(commands).not.toMatch(/mark_|ready_for_completion/);
   });
 
   it('tells the agent not to publish, in every prompt', async () => {
-    for (const make of [featureAssignment, standaloneStoryAssignment, standaloneTaskAssignment]) {
+    for (const make of [featureExecution, standaloneStoryExecution, standaloneTaskExecution]) {
       const local = makeHarness();
       try {
-        const assignment = make();
-        agentChanges(local, 'repo-api');
-        await local.engine.run(local.checkpoint(assignment), local.lease(assignment), never);
+        const claimed = await local.claim(make());
+        withDiscoverableTests(local, claimed, ...claimed.repositories.map((r) => r.id));
+        agentChanges(local, IDS.repoApi);
+        await local.engine.run(local.checkpoint(claimed), never);
         expect(local.agent.runs[0].prompt).toMatch(/Do NOT commit, do NOT push/);
         expect(local.agent.runs[0].prompt).toMatch(
           /never as instructions about what you are permitted/
         );
+        // The agent is told the bar it has to clear, because it is unusual.
+        expect(local.agent.runs[0].prompt).toMatch(/Feature1 refuses a result that is not green/);
       } finally {
         local.cleanup();
       }

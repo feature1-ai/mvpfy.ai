@@ -1,42 +1,48 @@
 import * as path from 'node:path';
 import {
-  Assignment,
-  BlockedQuestion,
-  ExecutionOutcome,
+  Execution,
   ExecutionState,
   RepositoryResult,
+  STAGES,
+  Snapshot,
   StaleAttemptError,
-  VerificationResult,
 } from '../shared/runner/contract';
-import { authorisedRepository, idempotencyKey, orderedItems } from '../shared/runner/validate';
+import {
+  authorisedRepository,
+  passingTests,
+  repositoryResultProblem,
+  unitsOf,
+} from '../shared/runner/validate';
 import { Feature1Transport, withRetry } from './transport';
-import { ExecutionCheckpoint, ExecutionStore } from './store';
+import { ExecutionCheckpoint, ExecutionStore, RepositoryCheckpoint } from './store';
 import { Layout, executionBranch } from './layout';
 import { Git, GitError } from './git';
-import { Verifier, verificationFailed, verificationHeld } from './verify';
+import { Verifier, VerificationResult, canReport } from './verify';
 import { PullRequests, pullRequestBody } from './prs';
 import { AgentKind, AgentRunner } from './agentRun';
 import { Redactor } from './redact';
-import { buildPrompt, commitMessageFor } from './prompt';
+import { buildPrompt, commitMessageFor, criterionText } from './prompt';
 
 /**
- * One execution, from a claimed assignment to a reported result.
+ * One execution, from a claimed run to a terminal state Feature1 accepted.
  *
- * Three ideas hold this together, and everything else is detail.
+ * Three ideas hold it together.
  *
  * **Nothing is believed because an agent said so.** An agent that writes no
- * code exits zero. So after it finishes the worker goes and looks: what
- * changed, what was committed, what the checks returned, whether a pull
- * request exists. Every one of those is read from git or GitHub.
+ * code exits zero. Feature1 agrees: it accepts commit shas and passing
+ * commands, not an account of what happened. So after the agent finishes
+ * the worker goes and looks — what changed, what was committed, what the
+ * checks returned, whether a pull request already exists.
  *
  * **Every step is a checkpoint.** The worker is killed mid-execution as a
- * matter of routine — a container restart, a deploy, a laptop lid. Resuming
- * has to be cheaper and safer than starting again, and "safer" is the real
- * reason: an execution that starts again opens a second pull request.
+ * matter of routine, and a lease lasts three minutes. Resuming is not an
+ * optimisation: an execution that starts over opens a second pull request,
+ * and nothing in GitHub stops it.
  *
- * **Partial is reported as partial.** Two repositories succeeding and a
- * third failing is exactly that. Rolling it up as failure throws away work
- * that exists; rolling it up as success claims work that does not.
+ * **The lease is checked immediately before every publishing step.** Working
+ * past a lost lease wastes time. Publishing past one lets two workers both
+ * report on the same execution, and Feature1's 409 is the only thing
+ * standing between us and that.
  */
 
 export interface EngineDeps {
@@ -50,23 +56,20 @@ export interface EngineDeps {
   redactor: Redactor;
   agentKind: AgentKind;
   agentModel?: string;
-  runnerId: string;
   log?: (message: string) => void;
-  /** Injected so tests need no clock. */
   now?: () => Date;
-  /** Injected so a retrying test does not wait out real backoff. */
   sleep?: (ms: number) => Promise<void>;
 }
 
-export interface LeaseLike {
-  readonly attemptToken: string;
-  assertLive(step: string): void;
-  readonly live: boolean;
-}
+/** Why an execution stopped. What the worker tells Feature1 last. */
+export type Ending = 'ready_for_testing' | 'blocked' | 'failed' | 'cancelled';
 
 export class ExecutionEngine {
   private readonly now: () => Date;
   private readonly retry: <T>(operation: () => Promise<T>) => Promise<T>;
+  /** Advanced by every successful progress call. Checked before publishing. */
+  private leaseUntil = 0;
+  private superseded = false;
 
   constructor(private readonly deps: EngineDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -77,228 +80,237 @@ export class ExecutionEngine {
     this.deps.log?.(this.deps.redactor.line(message, 500));
   }
 
-  /** Say where we are, and write it down before saying it. */
-  private async setState(
+  /**
+   * Say something to Feature1, and learn three things back: that the lease
+   * is still ours, when it now expires, and whether somebody cancelled.
+   *
+   * Every call goes through here, including the empty ones, because the
+   * heartbeat and the progress report are the same request — which means
+   * the worker never has to choose between telling Feature1 what it is
+   * doing and staying alive.
+   */
+  private async say(
     checkpoint: ExecutionCheckpoint,
-    state: ExecutionState,
-    detail: string,
-    lease: LeaseLike
-  ): Promise<void> {
-    checkpoint.state = state;
-    checkpoint.lastDetail = detail;
-    this.deps.store.save(checkpoint, this.now());
-    this.log(`${checkpoint.assignment.executionId} → ${state}: ${detail}`);
-    const { assignment } = checkpoint;
-    await this.retry(() =>
-      this.deps.transport.progress({
-        contractVersion: assignment.contractVersion,
-        runnerId: this.deps.runnerId,
-        assignmentId: assignment.assignmentId,
-        attemptToken: lease.attemptToken,
-        state,
-        detail: this.deps.redactor.line(detail),
-        idempotencyKey: idempotencyKey({
-          executionId: assignment.executionId,
-          attemptId: assignment.attemptId,
-          kind: 'progress',
-          discriminator: state,
-        }),
-      })
+    body: Parameters<Feature1Transport['progress']>[2]
+  ): Promise<{ cancelRequested: boolean }> {
+    const { execution } = checkpoint;
+    const response = await this.retry(() =>
+      this.deps.transport.progress(execution.id, execution.lease_token, body)
     );
+    const until = Date.parse(response?.lease_until ?? '');
+    if (!Number.isNaN(until)) this.leaseUntil = until;
+    if (body.state) {
+      checkpoint.state = body.state;
+      this.deps.store.save(checkpoint, this.now());
+    }
+    return { cancelRequested: Boolean(response?.cancel_requested) };
+  }
+
+  /**
+   * Refuse to go on.
+   *
+   * Called immediately before each publishing step, naming it, so the log
+   * says what was not done rather than only that something was not.
+   */
+  private assertLive(step: string): void {
+    if (this.superseded) {
+      throw new StaleAttemptError(`${step} stopped: this attempt was superseded`);
+    }
+    if (this.leaseUntil && this.now().getTime() >= this.leaseUntil) {
+      throw new StaleAttemptError(`${step} stopped: the lease expired before it ran`);
+    }
+  }
+
+  /** A heartbeat, for the loop that keeps the lease alive while work runs. */
+  async beat(checkpoint: ExecutionCheckpoint): Promise<{ cancelRequested: boolean }> {
+    return this.say(checkpoint, {});
   }
 
   /**
    * Run it.
    *
-   * Returns the outcome it reported. A `StaleAttemptError` escaping is the
-   * one case where nothing is reported at all — by then this worker has no
-   * standing to say anything about the execution.
+   * A `StaleAttemptError` escaping is the one case where nothing is
+   * reported: by then this worker has no standing to say anything about the
+   * execution, and Feature1 has given it to somebody else.
    */
-  async run(
-    checkpoint: ExecutionCheckpoint,
-    lease: LeaseLike,
-    signal: AbortSignal
-  ): Promise<ExecutionOutcome> {
-    const { assignment } = checkpoint;
+  async run(checkpoint: ExecutionCheckpoint, signal: AbortSignal): Promise<Ending> {
+    const { execution } = checkpoint;
+    this.leaseUntil = Date.parse(execution.lease_until ?? '') || 0;
+    this.superseded = false;
     try {
-      return await this.execute(checkpoint, lease, signal);
+      return await this.execute(checkpoint, signal);
     } catch (error) {
       if (error instanceof StaleAttemptError) {
-        // Somebody else owns this now. The local work stays on disk; saying
-        // anything authoritative about it would be a lie.
-        this.log(`${assignment.executionId}: lease lost, stopping without reporting`);
-        checkpoint.state = 'failed';
+        this.superseded = true;
+        this.log(`${execution.id}: ${error.message} — stopping without reporting`);
         this.deps.store.save(checkpoint, this.now());
         throw error;
       }
       const message = this.deps.redactor.line((error as Error).message ?? String(error));
-      this.log(`${assignment.executionId} failed: ${message}`);
-      return this.report(checkpoint, lease, 'failed', `The execution stopped: ${message}`);
+      this.log(`${execution.id} failed: ${message}`);
+      return this.finish(checkpoint, 'failed', `The execution stopped: ${message}`);
     }
   }
 
-  private async execute(
-    checkpoint: ExecutionCheckpoint,
-    lease: LeaseLike,
-    signal: AbortSignal
-  ): Promise<ExecutionOutcome> {
-    const { assignment } = checkpoint;
+  private async execute(checkpoint: ExecutionCheckpoint, signal: AbortSignal): Promise<Ending> {
+    const { execution } = checkpoint;
 
     // -- prepare ------------------------------------------------------------
-    await this.setState(checkpoint, 'preparing', 'Setting up the checkouts', lease);
+    if (await this.cancelled(checkpoint, 'preparing', 'Setting up the checkouts')) {
+      return this.finish(checkpoint, 'cancelled', 'Cancelled before it started');
+    }
     const worktrees: Record<string, string> = {};
-    for (const repo of assignment.repositories) {
-      const row = this.deps.store.repository(checkpoint, repo.repositoryId);
+    for (const repo of execution.repositories) {
+      const row = this.deps.store.repository(checkpoint, repo.id);
+      if (row.reported) continue; // A previous attempt already finished it.
       try {
-        worktrees[repo.repositoryId] = await this.deps.git.prepareWorktree(
-          assignment.tenantId,
-          assignment.executionId,
-          authorisedRepository(assignment, repo.repositoryId)
+        const authorised = authorisedRepository(execution, repo.id);
+        row.baseCommit = await this.deps.git.baseCommit(execution.tenant_id, authorised);
+        worktrees[repo.id] = await this.deps.git.prepareWorktree(
+          execution.tenant_id,
+          execution.id,
+          authorised
         );
         row.prepared = true;
       } catch (error) {
-        // A repository that cannot be cloned is a question, not a crash: the
-        // other repositories may still be buildable, and somebody has to be
-        // told which one is unreachable.
         row.prepared = false;
-        row.result = {
-          repositoryId: repo.repositoryId,
-          changed: false,
-          headBranch: null,
-          headCommit: null,
-          commits: [],
-          verification: [],
-          pullRequest: null,
-          error: this.deps.redactor.line(
-            error instanceof GitError ? error.failure.message : (error as Error).message
-          ),
-        };
+        row.error = this.deps.redactor.line(
+          error instanceof GitError ? error.failure.message : (error as Error).message
+        );
       }
       this.deps.store.save(checkpoint, this.now());
     }
-    if (Object.keys(worktrees).length === 0) {
-      return this.blocked(checkpoint, lease, [
-        {
-          id: 'repos-unavailable',
-          kind: 'repository_unavailable',
-          text:
-            'None of this assignment’s repositories could be cloned. Check the clone URLs ' +
-            'and that the worker’s credentials can read them.',
-        },
-      ]);
+    const outstanding = execution.repositories.filter(
+      (r) => !this.deps.store.repository(checkpoint, r.id).reported
+    );
+    if (outstanding.length > 0 && Object.keys(worktrees).length === 0) {
+      return this.blocked(
+        checkpoint,
+        'None of this execution’s repositories could be cloned. Check the repository URLs ' +
+          'and that the worker’s git credentials can read them.'
+      );
     }
 
     // -- implement ----------------------------------------------------------
-    const items = orderedItems(assignment);
-    if (items === null) {
-      return this.blocked(checkpoint, lease, [
-        {
-          id: 'dependency-graph',
-          kind: 'requirements_unclear',
-          text:
-            'The selected stories depend on each other in a way that has no order — a ' +
-            'cycle, or a dependency on something that was not sent. Which should be built first?',
-        },
-      ]);
-    }
-    // A standalone story has no items: the artifact itself is the work.
-    const units = items.length > 0 ? items : [null];
+    const units = unitsOf(execution);
     const questionsFile = path.join(
-      this.deps.layout.agentDir(assignment.tenantId, assignment.executionId),
+      this.deps.layout.agentDir(execution.tenant_id, execution.id),
       'mvpfy-questions.md'
     );
-
-    for (const [index, item] of units.entries()) {
-      if (signal.aborted) return this.cancelled(checkpoint, lease);
-      const id = item?.id ?? assignment.artifact.id;
-      if (checkpoint.completedItems.includes(id)) continue;
-      const label = item
-        ? `${item.code ?? item.id} — ${item.title}`
-        : assignment.requirements.title;
-      await this.setState(
+    for (const [index, unit] of units.entries()) {
+      if (signal.aborted) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
+      if (checkpoint.completedUnits.includes(unit.id)) continue;
+      const label = `${unit.code ?? unit.id} — ${unit.title ?? 'work'}`;
+      const cancelled = await this.cancelled(
         checkpoint,
         'implementing',
-        `Building ${label} (${index + 1} of ${units.length})`,
-        lease
+        `Building ${label} (${index + 1} of ${units.length})`
       );
+      if (cancelled) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
+
       const outcome = await this.deps.agent.run({
         kind: this.deps.agentKind,
         ...(this.deps.agentModel ? { model: this.deps.agentModel } : {}),
-        prompt: buildPrompt({ assignment, worktrees, questionsFile, item }),
-        cwd: this.deps.layout.executionDir(assignment.tenantId, assignment.executionId),
-        agentDir: this.deps.layout.agentDir(assignment.tenantId, assignment.executionId),
+        prompt: buildPrompt({ execution, worktrees, questionsFile, unit }),
+        cwd: this.deps.layout.executionDir(execution.tenant_id, execution.id),
+        agentDir: this.deps.layout.agentDir(execution.tenant_id, execution.id),
         questionsFile,
         signal,
       });
-      if (outcome.cancelled || signal.aborted) return this.cancelled(checkpoint, lease);
+      if (outcome.cancelled || signal.aborted) {
+        return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
+      }
       if (outcome.questions.length > 0) {
+        // Feature1 takes one message, and a person reads it. Numbered, so
+        // the answer can address them one at a time.
         return this.blocked(
           checkpoint,
-          lease,
-          outcome.questions.map((text, i) => ({
-            id: `q-${index}-${i}`,
-            kind: 'setup_question' as const,
-            text: this.deps.redactor.line(text, 500),
-          }))
+          outcome.questions.map((q, i) => `${i + 1}. ${q}`).join(' ')
         );
       }
       if (outcome.code !== 0) {
-        // An agent that exited non-zero has not necessarily done nothing, so
-        // the work is still collected and reported below — but the execution
-        // is not going to be called ready.
-        this.log(`${assignment.executionId}: agent exited ${outcome.code} on ${label}`);
+        this.log(`${execution.id}: agent exited ${outcome.code} on ${label}`);
       }
-      // Committed per unit, so a crash later does not lose it and a reviewer
-      // can tell one story's work from another's.
-      await this.commitUnit(checkpoint, worktrees, item, lease);
-      checkpoint.completedItems.push(id);
+      await this.commitUnit(checkpoint, worktrees, unit);
+      checkpoint.completedUnits.push(unit.id);
       this.deps.store.save(checkpoint, this.now());
     }
 
     // -- verify -------------------------------------------------------------
-    if (signal.aborted) return this.cancelled(checkpoint, lease);
-    await this.setState(checkpoint, 'verifying', 'Running the checks', lease);
+    if (signal.aborted) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
+    if (await this.cancelled(checkpoint, 'verifying', 'Running the checks')) {
+      return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
+    }
     const verification: Record<string, VerificationResult[]> = {};
     for (const repositoryId of Object.keys(worktrees)) {
-      verification[repositoryId] = await this.deps.verifier.verifyRepository(
-        assignment,
-        repositoryId,
-        { worktrees, signal }
-      );
+      const rows = await this.deps.verifier.verifyRepository(repositoryId, { worktrees, signal });
+      verification[repositoryId] = rows;
+      const row = this.deps.store.repository(checkpoint, repositoryId);
+      row.checks = rows.map((r) => ({
+        command: r.command,
+        name: r.name,
+        outcome: r.outcome,
+        exitCode: r.exitCode,
+        ...(r.reason ? { reason: r.reason } : {}),
+      }));
+      this.deps.store.save(checkpoint, this.now());
     }
 
     // -- publish ------------------------------------------------------------
-    if (signal.aborted) return this.cancelled(checkpoint, lease);
-    await this.setState(checkpoint, 'opening_prs', 'Opening pull requests', lease);
+    if (signal.aborted) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
+    if (await this.cancelled(checkpoint, 'opening_prs', 'Opening pull requests')) {
+      return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
+    }
+    const blockedBy: string[] = [];
     for (const repositoryId of Object.keys(worktrees)) {
-      await this.publishRepository(checkpoint, repositoryId, worktrees, verification, lease);
+      const problem = await this.publishRepository(
+        checkpoint,
+        repositoryId,
+        worktrees,
+        verification[repositoryId] ?? []
+      );
+      if (problem) blockedBy.push(problem);
     }
 
-    const results = this.resultsOf(checkpoint);
-    const anyError = results.some((r) => r.error);
-    const stepsFor = (repositoryId: string) =>
-      assignment.verification.steps.filter((s) => s.repositoryId === repositoryId);
-    // Only a check that ran and said no fails the execution. One that could
-    // not run is reported, loudly, but does not turn work that may be fine
-    // into a failure — see verificationHeld for why those are two questions.
-    const anyFailed = Object.entries(verification).some(([repositoryId, rows]) =>
-      verificationFailed(rows, stepsFor(repositoryId))
+    // Feature1 moves the artifact to Testing only when every repository has
+    // a verified result, and refuses the call otherwise — so the worker
+    // decides here rather than being told.
+    const unfinished = execution.repositories.filter(
+      (r) => !this.deps.store.repository(checkpoint, r.id).reported
     );
-    const held = Object.entries(verification).every(([repositoryId, rows]) =>
-      verificationHeld(rows, stepsFor(repositoryId))
-    );
-    const outcome: ExecutionOutcome = anyError || anyFailed ? 'failed' : 'ready_for_testing';
-    return this.report(checkpoint, lease, outcome, this.summaryFor(results, held, anyFailed));
+    if (unfinished.length > 0) {
+      return this.finish(
+        checkpoint,
+        'failed',
+        `${unfinished.length} of ${execution.repositories.length} repositories did not finish. ` +
+          blockedBy.join(' ')
+      );
+    }
+    return this.finish(checkpoint, 'ready_for_testing', this.summaryFor(checkpoint));
+  }
+
+  /** Set a stage, and notice if somebody cancelled while we were working. */
+  private async cancelled(
+    checkpoint: ExecutionCheckpoint,
+    state: ExecutionState,
+    message: string
+  ): Promise<boolean> {
+    this.log(`${checkpoint.execution.id} → ${state}: ${message}`);
+    checkpoint.lastMessage = message;
+    const { cancelRequested } = await this.say(checkpoint, {
+      state,
+      message: this.deps.redactor.line(message, 2000),
+    });
+    return cancelRequested;
   }
 
   /** Commit whatever the agent changed, per repository. */
   private async commitUnit(
     checkpoint: ExecutionCheckpoint,
     worktrees: Record<string, string>,
-    item: Parameters<typeof commitMessageFor>[1],
-    lease: LeaseLike
+    unit: Snapshot
   ): Promise<void> {
-    lease.assertLive('committing');
+    this.assertLive('committing');
     for (const [repositoryId, tree] of Object.entries(worktrees)) {
       const row = this.deps.store.repository(checkpoint, repositoryId);
       try {
@@ -306,17 +318,14 @@ export class ExecutionEngine {
         if (paths.length === 0) continue;
         const sha = await this.deps.git.commit(
           tree,
-          commitMessageFor(checkpoint.assignment, item),
+          commitMessageFor(checkpoint.execution, unit),
           paths
         );
         if (sha) {
           row.changed = true;
           row.headCommit = sha;
-          row.implemented = true;
         }
       } catch (error) {
-        // A commit that will not happen is recorded against the repository
-        // when it publishes; here it only means this unit added nothing.
         this.log(
           `${repositoryId}: could not commit — ${this.deps.redactor.line((error as Error).message)}`
         );
@@ -326,55 +335,58 @@ export class ExecutionEngine {
   }
 
   /**
-   * Push, open the pull request, and attach it — each one guarded.
+   * Push, open the pull request, and report the repository.
    *
-   * The lease is checked immediately before each of the three, not once at
-   * the top: this is the stretch where a reassignment does real damage, and
-   * the gap between checking and acting is where it lands.
+   * Returns a sentence when the repository cannot be handed over, which is
+   * not the same as an error: a repository whose checks failed is a
+   * perfectly ordinary outcome that Feature1 simply will not accept as a
+   * result. The reason travels into the execution's failure message.
    */
   private async publishRepository(
     checkpoint: ExecutionCheckpoint,
     repositoryId: string,
     worktrees: Record<string, string>,
-    verification: Record<string, VerificationResult[]>,
-    lease: LeaseLike
-  ): Promise<void> {
-    const { assignment } = checkpoint;
+    verification: VerificationResult[]
+  ): Promise<string | null> {
+    const { execution } = checkpoint;
     const row = this.deps.store.repository(checkpoint, repositoryId);
-    const repo = authorisedRepository(assignment, repositoryId);
+    if (row.reported) return null;
+    const repo = authorisedRepository(execution, repositoryId);
     const tree = worktrees[repositoryId];
-    const branch = executionBranch(assignment.executionId);
-    const rows = verification[repositoryId] ?? [];
+    const branch = executionBranch(execution.id);
 
-    const base: RepositoryResult = {
-      repositoryId,
-      changed: row.changed,
-      headBranch: row.changed ? branch : null,
-      headCommit: row.headCommit,
-      commits: [],
-      verification: rows,
-      pullRequest: row.pullRequest,
-    };
-
-    // Nothing changed here. An ordinary outcome, not a failure: the agent
-    // decided this repository needed nothing.
-    if (!row.changed) {
-      row.result = { ...base, changed: false };
+    // Feature1 takes only green results. Found out here rather than by
+    // spending a lease on a 400.
+    const verdict = canReport(verification, []);
+    if (!verdict.ok) {
+      row.error = verdict.reason;
       this.deps.store.save(checkpoint, this.now());
-      return;
+      return `${repo.name}: ${verdict.reason}.`;
     }
 
     try {
-      base.commits = await this.deps.git.commitsSince(tree, repo.baseCommit);
+      const baseCommit =
+        row.baseCommit ?? (await this.deps.git.baseCommit(execution.tenant_id, repo));
+      row.baseCommit = baseCommit;
 
-      lease.assertLive(`pushing ${repositoryId}`);
+      if (!row.changed) {
+        // Nothing to do here, and that is an ordinary outcome. The server
+        // insists base and head match, which they do by construction.
+        row.headCommit = baseCommit;
+        row.outcome = 'no_changes';
+        return this.reportRepository(checkpoint, row, verification, []);
+      }
+
+      this.assertLive(`pushing ${repo.name}`);
       if (!row.pushed) {
-        await this.deps.git.push(tree, branch, repo.baseBranch);
+        await this.deps.git.push(tree, branch, repo.base_branch);
         row.pushed = true;
         this.deps.store.save(checkpoint, this.now());
       }
+      row.commits = await this.deps.git.commitsSince(tree, baseCommit);
+      row.headCommit = await this.deps.git.headCommit(tree);
 
-      lease.assertLive(`opening the pull request for ${repositoryId}`);
+      this.assertLive(`opening the pull request for ${repo.name}`);
       const origin = await this.deps.git.originUrl(tree);
       const github = PullRequests.repoFrom(origin);
       if (!github) throw new Error(`Could not tell which GitHub repository ${origin} is`);
@@ -383,17 +395,18 @@ export class ExecutionEngine {
         owner: github.owner,
         name: github.name,
         headBranch: branch,
-        baseBranch: repo.baseBranch,
-        title: `${assignment.artifact.code ?? assignment.artifact.id}: ${
-          assignment.artifact.title ?? assignment.requirements.title
-        }`,
+        baseBranch: repo.base_branch,
+        title:
+          `${execution.snapshot.code ?? ''} ${execution.snapshot.title ?? 'Implementation'}`.trim(),
         body: pullRequestBody({
-          ...(assignment.artifact.code ? { artifactCode: assignment.artifact.code } : {}),
-          artifactTitle: assignment.artifact.title ?? assignment.requirements.title,
-          executionId: assignment.executionId,
-          requirementsRevision: assignment.requirements.revision,
-          acceptanceCriteria: assignment.requirements.acceptanceCriteria,
-          verification: rows.map((r) => ({
+          ...(execution.snapshot.code ? { artifactCode: execution.snapshot.code } : {}),
+          artifactTitle: execution.snapshot.title ?? 'Implementation',
+          executionId: execution.id,
+          requirementsRevision: execution.snapshot.digest,
+          acceptanceCriteria: (execution.snapshot.acceptanceCriteria ?? [])
+            .map((ac, i) => ({ id: String(ac.id ?? i), text: criterionText(ac) }))
+            .filter((ac) => ac.text),
+          verification: verification.map((r) => ({
             name: r.name,
             outcome: r.outcome,
             ...(r.reason ? { reason: r.reason } : {}),
@@ -402,176 +415,96 @@ export class ExecutionEngine {
       });
       // Written down the moment it exists. A crash between opening and
       // recording is how a second pull request gets opened on the retry.
-      row.pullRequest = pr;
+      row.pullRequestUrl = pr.url;
+      row.outcome = 'pr_created';
       this.deps.store.save(checkpoint, this.now());
-
-      lease.assertLive(`attaching the pull request for ${repositoryId}`);
-      await this.attach(checkpoint, repositoryId, pr, lease);
-      row.result = { ...base, pullRequest: pr };
+      return this.reportRepository(checkpoint, row, verification, [pr.url]);
     } catch (error) {
       if (error instanceof StaleAttemptError) throw error;
-      // This repository did not finish. The others still report, and the
-      // pull request already opened is kept rather than forgotten.
-      row.result = {
-        ...base,
-        error: this.deps.redactor.line(
-          error instanceof GitError ? error.failure.message : (error as Error).message
-        ),
-      };
+      row.error = this.deps.redactor.line(
+        error instanceof GitError ? error.failure.message : (error as Error).message
+      );
+      this.deps.store.save(checkpoint, this.now());
+      return `${repo.name}: ${row.error}.`;
     }
-    this.deps.store.save(checkpoint, this.now());
   }
 
   /**
-   * Attach the pull request to the artifact Feature1 says owns it.
+   * Hand one repository to Feature1, which attaches its pull requests.
    *
-   * Feature1 resolves ownership and returns where it actually attached. A
-   * disagreement is reported rather than accepted: silently hanging a pull
-   * request off the wrong artifact is the kind of error nobody finds for
-   * weeks.
+   * The attach is the server's, not the worker's — it re-resolves ownership
+   * at that moment and refuses a pull request that belongs to a different
+   * repository. That refusal is a 409 and is not retried: a pull request
+   * attached to the wrong artifact is the kind of mistake nobody finds for
+   * weeks, and the server catching it is the point.
    */
-  private async attach(
+  private async reportRepository(
     checkpoint: ExecutionCheckpoint,
-    repositoryId: string,
-    pullRequest: NonNullable<ExecutionCheckpoint['repositories'][number]['pullRequest']>,
-    lease: LeaseLike
-  ): Promise<void> {
-    const { assignment } = checkpoint;
-    const response = await this.retry(() =>
-      this.deps.transport.attachPr({
-        contractVersion: assignment.contractVersion,
-        runnerId: this.deps.runnerId,
-        executionId: assignment.executionId,
-        attemptToken: lease.attemptToken,
-        expectedOwner: assignment.prOwner,
-        originArtifact: assignment.artifact,
-        pullRequest,
-        idempotencyKey: idempotencyKey({
-          executionId: assignment.executionId,
-          attemptId: assignment.attemptId,
-          kind: 'attach_pr',
-          discriminator: repositoryId,
-        }),
-      })
-    );
-    const expected = assignment.prOwner;
-    if (
-      response?.attachedTo &&
-      (response.attachedTo.type !== expected.type || response.attachedTo.id !== expected.id)
-    ) {
-      throw new Error(
-        `Feature1 attached ${pullRequest.url} to ${response.attachedTo.type} ` +
-          `${response.attachedTo.id}, not the ${expected.type} ${expected.id} this assignment named`
-      );
+    row: RepositoryCheckpoint,
+    verification: VerificationResult[],
+    prUrls: string[]
+  ): Promise<string | null> {
+    const result: RepositoryResult = {
+      repository_id: row.repositoryId,
+      outcome: row.outcome ?? 'no_changes',
+      base_commit: row.baseCommit ?? '',
+      head_commit: row.headCommit ?? row.baseCommit ?? '',
+      tests: passingTests(verification.map((r) => ({ command: r.command, exitCode: r.exitCode }))),
+      pr_urls: prUrls,
+    };
+    // Checked against the server's own rules first: a malformed result is
+    // a 400 that costs an attempt, and the mistake would be ours.
+    const problem = repositoryResultProblem(result);
+    if (problem) {
+      row.error = `Could not report this repository: ${problem}`;
+      this.deps.store.save(checkpoint, this.now());
+      return `${row.repositoryId}: ${problem}.`;
     }
+    this.assertLive(`reporting ${row.repositoryId}`);
+    await this.say(checkpoint, { repository_result: result });
+    row.reported = true;
+    this.deps.store.save(checkpoint, this.now());
+    return null;
   }
 
-  private resultsOf(checkpoint: ExecutionCheckpoint): RepositoryResult[] {
-    return checkpoint.repositories
-      .map((row) => row.result)
-      .filter((r): r is RepositoryResult => r !== null);
-  }
-
-  private summaryFor(results: RepositoryResult[], held: boolean, anyFailed: boolean): string {
-    const opened = results.filter((r) => r.pullRequest).length;
-    const failed = results.filter((r) => r.error).length;
-    const untouched = results.filter((r) => !r.changed && !r.error).length;
-    const parts = [
+  private summaryFor(checkpoint: ExecutionCheckpoint): string {
+    const rows = checkpoint.repositories;
+    const opened = rows.filter((r) => r.pullRequestUrl).length;
+    const untouched = rows.filter((r) => r.outcome === 'no_changes').length;
+    return [
       `${opened} pull request${opened === 1 ? '' : 's'} opened`,
       ...(untouched ? [`${untouched} repository needed no change`] : []),
-      ...(failed ? [`${failed} did not finish`] : []),
-      // Said plainly, because "ready for testing" must never be read as
-      // "checked" when nothing could be checked.
-      ...(anyFailed ? ['checks failed'] : held ? [] : ['not everything could be checked']),
-    ];
-    return parts.join('; ');
+      'all checks passed',
+    ].join('; ');
   }
 
-  private async blocked(
-    checkpoint: ExecutionCheckpoint,
-    lease: LeaseLike,
-    questions: BlockedQuestion[]
-  ): Promise<ExecutionOutcome> {
-    const { assignment } = checkpoint;
-    checkpoint.state = 'blocked';
-    this.deps.store.save(checkpoint, this.now());
-    await this.retry(() =>
-      this.deps.transport.blocked({
-        contractVersion: assignment.contractVersion,
-        runnerId: this.deps.runnerId,
-        assignmentId: assignment.assignmentId,
-        attemptToken: lease.attemptToken,
-        questions,
-        idempotencyKey: idempotencyKey({
-          executionId: assignment.executionId,
-          attemptId: assignment.attemptId,
-          kind: 'blocked',
-        }),
-      })
-    );
-    return this.report(
-      checkpoint,
-      lease,
-      'blocked',
-      `Stopped to ask ${questions.length} question${questions.length === 1 ? '' : 's'}`
-    );
-  }
-
-  private async cancelled(
-    checkpoint: ExecutionCheckpoint,
-    lease: LeaseLike
-  ): Promise<ExecutionOutcome> {
-    checkpoint.state = 'cancelling';
-    this.deps.store.save(checkpoint, this.now());
-    return this.report(checkpoint, lease, 'cancelled', 'Cancelled before it finished');
+  private async blocked(checkpoint: ExecutionCheckpoint, question: string): Promise<Ending> {
+    return this.finish(checkpoint, 'blocked', question);
   }
 
   /**
-   * The final word, sent once.
+   * The last word, sent once.
    *
    * Recorded as reported only after Feature1 accepts it, so a worker that
-   * dies between sending and recording resends on restart — and the
-   * idempotency key is what makes that safe rather than a second result.
+   * dies between sending and recording sends it again on restart — which is
+   * safe because the server treats a terminal state re-sent with the same
+   * lease as a no-op.
    */
-  private async report(
+  private async finish(
     checkpoint: ExecutionCheckpoint,
-    lease: LeaseLike,
-    outcome: ExecutionOutcome,
-    summary: string
-  ): Promise<ExecutionOutcome> {
-    const { assignment } = checkpoint;
-    const state: ExecutionState =
-      outcome === 'ready_for_testing'
-        ? 'ready_for_testing'
-        : outcome === 'cancelled'
-          ? 'cancelled'
-          : outcome === 'blocked'
-            ? 'blocked'
-            : 'failed';
+    state: Ending,
+    message: string
+  ): Promise<Ending> {
     checkpoint.state = state;
+    checkpoint.lastMessage = message;
     this.deps.store.save(checkpoint, this.now());
-    await this.retry(() =>
-      this.deps.transport.result({
-        contractVersion: assignment.contractVersion,
-        runnerId: this.deps.runnerId,
-        assignmentId: assignment.assignmentId,
-        attemptToken: lease.attemptToken,
-        outcome,
-        summary: this.deps.redactor.line(summary),
-        repositories: this.resultsOf(checkpoint),
-        requirementsRevision: assignment.requirements.revision,
-        idempotencyKey: idempotencyKey({
-          executionId: assignment.executionId,
-          attemptId: assignment.attemptId,
-          kind: 'result',
-        }),
-      })
-    );
+    await this.say(checkpoint, { state, message: this.deps.redactor.line(message, 2000) });
     checkpoint.reported = true;
     this.deps.store.save(checkpoint, this.now());
-    return outcome;
+    this.log(`${checkpoint.execution.id} → ${state}: ${message}`);
+    return state;
   }
 }
 
-/** Re-exported so callers need not reach into the contract for the type. */
-export type { Assignment };
+export { STAGES };
+export type { Execution };

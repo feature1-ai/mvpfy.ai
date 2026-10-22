@@ -1,106 +1,95 @@
 import {
-  Assignment,
-  AttachPrRequest,
-  AttachPrResponse,
-  BlockedRequest,
-  CONTRACT_VERSION,
-  ClaimRequest,
-  ClaimResponse,
-  HeartbeatRequest,
-  HeartbeatResponse,
-  ProgressRequest,
-  PrOwnerRef,
-  RegisterRequest,
-  RegisterResponse,
-  ReleaseRequest,
-  ResultRequest,
+  Execution,
+  ExecutionState,
+  PROTOCOL_VERSION,
+  ProgressBody,
+  ProgressResponse,
+  STAGES,
   StaleAttemptError,
   TransientTransportError,
 } from '../shared/runner/contract';
+import { repositoryResultProblem } from '../shared/runner/validate';
 import { Feature1Transport } from './transport';
 
 /**
  * Feature1, as far as the worker can tell.
  *
- * Not a mock with canned returns: it keeps the state the real server would
- * have to keep — which attempt is live, which idempotency keys it has already
- * seen, where each pull request was attached — because the worker's hardest
- * behaviour is what it does when that state disagrees with its own. A fake
- * that always says yes would let every one of those bugs through.
+ * Not a mock with canned returns: it re-implements the rules
+ * `ImplementationRuns.update` actually enforces, because the worker's
+ * hardest behaviour is what it does when the server refuses it. A fake that
+ * said yes to everything would pass every test and teach us nothing — and
+ * the rules here are strict enough that several of them caught real bugs in
+ * the worker the first time it ran against them.
  *
- * It is also the local development server: a worker pointed at this one runs
- * the whole execution path without Feature1 existing.
+ * What it mirrors, in the server's own order:
+ *   • the lease is a hash comparison and a clock, and either failing is 409;
+ *   • a terminal state may be re-sent with the same lease and is a no-op;
+ *   • a cancelling run answers `cancel_requested` to anything but `cancelled`;
+ *   • a stage may not move backwards;
+ *   • a repository result must carry passing checks and nothing else;
+ *   • `ready_for_testing` needs a result for every selected repository.
  */
 export class FakeFeature1 implements Feature1Transport {
-  /** Work waiting to be claimed. */
-  private queue: Assignment[] = [];
-  /** The attempt token the server considers live, per execution. */
-  private liveToken = new Map<string, string>();
-  /** assignmentId → executionId, recorded when the work is offered. */
-  private executionFor = new Map<string, string>();
-  private cancelled = new Set<string>();
-  private draining = false;
+  private queued: Execution[] = [];
+  private runs = new Map<string, Execution>();
   private leases = new Map<string, string>();
+  private cancelling = new Set<string>();
+  private clock: () => number;
 
-  /** Everything the worker sent, in order. Tests read this. */
-  readonly progressCalls: ProgressRequest[] = [];
-  readonly blockedCalls: BlockedRequest[] = [];
-  readonly resultCalls: ResultRequest[] = [];
-  readonly attachCalls: AttachPrRequest[] = [];
-  readonly releaseCalls: ReleaseRequest[] = [];
-  readonly heartbeats: HeartbeatRequest[] = [];
-  private seenKeys = new Set<string>();
+  /** Everything the worker sent, in order. Tests read these. */
+  readonly progressCalls: Array<{ executionId: string; body: ProgressBody }> = [];
+  readonly heartbeats: string[] = [];
+  readonly attachedPrs: string[] = [];
 
   /** Make the next N calls of a kind fail as though the network dropped. */
-  failNext: Partial<Record<keyof Feature1Transport, number>> = {};
-  /**
-   * Where the server says a pull request belongs, when it disagrees with the
-   * worker. Keyed by executionId. Used to exercise the conflict path.
-   */
-  attachOverride = new Map<string, PrOwnerRef>();
+  failNext: { claim?: number; progress?: number } = {};
+  /** Reject the next attach as the server does when a PR is the wrong repo. */
+  prBelongsElsewhere = new Set<string>();
 
-  /**
-   * Record an assignment without queueing it.
-   *
-   * Separate from `offer` because a worker resuming after a restart reports
-   * on work it was handed before the process existed — the server knows the
-   * assignment, and there is nothing left to claim.
-   */
-  known(...assignments: Assignment[]): void {
-    for (const assignment of assignments) {
-      this.executionFor.set(assignment.assignmentId, assignment.executionId);
-      if (!this.liveToken.has(assignment.executionId)) {
-        this.liveToken.set(assignment.executionId, assignment.attemptToken);
-      }
-      this.leases.set(assignment.assignmentId, assignment.leaseExpiresAt);
+  constructor(opts: { now?: () => number } = {}) {
+    this.clock = opts.now ?? Date.now;
+  }
+
+  /** Queue work for a worker to claim. */
+  offer(...executions: Execution[]): void {
+    for (const execution of executions) {
+      this.queued.push({ ...execution, state: 'queued' });
     }
   }
 
-  offer(...assignments: Assignment[]): void {
-    this.known(...assignments);
-    for (const assignment of assignments) this.queue.push(assignment);
+  /** Record a run without queueing it — the restart case. */
+  known(...executions: Execution[]): void {
+    for (const execution of executions) {
+      this.runs.set(execution.id, { ...execution });
+      this.leases.set(execution.id, execution.lease_token);
+    }
   }
 
-  /** Hand the execution to a newer attempt, as a reassignment would. */
-  supersede(executionId: string, newToken: string): void {
-    this.liveToken.set(executionId, newToken);
+  /** Somebody pressed cancel. */
+  cancel(executionId: string): void {
+    this.cancelling.add(executionId);
+    const run = this.runs.get(executionId);
+    if (run) run.state = 'cancelling';
   }
 
-  cancel(assignmentId: string): void {
-    this.cancelled.add(assignmentId);
+  /** Hand the execution to a newer attempt, as an expired lease would. */
+  supersede(executionId: string): string {
+    const next = `${this.leases.get(executionId)?.slice(0, 60) ?? 'b'.repeat(60)}beef`;
+    this.leases.set(executionId, next);
+    const run = this.runs.get(executionId);
+    if (run) run.attempt += 1;
+    return next;
   }
 
-  drain(): void {
-    this.draining = true;
+  stateOf(executionId: string): ExecutionState | undefined {
+    return this.runs.get(executionId)?.state;
   }
 
-  /** How many times a given idempotency key was accepted as new. */
-  private accepted = new Map<string, number>();
-  acceptedCount(key: string): number {
-    return this.accepted.get(key) ?? 0;
+  resultsOf(executionId: string): Execution['results'] {
+    return this.runs.get(executionId)?.results ?? {};
   }
 
-  private maybeFail(kind: keyof Feature1Transport): void {
+  private maybeFail(kind: 'claim' | 'progress'): void {
     const left = this.failNext[kind] ?? 0;
     if (left > 0) {
       this.failNext[kind] = left - 1;
@@ -108,94 +97,117 @@ export class FakeFeature1 implements Feature1Transport {
     }
   }
 
-  /**
-   * Refuse a write from an attempt that is no longer the live one.
-   *
-   * This is the fencing check the real server has to make. Without it two
-   * workers that both believe they hold the execution will both report, and
-   * the later-arriving one wins by accident.
-   */
-  private checkToken(executionId: string, attemptToken: string): void {
-    const live = this.liveToken.get(executionId);
-    if (live && live !== attemptToken) {
-      throw new StaleAttemptError(
-        `attempt ${attemptToken} is not the live attempt for ${executionId}`
-      );
-    }
-  }
-
-  /** True the first time a key is seen; recorded either way. */
-  private firstTime(key: string): boolean {
-    this.accepted.set(key, (this.accepted.get(key) ?? 0) + 1);
-    if (this.seenKeys.has(key)) return false;
-    this.seenKeys.add(key);
-    return true;
-  }
-
-  private executionOf(assignmentId: string): string {
-    const executionId = this.executionFor.get(assignmentId);
-    if (!executionId) throw new Error(`fake: no assignment ${assignmentId} was ever offered`);
-    return executionId;
-  }
-
-  async register(req: RegisterRequest): Promise<RegisterResponse> {
-    this.maybeFail('register');
-    return {
-      runnerId: `runner-for-${req.name.replace(/\W+/g, '-').toLowerCase()}`,
-      runnerToken: 'fake-runner-token',
-      contractVersion: CONTRACT_VERSION,
-    };
-  }
-
-  async heartbeat(req: HeartbeatRequest): Promise<HeartbeatResponse> {
-    this.maybeFail('heartbeat');
-    this.heartbeats.push(req);
-    const cancel = req.running
-      .filter((r) => this.cancelled.has(r.assignmentId))
-      .map((r) => r.assignmentId);
-    const leases: Record<string, string> = {};
-    for (const running of req.running) {
-      const lease = this.leases.get(running.assignmentId);
-      if (lease) leases[running.assignmentId] = lease;
-    }
-    return { cancel, drain: this.draining, leases };
-  }
-
-  async claim(req: ClaimRequest): Promise<ClaimResponse> {
+  async claim(): Promise<Execution | null> {
     this.maybeFail('claim');
-    if (this.draining || req.capacity <= 0) return { assignments: [] };
-    return { assignments: this.queue.splice(0, req.capacity) };
+    // Expired cancellations are terminal and are not handed out again.
+    for (const run of this.runs.values()) {
+      if (run.state === 'cancelling' && this.expired(run.id)) run.state = 'cancelled';
+    }
+    const reclaimable = [...this.runs.values()].find(
+      (r) => STAGES.includes(r.state) && this.expired(r.id)
+    );
+    const next = this.queued.shift() ?? reclaimable;
+    if (!next) return null;
+    const leaseToken = `${'c'.repeat(56)}${String(this.runs.size).padStart(8, '0')}`;
+    const claimed: Execution = {
+      ...next,
+      protocol_version: PROTOCOL_VERSION,
+      state: 'preparing',
+      attempt: (this.runs.get(next.id)?.attempt ?? next.attempt ?? 0) + 1,
+      // Results a previous attempt reported survive a reclaim.
+      results: { ...(this.runs.get(next.id)?.results ?? next.results ?? {}) },
+      lease_token: leaseToken,
+      lease_until: new Date(this.clock() + 3 * 60_000).toISOString(),
+    };
+    this.runs.set(claimed.id, claimed);
+    this.leases.set(claimed.id, leaseToken);
+    return { ...claimed };
   }
 
-  async progress(req: ProgressRequest): Promise<void> {
+  private expired(executionId: string): boolean {
+    const until = Date.parse(this.runs.get(executionId)?.lease_until ?? '');
+    return Number.isNaN(until) ? false : this.clock() >= until;
+  }
+
+  async progress(
+    executionId: string,
+    leaseToken: string,
+    body: ProgressBody
+  ): Promise<ProgressResponse['execution']> {
     this.maybeFail('progress');
-    this.checkToken(this.executionOf(req.assignmentId), req.attemptToken);
-    if (this.firstTime(req.idempotencyKey)) this.progressCalls.push(req);
-  }
+    this.progressCalls.push({ executionId, body });
+    if (Object.keys(body).length === 0) this.heartbeats.push(executionId);
 
-  async blocked(req: BlockedRequest): Promise<void> {
-    this.maybeFail('blocked');
-    this.checkToken(this.executionOf(req.assignmentId), req.attemptToken);
-    if (this.firstTime(req.idempotencyKey)) this.blockedCalls.push(req);
-  }
+    const run = this.runs.get(executionId);
+    if (!run) throw new StaleAttemptError('fake: no such execution');
+    if (this.leases.get(executionId) !== leaseToken) {
+      throw new StaleAttemptError('Lease expired or superseded; stop this attempt');
+    }
+    // A terminal state may be acknowledged again with the same lease.
+    if (
+      ['ready_for_testing', 'failed', 'blocked', 'cancelled'].includes(run.state) &&
+      body.state === run.state
+    ) {
+      return { ...run };
+    }
+    if (this.expired(executionId)) {
+      throw new StaleAttemptError('Lease expired or superseded; stop this attempt');
+    }
+    if (this.cancelling.has(executionId) && body.state !== 'cancelled') {
+      run.state = 'cancelling';
+      return { ...run, cancel_requested: true };
+    }
+    if (!STAGES.includes(run.state) && run.state !== 'cancelling') {
+      throw new StaleAttemptError('Execution is no longer active');
+    }
 
-  async result(req: ResultRequest): Promise<void> {
-    this.maybeFail('result');
-    this.checkToken(this.executionOf(req.assignmentId), req.attemptToken);
-    if (this.firstTime(req.idempotencyKey)) this.resultCalls.push(req);
-  }
+    const state = body.state ?? run.state;
+    if (state === 'cancelled' && run.state !== 'cancelling') {
+      throw new Error('Cancellation was not requested');
+    }
+    if (
+      STAGES.includes(state) &&
+      STAGES.includes(run.state) &&
+      STAGES.indexOf(state) < STAGES.indexOf(run.state)
+    ) {
+      throw new Error('Cannot move execution backwards');
+    }
+    if (body.message !== undefined && body.message.length > 2000) {
+      throw new Error('Message must be at most 2000 characters');
+    }
 
-  async attachPr(req: AttachPrRequest): Promise<AttachPrResponse> {
-    this.maybeFail('attachPr');
-    this.checkToken(req.executionId, req.attemptToken);
-    if (this.firstTime(req.idempotencyKey)) this.attachCalls.push(req);
-    // Feature1 resolves ownership; the worker's expectation is only a check.
-    return { attachedTo: this.attachOverride.get(req.executionId) ?? req.expectedOwner };
-  }
+    if (body.repository_result) {
+      const result = body.repository_result;
+      if (!run.repositories.some((r) => r.id === result.repository_id)) {
+        throw new Error('Repository is not part of this execution');
+      }
+      const problem = repositoryResultProblem(result);
+      if (problem) throw new Error(problem);
+      for (const url of result.pr_urls) {
+        if (this.prBelongsElsewhere.has(url)) {
+          throw new StaleAttemptError('PR does not belong to this result repository');
+        }
+        this.attachedPrs.push(url);
+      }
+      run.results[result.repository_id] = {
+        outcome: result.outcome,
+        tests: result.tests.map((t) => ({ command: t.command, exit_code: 0 })),
+        base_commit: result.base_commit,
+        head_commit: result.head_commit,
+        pr_urls: result.pr_urls,
+        attempt: run.attempt,
+      };
+    }
 
-  async release(req: ReleaseRequest): Promise<void> {
-    this.maybeFail('release');
-    this.releaseCalls.push(req);
-    this.leases.delete(req.assignmentId);
+    if (state === 'ready_for_testing') {
+      const missing = run.repositories.filter((r) => !run.results[r.id]);
+      if (missing.length > 0) throw new Error('Every selected repository needs a verified result');
+    }
+
+    run.state = state;
+    if (body.message) run.message = body.message;
+    const terminal = !STAGES.includes(state);
+    run.lease_until = terminal ? null : new Date(this.clock() + 3 * 60_000).toISOString();
+    return { ...run };
   }
 }

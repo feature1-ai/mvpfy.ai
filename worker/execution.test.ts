@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { featureAssignment, standaloneStoryAssignment } from '../shared/runner/fixtures';
+import { IDS, featureExecution } from '../shared/runner/fixtures';
 import { ScriptedRunner } from './exec';
 import { Redactor, plainRedactor } from './redact';
 import { Git, parseGitHubRepo, posixQuote } from './git';
@@ -96,7 +96,7 @@ describe('parseGitHubRepo', () => {
 });
 
 describe('Git', () => {
-  const repo = featureAssignment().repositories[0];
+  const repo = featureExecution().repositories[0];
 
   it('never pushes to the base branch', () => {
     // The one hard rule: the worker's output is a branch and a pull request.
@@ -142,24 +142,26 @@ describe('Git', () => {
       .when(/rev-parse --verify/, { code: 1 });
     const git = new Git(runner, new Layout(root));
     fs.mkdirSync(path.join(root, 'clones', 'acme'), { recursive: true });
-    fs.mkdirSync(new Layout(root).cloneDir('acme', repo.repositoryId), { recursive: true });
-    fs.writeFileSync(path.join(new Layout(root).cloneDir('acme', repo.repositoryId), 'HEAD'), '');
-    await git.prepareWorktree('acme', 'exec-1', repo);
+    fs.mkdirSync(new Layout(root).cloneDir(IDS.tenant, repo.id), { recursive: true });
+    fs.writeFileSync(path.join(new Layout(root).cloneDir(IDS.tenant, repo.id), 'HEAD'), '');
+    await git.prepareWorktree(IDS.tenant, IDS.execFeature, repo);
     const add = runner.calls.find((c) => c.command.includes('worktree add'));
     expect(add?.command).toContain('-b');
-    expect(add?.command).toContain(repo.baseCommit);
+    // Feature1 sends a base branch, not a commit; the worker starts from
+    // its tip and reports the sha it actually used.
+    expect(add?.command).toContain('refs/remotes/origin/main');
   });
 
   it('continues an execution branch that already exists, rather than making another', async () => {
     const runner = new ScriptedRunner().when(/rev-parse --verify/, { code: 0 });
     const git = new Git(runner, new Layout(root));
-    const clone = new Layout(root).cloneDir('acme', repo.repositoryId);
+    const clone = new Layout(root).cloneDir(IDS.tenant, repo.id);
     fs.mkdirSync(clone, { recursive: true });
     fs.writeFileSync(path.join(clone, 'HEAD'), '');
-    await git.prepareWorktree('acme', 'exec-1', repo);
+    await git.prepareWorktree(IDS.tenant, IDS.execFeature, repo);
     const add = runner.calls.find((c) => c.command.includes('worktree add'));
     expect(add?.command).not.toContain('-b');
-    expect(add?.command).toContain('mvpfy/exec-1');
+    expect(add?.command).toContain(`mvpfy/${IDS.execFeature}`);
   });
 
   it('never fetches into refs/heads, because prune would delete the work', async () => {
@@ -168,10 +170,10 @@ describe('Git', () => {
     // branch. A resume then finds its commits gone.
     const runner = new ScriptedRunner();
     const layout = new Layout(root);
-    const clone = layout.cloneDir('acme', 'repo-api');
+    const clone = layout.cloneDir(IDS.tenant, IDS.repoApi);
     fs.mkdirSync(clone, { recursive: true });
     fs.writeFileSync(path.join(clone, 'HEAD'), '');
-    await new Git(runner, layout).ensureClone('acme', featureAssignment().repositories[0]);
+    await new Git(runner, layout).ensureClone(IDS.tenant, featureExecution().repositories[0]);
     const fetch = runner.calls.find((c) => c.command.includes('fetch'));
     expect(fetch?.command).toContain('refs/remotes/origin/*');
     expect(fetch?.command).not.toContain(':refs/heads/*');
@@ -208,12 +210,24 @@ describe('Git', () => {
 });
 
 describe('Verifier', () => {
-  const worktrees = { 'repo-api': '/w/api', 'repo-web': '/w/web' };
+  const worktrees = { [IDS.repoApi]: '/w/api', [IDS.repoWeb]: '/w/web' };
+  // Feature1 does not send commands — it takes results — so the worker
+  // either discovers them or is given them. Given, here, so these tests are
+  // about the outcome rather than the discovery.
+  const steps = [
+    {
+      id: 'v-test',
+      kind: 'test' as const,
+      name: 'Tests',
+      command: 'npm test',
+      repositoryId: IDS.repoApi,
+    },
+  ];
 
   it('reports a failing check as failed, with its exit code', async () => {
     const runner = new ScriptedRunner().when(/npm test/, { code: 1, stderr: '2 failing' });
     const v = new Verifier(runner, plainRedactor);
-    const results = await v.verifyRepository(featureAssignment(), 'repo-api', { worktrees });
+    const results = await v.verifyRepository(IDS.repoApi, { worktrees, steps });
     expect(results[0].outcome).toBe('failed');
     expect(results[0].exitCode).toBe(1);
     expect(results[0].summary).toContain('2 failing');
@@ -223,33 +237,29 @@ describe('Verifier', () => {
     // 127 is the shell saying the command is not there. Calling that a
     // failing test sends somebody looking for a bug in the code.
     const runner = new ScriptedRunner().when(/npm test/, { code: 127, stderr: 'npm: not found' });
-    const results = await new Verifier(runner, plainRedactor).verifyRepository(
-      featureAssignment(),
-      'repo-api',
-      { worktrees }
-    );
+    const results = await new Verifier(runner, plainRedactor).verifyRepository(IDS.repoApi, {
+      worktrees,
+      steps,
+    });
     expect(results[0].outcome).toBe('unavailable');
     expect(results[0].reason).toMatch(/not found/);
   });
 
   it('reports a timeout as unavailable and says how long it waited', async () => {
     const runner = new ScriptedRunner().when(/npm test/, { timedOut: true, code: null });
-    const results = await new Verifier(runner, plainRedactor).verifyRepository(
-      featureAssignment(),
-      'repo-api',
-      { worktrees }
-    );
+    const results = await new Verifier(runner, plainRedactor).verifyRepository(IDS.repoApi, {
+      worktrees,
+      steps,
+    });
     expect(results[0].outcome).toBe('unavailable');
     expect(results[0].reason).toMatch(/longer than/);
   });
 
   it('says out loud when nothing was verified', async () => {
     // An empty list reads as "nothing failed". It is not the same claim.
-    const assignment = featureAssignment({ verification: { steps: [] } });
     const results = await new Verifier(new ScriptedRunner(), plainRedactor).verifyRepository(
-      assignment,
-      'repo-api',
-      { worktrees }
+      IDS.repoApi,
+      { worktrees: { [IDS.repoApi]: root } }
     );
     expect(results[0].outcome).toBe('unavailable');
     expect(results[0].summary).toBe('Nothing was verified');
@@ -260,9 +270,8 @@ describe('Verifier', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'x' } }));
     const results = await new Verifier(new ScriptedRunner(), plainRedactor).verifyRepository(
-      standaloneStoryAssignment(),
-      'repo-api',
-      { worktrees: { 'repo-api': dir } }
+      IDS.repoApi,
+      { worktrees: { [IDS.repoApi]: dir } }
     );
     expect(results[0].discovered).toBe(true);
     expect(results[0].outcome).toBe('passed');
@@ -270,9 +279,8 @@ describe('Verifier', () => {
 
   it('reports no checkout rather than pretending to run', async () => {
     const results = await new Verifier(new ScriptedRunner(), plainRedactor).verifyRepository(
-      featureAssignment(),
-      'repo-api',
-      { worktrees: {} }
+      IDS.repoApi,
+      { worktrees: {}, steps }
     );
     expect(results[0].outcome).toBe('unavailable');
     expect(results[0].reason).toMatch(/No checkout/);
@@ -283,17 +291,24 @@ describe('Verifier', () => {
       code: 1,
       stderr: 'failed to auth with ghp_abcdefghijklmnopqrstuvwxyz0123456789',
     });
-    const results = await new Verifier(runner, new Redactor()).verifyRepository(
-      featureAssignment(),
-      'repo-api',
-      { worktrees }
-    );
+    const results = await new Verifier(runner, new Redactor()).verifyRepository(IDS.repoApi, {
+      worktrees,
+      steps,
+    });
     expect(results[0].summary).not.toContain('ghp_');
   });
 });
 
 describe('verificationHeld', () => {
-  const steps = featureAssignment().verification.steps;
+  const steps = [
+    {
+      id: 'v-api-test',
+      kind: 'test' as const,
+      name: 'tests',
+      command: 'npm test',
+      repositoryId: IDS.repoApi,
+    },
+  ];
   const result = (stepId: string, outcome: string) =>
     ({ stepId, outcome }) as unknown as Parameters<typeof verificationHeld>[0][number];
 
@@ -317,7 +332,7 @@ describe('PullRequests', () => {
     worktree: '/w/api',
     owner: 'acme',
     name: 'api',
-    headBranch: 'mvpfy/exec-1',
+    headBranch: 'mvpfy/exec',
     baseBranch: 'main',
     title: 'FEA-142',
     body: 'body',
@@ -329,7 +344,7 @@ describe('PullRequests', () => {
 
   it('reuses the pull request already open for the branch', async () => {
     // The retry case: a crash after creating must not create a second.
-    const runner = new ScriptedRunner().when(/pr list/, { stdout: listing('mvpfy/exec-1') });
+    const runner = new ScriptedRunner().when(/pr list/, { stdout: listing('mvpfy/exec') });
     const pr = await new PullRequests(runner, plainRedactor).ensure({ ...target, worktree: root });
     expect(pr.number).toBe(7);
     expect(pr.createdByThisAttempt).toBe(false);
@@ -340,7 +355,7 @@ describe('PullRequests', () => {
     const runner = new ScriptedRunner().when(/pr list/, { stdout: '[]' });
     await new PullRequests(runner, plainRedactor).findExisting(target);
     const list = runner.calls.find((c) => c.command.includes('pr list'));
-    expect(list?.command).toContain("--head 'mvpfy/exec-1'");
+    expect(list?.command).toContain("--head 'mvpfy/exec'");
     expect(list?.command).toContain('--state all');
   });
 
@@ -352,7 +367,7 @@ describe('PullRequests', () => {
 
   it('creates one when there is none, and reads it back', async () => {
     const runner = new ScriptedRunner()
-      .when(/pr list/, { stdout: listing('mvpfy/exec-1') })
+      .when(/pr list/, { stdout: listing('mvpfy/exec') })
       .when(/pr list/, { stdout: '[]' }, 1);
     const pr = await new PullRequests(runner, plainRedactor).ensure({ ...target, worktree: root });
     expect(pr.createdByThisAttempt).toBe(true);
@@ -362,7 +377,7 @@ describe('PullRequests', () => {
   it('treats a create that lost its race as success, not an error', async () => {
     // Another attempt opened one between the look and the create.
     const runner = new ScriptedRunner()
-      .when(/pr list/, { stdout: listing('mvpfy/exec-1') })
+      .when(/pr list/, { stdout: listing('mvpfy/exec') })
       .when(/pr list/, { stdout: '[]' }, 1)
       .when(/pr create/, { code: 1, stderr: 'a pull request already exists' });
     const pr = await new PullRequests(runner, plainRedactor).ensure({ ...target, worktree: root });
@@ -381,7 +396,7 @@ describe('PullRequests', () => {
 
   it('redacts the body before it is published', async () => {
     const runner = new ScriptedRunner()
-      .when(/pr list/, { stdout: listing('mvpfy/exec-1') })
+      .when(/pr list/, { stdout: listing('mvpfy/exec') })
       .when(/pr list/, { stdout: '[]' }, 1);
     let written = '';
     const prs = new PullRequests(

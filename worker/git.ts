@@ -1,7 +1,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { CommitRecord, RepositoryRef } from '../shared/runner/contract';
+import { ExecutionRepository } from '../shared/runner/contract';
 import { validRef } from '../shared/runner/validate';
+
+/** A commit as the worker records it for the pull request body. */
+export interface CommitRecord {
+  sha: string;
+  subject: string;
+}
 import { CommandRunner } from './exec';
 import { Layout, executionBranch } from './layout';
 
@@ -85,8 +91,8 @@ export class Git {
    * in a repository costs no download. It is never a developer's working
    * copy — those belong to a person who may be using them.
    */
-  async ensureClone(tenantId: string, repo: RepositoryRef): Promise<string> {
-    const dir = this.layout.cloneDir(tenantId, repo.repositoryId);
+  async ensureClone(tenantId: string, repo: ExecutionRepository): Promise<string> {
+    const dir = this.layout.cloneDir(tenantId, repo.id);
     if (fs.existsSync(path.join(dir, 'HEAD'))) {
       await this.git(dir, `fetch --prune origin ${posixQuote(TRACKING_REFSPEC)}`);
       return dir;
@@ -94,7 +100,7 @@ export class Git {
     fs.mkdirSync(path.dirname(dir), { recursive: true });
     await this.git(
       path.dirname(dir),
-      `clone --bare ${posixQuote(repo.cloneUrl)} ${posixQuote(dir)}`,
+      `clone --bare ${posixQuote(repo.url)} ${posixQuote(dir)}`,
       30 * 60_000
     );
     // A bare clone has no origin fetch refspec by default, and the obvious
@@ -102,6 +108,19 @@ export class Git {
     await this.git(dir, `config remote.origin.fetch ${posixQuote(TRACKING_REFSPEC)}`);
     await this.git(dir, `fetch --prune origin ${posixQuote(TRACKING_REFSPEC)}`);
     return dir;
+  }
+
+  /**
+   * The commit the base branch is actually on, right now.
+   *
+   * Feature1 sends a base branch and not a commit, so the worker resolves
+   * it and reports the sha it used — which is the only way the record says
+   * what the work was actually built on rather than what it was aimed at.
+   */
+  async baseCommit(tenantId: string, repo: ExecutionRepository): Promise<string> {
+    const clone = await this.ensureClone(tenantId, repo);
+    const ref = `refs/remotes/origin/${repo.base_branch}`;
+    return (await this.git(clone, `rev-parse ${posixQuote(ref)}`)).trim();
   }
 
   /**
@@ -114,12 +133,12 @@ export class Git {
   async prepareWorktree(
     tenantId: string,
     executionId: string,
-    repo: RepositoryRef
+    repo: ExecutionRepository
   ): Promise<string> {
     const branch = executionBranch(executionId);
     if (!validRef(branch)) throw new Error(`Refusing an unusable branch name: ${branch}`);
     const clone = await this.ensureClone(tenantId, repo);
-    const tree = this.layout.worktreeDir(tenantId, executionId, repo.repositoryId);
+    const tree = this.layout.worktreeDir(tenantId, executionId, repo.id);
     if (fs.existsSync(path.join(tree, '.git'))) {
       await this.git(tree, `checkout ${posixQuote(branch)}`);
       return tree;
@@ -130,9 +149,10 @@ export class Git {
       clone,
       exists
         ? `worktree add ${posixQuote(tree)} ${posixQuote(branch)}`
-        : // From the commit the requirements were written against, not from
-          // whatever the default branch happens to be now.
-          `worktree add -b ${posixQuote(branch)} ${posixQuote(tree)} ${posixQuote(repo.baseCommit)}`
+        : // From the tip of the base branch the execution named, resolved
+          // once and reported, rather than from whatever is checked out.
+          `worktree add -b ${posixQuote(branch)} ${posixQuote(tree)} ` +
+            posixQuote(`refs/remotes/origin/${repo.base_branch}`)
     );
     return tree;
   }

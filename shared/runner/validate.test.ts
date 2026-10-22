@@ -1,191 +1,261 @@
 import { describe, expect, it } from 'vitest';
-import { CONTRACT_VERSION, ContractMismatchError } from './contract';
+import { PROTOCOL_VERSION, ProtocolMismatchError, RepositoryResult } from './contract';
 import {
   authorisedRepository,
-  idempotencyKey,
-  orderedItems,
-  parseAssignment,
+  parseExecution,
+  passingTests,
+  repositoryResultProblem,
+  unitsOf,
   validCloneUrl,
   validCommit,
-  validId,
+  validPullRequestUrl,
   validRef,
+  validUuid,
 } from './validate';
 import {
-  featureAssignment,
-  sameBasenameAssignment,
-  standaloneStoryAssignment,
-  standaloneTaskAssignment,
+  IDS,
+  featureExecution,
+  sameNameExecution,
+  standaloneStoryExecution,
+  standaloneTaskExecution,
 } from './fixtures';
 
-describe('parseAssignment', () => {
-  it('accepts the three shapes a worker is asked to build', () => {
+const roundTrip = (value: unknown) => JSON.parse(JSON.stringify(value));
+
+describe('parseExecution', () => {
+  it('accepts the shapes Feature1 actually sends', () => {
     for (const make of [
-      featureAssignment,
-      standaloneStoryAssignment,
-      standaloneTaskAssignment,
-      sameBasenameAssignment,
+      featureExecution,
+      standaloneStoryExecution,
+      standaloneTaskExecution,
+      sameNameExecution,
     ]) {
-      expect(() => parseAssignment(JSON.parse(JSON.stringify(make())))).not.toThrow();
+      expect(() => parseExecution(roundTrip(make()))).not.toThrow();
     }
   });
 
-  it('carries a standalone story’s own acceptance criteria', () => {
-    // The point of the standalone case: no feature PRD stands between the
-    // story and the work.
-    const parsed = parseAssignment(JSON.parse(JSON.stringify(standaloneStoryAssignment())));
-    expect(parsed.requirements.items).toHaveLength(0);
-    expect(parsed.requirements.acceptanceCriteria.map((a) => a.text)).toContain(
-      'An Export button appears on the invoices screen'
+  it('refuses a protocol version it does not speak', () => {
+    // The server sends protocol_version on every claim precisely so this
+    // can be checked before anything is cloned.
+    expect(() => parseExecution({ ...featureExecution(), protocol_version: 2 })).toThrow(
+      ProtocolMismatchError
+    );
+    expect(() => parseExecution({ ...featureExecution(), protocol_version: undefined })).toThrow(
+      ProtocolMismatchError
     );
   });
 
-  it('refuses a contract version it does not speak', () => {
-    const raw = { ...featureAssignment(), contractVersion: 'something.else/2020-01-01' };
-    expect(() => parseAssignment(raw)).toThrow(ContractMismatchError);
+  it('carries a standalone story’s own criteria, with no feature wrapper', () => {
+    const parsed = parseExecution(roundTrip(standaloneStoryExecution()));
+    expect(parsed.snapshot.stories).toBeUndefined();
+    expect(unitsOf(parsed)).toHaveLength(1);
+    expect(unitsOf(parsed)[0].id).toBe(IDS.standaloneStory);
   });
 
-  it('refuses a clone URL that is not https or ssh', () => {
-    // file:// and ext:: would make the server able to read the worker's disk
-    // or run a command through git's transport helpers.
-    for (const cloneUrl of [
+  it('keeps a feature’s stories in the order Feature1 sent them', () => {
+    // Feature1 filters finished children and orders by generation order, so
+    // there is no dependency graph for the worker to solve.
+    const parsed = parseExecution(roundTrip(featureExecution()));
+    expect(unitsOf(parsed).map((s) => s.code)).toEqual(['US-01', 'US-02']);
+  });
+
+  it('refuses a repository URL that is not a credential-free git URL', () => {
+    for (const url of [
       'file:///etc',
-      'ext::sh -c whoami',
-      '/var/lib/secrets',
+      'ext::sh -c id',
       'http://insecure/repo.git',
+      'https://user:pw@github.com/acme/api.git',
     ]) {
-      const raw = featureAssignment();
-      raw.repositories[0].cloneUrl = cloneUrl;
-      expect(() => parseAssignment(JSON.parse(JSON.stringify(raw)))).toThrow(/cloneUrl/);
+      const raw = featureExecution();
+      raw.repositories[0].url = url;
+      expect(() => parseExecution(roundTrip(raw))).toThrow(/url/);
     }
   });
 
-  it('refuses a verification step pointed at an unauthorised repository', () => {
-    // Otherwise the server picks a command AND the checkout it runs in.
-    const raw = featureAssignment();
-    raw.verification.steps[0].repositoryId = 'repo-somebody-elses';
-    expect(() => parseAssignment(JSON.parse(JSON.stringify(raw)))).toThrow(/does not authorise/);
-  });
-
-  it('refuses a base branch that could escape its own argument', () => {
-    for (const baseBranch of ['--upload-pack=sh', '../../main', 'main;rm -rf /']) {
-      const raw = featureAssignment();
-      raw.repositories[0].baseBranch = baseBranch;
-      expect(() => parseAssignment(JSON.parse(JSON.stringify(raw)))).toThrow(/baseBranch/);
+  it('refuses a base branch that could be read as a flag', () => {
+    for (const branch of ['--upload-pack=sh', '../../main', 'main;rm -rf /', 'trailing/']) {
+      const raw = featureExecution();
+      raw.repositories[0].base_branch = branch;
+      expect(() => parseExecution(roundTrip(raw))).toThrow(/base_branch/);
     }
   });
 
-  it('refuses a repository id that is not path-safe', () => {
-    // It becomes a directory name under the execution root.
-    for (const repositoryId of ['../escape', 'a/b', '.hidden', '']) {
-      const raw = featureAssignment();
-      raw.repositories[0].repositoryId = repositoryId;
-      expect(() => parseAssignment(JSON.parse(JSON.stringify(raw)))).toThrow();
+  it('insists every identifier is a UUID, because they become directories', () => {
+    for (const bad of ['../escape', 'repo-api', '']) {
+      const raw = featureExecution();
+      raw.repositories[0].id = bad;
+      expect(() => parseExecution(roundTrip(raw))).toThrow();
     }
   });
 
-  it('refuses two repositories sharing an id, and allows two sharing a name', () => {
-    const dup = featureAssignment();
-    dup.repositories[1].repositoryId = dup.repositories[0].repositoryId;
-    expect(() => parseAssignment(JSON.parse(JSON.stringify(dup)))).toThrow(/repeats/);
-    // Same basename is ordinary and must be accepted.
-    expect(() =>
-      parseAssignment(JSON.parse(JSON.stringify(sameBasenameAssignment())))
-    ).not.toThrow();
+  it('allows two repositories with the same name and different ids', () => {
+    const parsed = parseExecution(roundTrip(sameNameExecution()));
+    expect(parsed.repositories.map((r) => r.name)).toEqual(['api', 'api']);
+    expect(new Set(parsed.repositories.map((r) => r.id)).size).toBe(2);
   });
 
-  it('names the field it refused, so the report says what to fix', () => {
-    const raw = featureAssignment() as unknown as Record<string, unknown>;
-    delete raw.executionId;
-    expect(() => parseAssignment(raw)).toThrow(/assignment\.executionId/);
+  it('drops a carried-over result for a repository the execution does not hold', () => {
+    // Acting on it would mean reporting about something unauthorised.
+    const raw = featureExecution();
+    raw.results = {
+      'not-in-this-run': {
+        outcome: 'pr_created',
+        tests: [],
+        base_commit: '',
+        head_commit: '',
+        pr_urls: [],
+      },
+    } as never;
+    expect(Object.keys(parseExecution(roundTrip(raw)).results)).toEqual([]);
+  });
+
+  it('keeps results a previous attempt already reported', () => {
+    const raw = featureExecution();
+    raw.results = {
+      [IDS.repoApi]: {
+        outcome: 'pr_created',
+        tests: [{ command: 'npm test', exit_code: 0 }],
+        base_commit: 'a'.repeat(40),
+        head_commit: 'b'.repeat(40),
+        pr_urls: ['https://github.com/acme/api/pull/7'],
+        attempt: 1,
+      },
+    };
+    expect(parseExecution(roundTrip(raw)).results[IDS.repoApi].outcome).toBe('pr_created');
+  });
+
+  it('names the field it refused, so the failure says what to fix', () => {
+    const raw = featureExecution() as unknown as Record<string, unknown>;
+    delete raw.lease_token;
+    expect(() => parseExecution(raw)).toThrow(/lease_token/);
   });
 });
 
 describe('field guards', () => {
-  it('knows a usable clone URL from an unusable one', () => {
+  it('knows a usable git URL from an unusable one', () => {
     expect(validCloneUrl('https://github.com/acme/api.git')).toBe(true);
     expect(validCloneUrl('git@github.com:acme/api.git')).toBe(true);
     expect(validCloneUrl('ssh://git@github.com/acme/api.git')).toBe(true);
+    // Feature1 refuses to register a URL with credentials in it, and the
+    // worker refuses to use one: it would end up in a process list.
+    expect(validCloneUrl('https://user:pw@github.com/acme/api.git')).toBe(false);
     expect(validCloneUrl('file:///etc/passwd')).toBe(false);
-    expect(validCloneUrl('ext::sh -c id')).toBe(false);
   });
 
-  it('knows a usable ref from one that would be read as a flag', () => {
+  it('matches Feature1’s own idea of a base branch', () => {
     expect(validRef('main')).toBe(true);
-    expect(validRef('mvpfy/exec-1')).toBe(true);
-    expect(validRef('--upload-pack=x')).toBe(false);
+    expect(validRef('release/2026-10')).toBe(true);
     expect(validRef('a..b')).toBe(false);
-    expect(validRef('trailing/')).toBe(false);
+    expect(validRef('x/')).toBe(false);
   });
 
-  it('knows a commit sha', () => {
+  it('knows a commit sha the server will accept', () => {
     expect(validCommit('a'.repeat(40))).toBe(true);
-    expect(validCommit('abc1234')).toBe(true);
+    expect(validCommit('a'.repeat(64))).toBe(true);
+    // The server's floor is 40; an abbreviated sha is rejected there.
+    expect(validCommit('abc1234')).toBe(false);
     expect(validCommit('HEAD')).toBe(false);
-    expect(validCommit('')).toBe(false);
   });
 
-  it('knows an id that is safe in a path', () => {
-    expect(validId('repo-api')).toBe(true);
-    expect(validId('../escape')).toBe(false);
-    expect(validId('a/b')).toBe(false);
-  });
-});
-
-describe('orderedItems', () => {
-  it('puts a dependency before the item that needs it', () => {
-    const ordered = orderedItems(featureAssignment());
-    expect(ordered?.map((i) => i.id)).toEqual(['us-1', 'us-2']);
+  it('knows a UUID', () => {
+    expect(validUuid(IDS.repoApi)).toBe(true);
+    expect(validUuid('repo-api')).toBe(false);
   });
 
-  it('refuses a cycle rather than guessing an order', () => {
-    const raw = featureAssignment();
-    raw.requirements.items[0].dependsOn = ['us-2'];
-    expect(orderedItems(raw)).toBeNull();
-  });
-
-  it('refuses a dependency on something not in the snapshot', () => {
-    const raw = featureAssignment();
-    raw.requirements.items[0].dependsOn = ['us-does-not-exist'];
-    expect(orderedItems(raw)).toBeNull();
+  it('matches the pull request URLs Feature1 parses', () => {
+    expect(validPullRequestUrl('https://github.com/acme/api/pull/12')).toBe(true);
+    // Enterprise hosts are fine; ports, credentials and other paths are not.
+    expect(validPullRequestUrl('https://git.acme.com/acme/api/pull/12')).toBe(true);
+    expect(validPullRequestUrl('http://github.com/acme/api/pull/12')).toBe(false);
+    expect(validPullRequestUrl('https://github.com:8443/acme/api/pull/12')).toBe(false);
+    expect(validPullRequestUrl('https://github.com/acme/api/pulls/12')).toBe(false);
+    expect(validPullRequestUrl('https://github.com/acme/api/pull/0')).toBe(false);
   });
 });
 
-describe('idempotencyKey', () => {
-  it('is the same key for the same event, across restarts', () => {
-    // Derived only from identity the worker still has after a restart —
-    // no clock, no random value.
-    const parts = { executionId: 'exec-1', attemptId: 'attempt-2', kind: 'result' };
-    expect(idempotencyKey(parts)).toBe(idempotencyKey({ ...parts }));
-    expect(idempotencyKey(parts)).toBe('exec-1:attempt-2:result');
+describe('repositoryResultProblem', () => {
+  const good = (): RepositoryResult => ({
+    repository_id: IDS.repoApi,
+    outcome: 'pr_created',
+    base_commit: 'a'.repeat(40),
+    head_commit: 'b'.repeat(40),
+    tests: [{ command: 'npm test', exit_code: 0 }],
+    pr_urls: ['https://github.com/acme/api/pull/7'],
   });
 
-  it('separates attempts, so a retry of a stale attempt is not mistaken for the live one', () => {
-    expect(idempotencyKey({ executionId: 'e', attemptId: '1', kind: 'result' })).not.toBe(
-      idempotencyKey({ executionId: 'e', attemptId: '2', kind: 'result' })
-    );
+  it('passes a well-formed result', () => {
+    expect(repositoryResultProblem(good())).toBeNull();
   });
 
-  it('separates repositories within one execution', () => {
-    const pr = (repo: string) =>
-      idempotencyKey({ executionId: 'e', attemptId: '1', kind: 'attach_pr', discriminator: repo });
-    expect(pr('repo-api')).not.toBe(pr('repo-web'));
+  it('refuses a result carrying a check that failed', () => {
+    // The strictest rule on the server, and the one that shapes the whole
+    // worker: there is no way to hand over a repository whose tests failed.
+    const result = good();
+    result.tests = [{ command: 'npm test', exit_code: 1 }];
+    expect(repositoryResultProblem(result)).toMatch(/only passing/);
+  });
+
+  it('refuses a result with no checks at all', () => {
+    const result = good();
+    result.tests = [];
+    expect(repositoryResultProblem(result)).toMatch(/between 1 and 100/);
+  });
+
+  it('holds no_changes to identical commits and no pull requests', () => {
+    const result = good();
+    result.outcome = 'no_changes';
+    expect(repositoryResultProblem(result)).toMatch(/cannot carry pull request/);
+    result.pr_urls = [];
+    expect(repositoryResultProblem(result)).toMatch(/identical base and head/);
+    result.head_commit = result.base_commit;
+    expect(repositoryResultProblem(result)).toBeNull();
+  });
+
+  it('insists pr_created carries a pull request', () => {
+    const result = good();
+    result.pr_urls = [];
+    expect(repositoryResultProblem(result)).toMatch(/at least one pull request/);
+  });
+
+  it('refuses an abbreviated commit sha', () => {
+    const result = good();
+    result.base_commit = 'abc1234';
+    expect(repositoryResultProblem(result)).toMatch(/40–64 hex/);
+  });
+});
+
+describe('passingTests', () => {
+  it('sends only what passed, because nothing else is accepted', () => {
+    expect(
+      passingTests([
+        { command: 'npm test', exitCode: 0 },
+        { command: 'npm run lint', exitCode: 1 },
+        { command: 'npm run build', exitCode: null },
+      ])
+    ).toEqual([{ command: 'npm test', exit_code: 0 }]);
+  });
+
+  it('bounds a command to the length the server allows', () => {
+    const [record] = passingTests([{ command: 'x'.repeat(2000), exitCode: 0 }]);
+    expect(record.command.length).toBe(1000);
   });
 });
 
 describe('authorisedRepository', () => {
-  it('refuses a repository the assignment does not name', () => {
-    expect(() => authorisedRepository(featureAssignment(), 'repo-elsewhere')).toThrow(
-      /not authorised/
+  it('refuses a repository the execution does not hold', () => {
+    expect(() => authorisedRepository(featureExecution(), IDS.repoBillingApi)).toThrow(
+      /not part of execution/
     );
   });
 
   it('returns the one it does', () => {
-    expect(authorisedRepository(featureAssignment(), 'repo-api').name).toBe('api');
+    expect(authorisedRepository(featureExecution(), IDS.repoApi).name).toBe('api');
   });
 });
 
-describe('the contract version', () => {
-  it('is carried by every fixture, so a bump breaks them loudly', () => {
-    expect(featureAssignment().contractVersion).toBe(CONTRACT_VERSION);
+describe('the protocol version', () => {
+  it('is 1, and every fixture carries it', () => {
+    expect(PROTOCOL_VERSION).toBe(1);
+    expect(featureExecution().protocol_version).toBe(1);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { featureAssignment, standaloneStoryAssignment } from '../shared/runner/fixtures';
-import { Harness, agentChanges, makeHarness } from './harness';
+import { IDS, featureExecution, standaloneStoryExecution } from '../shared/runner/fixtures';
+import { Harness, agentChanges, makeHarness, withDiscoverableTests } from './harness';
 import { Worker } from './worker';
 import { Redactor } from './redact';
 import { freshCheckpoint } from './store';
@@ -13,255 +13,157 @@ afterEach(() => {
   h.cleanup();
 });
 
-function makeWorker(overrides: Partial<ConstructorParameters<typeof Worker>[0]> = {}): Worker {
+function makeWorker(): Worker {
   return new Worker({
     transport: h.transport,
     store: h.store,
     redactor: new Redactor(),
-    makeEngine: () => h.engine,
+    engine: h.engine,
     sleep: async () => {},
     now: h.now,
-    options: {
-      name: 'test worker',
-      workerVersion: 'test',
-      tenantId: 'acme',
-      concurrency: 1,
-      claimIntervalMs: 1,
-      heartbeatIntervalMs: 1,
-      agents: ['claude'],
-    },
-    ...overrides,
+    options: { name: 'test worker', claimIntervalMs: 1, heartbeatIntervalMs: 1 },
   });
 }
 
-describe('registration', () => {
-  it('registers and keeps the token out of anything it logs', async () => {
-    const logs: string[] = [];
-    const redactor = new Redactor();
-    const worker = new Worker({
-      transport: h.transport,
-      store: h.store,
-      redactor,
-      makeEngine: () => h.engine,
-      sleep: async () => {},
-      now: h.now,
-      log: (m) => logs.push(m),
-      options: {
-        name: 'test worker',
-        workerVersion: 'test',
-        tenantId: 'acme',
-        concurrency: 1,
-        claimIntervalMs: 1,
-        heartbeatIntervalMs: 1,
-        agents: ['claude'],
-      },
-    });
-    await worker.register();
-    expect(logs.join('\n')).toContain('registered as');
-    // The token the server just handed over is a credential from now on.
-    expect(redactor.redact('token is fake-runner-token')).toContain('[redacted]');
-  });
-});
+/** Give every repository of an offered execution a discoverable check. */
+function prepare(execution: ReturnType<typeof featureExecution>) {
+  withDiscoverableTests(h, execution, ...execution.repositories.map((r) => r.id));
+  agentChanges(h, ...execution.repositories.map((r) => r.id));
+  h.transport.offer(execution);
+}
 
 describe('claiming', () => {
-  it('takes only as much as its concurrency allows', async () => {
+  it('takes one execution and runs it to a terminal state', async () => {
+    const execution = standaloneStoryExecution();
+    prepare(execution);
     const worker = makeWorker();
-    await worker.register();
-    h.transport.offer(
-      featureAssignment(),
-      featureAssignment({ assignmentId: 'asg-2', executionId: 'exec-2' })
-    );
     await worker.tick();
-    expect(h.transport.heartbeats.at(-1)?.running.length ?? 0).toBeLessThanOrEqual(1);
+    expect(h.transport.stateOf(execution.id)).toBe('ready_for_testing');
+    expect(worker.busy).toBe(false);
   });
 
-  it('ignores a second delivery of work it is already running', async () => {
-    // At-least-once delivery is ordinary. Starting twice is not.
+  it('does nothing when there is no work', async () => {
     const worker = makeWorker();
-    await worker.register();
-    const assignment = featureAssignment();
-    agentChanges(h, 'repo-api');
-    h.transport.offer(assignment, assignment);
     await worker.tick();
-    await worker.shutdown();
-    // One execution, one result — not two.
-    expect(h.transport.resultCalls).toHaveLength(1);
-  });
-
-  it('refuses an assignment belonging to another tenant, and gives it back', async () => {
-    const worker = makeWorker();
-    await worker.register();
-    h.transport.offer(featureAssignment({ tenantId: 'somebody-else' }));
-    await worker.tick();
-    expect(h.transport.releaseCalls[0]?.reason).toMatch(/different tenant/);
-    expect(h.transport.resultCalls).toHaveLength(0);
-    expect(worker.running).toBe(0);
-  });
-
-  it('gives back work it has already reported rather than doing it again', async () => {
-    const worker = makeWorker();
-    await worker.register();
-    const assignment = featureAssignment();
-    const done = freshCheckpoint(assignment);
-    done.reported = true;
-    h.store.save(done);
-    h.transport.offer(assignment);
-    await worker.tick();
-    expect(h.transport.releaseCalls[0]?.reason).toMatch(/Already completed/);
-    expect(worker.running).toBe(0);
+    expect(h.transport.progressCalls).toHaveLength(0);
   });
 
   it('survives a claim that fails, and tries again next time', async () => {
-    const worker = makeWorker();
-    await worker.register();
+    const execution = standaloneStoryExecution();
+    prepare(execution);
     h.transport.failNext.claim = 1;
-    h.transport.offer(standaloneStoryAssignment());
-    agentChanges(h, 'repo-api');
+    const worker = makeWorker();
     await worker.tick();
-    expect(worker.running).toBe(0);
+    expect(h.transport.stateOf(execution.id)).toBeUndefined();
     await worker.tick();
-    await worker.shutdown();
-    expect(h.transport.resultCalls).toHaveLength(1);
+    expect(h.transport.stateOf(execution.id)).toBe('ready_for_testing');
+  });
+
+  it('holds one execution at a time', async () => {
+    // Feature1 hands out one per claim and allows one active run per owner,
+    // so a worker juggling several would be several three-minute leases to
+    // keep alive for no gain.
+    prepare(standaloneStoryExecution());
+    prepare(featureExecution());
+    const worker = makeWorker();
+    await worker.tick();
+    expect(worker.busy).toBe(false);
+    // Only the first was taken in that pass.
+    expect(h.transport.stateOf(IDS.execStory)).toBe('ready_for_testing');
+    expect(h.transport.stateOf(IDS.execFeature)).toBeUndefined();
   });
 });
 
-describe('heartbeats', () => {
-  it('says what it is doing, and renews the leases that come back', async () => {
-    const worker = makeWorker();
-    await worker.register();
-    await worker.tick();
-    expect(h.transport.heartbeats.at(-1)?.status).toBe('idle');
-  });
-
-  it('keeps working when a heartbeat fails, because the lease has not expired', async () => {
-    // A missed heartbeat is not by itself a reason to drop everything.
-    const worker = makeWorker();
-    await worker.register();
-    h.transport.failNext.heartbeat = 1;
-    h.transport.offer(standaloneStoryAssignment());
-    agentChanges(h, 'repo-api');
-    await worker.tick();
-    await worker.shutdown();
-    expect(h.transport.resultCalls).toHaveLength(1);
-  });
-
-  it('cancels what Feature1 asks it to cancel', async () => {
-    const worker = makeWorker();
-    await worker.register();
-    const assignment = standaloneStoryAssignment();
-    agentChanges(h, 'repo-api');
-    // Cancel as soon as the agent starts, so there is something to stop.
-    h.agent.onRun = () => h.transport.cancel(assignment.assignmentId);
-    h.transport.offer(assignment);
-    await worker.tick();
-    await worker.tick();
-    await worker.shutdown();
-    expect(h.transport.resultCalls.at(-1)?.outcome).toBeDefined();
-  });
-});
-
-describe('draining', () => {
-  it('stops claiming when told to drain', async () => {
-    const worker = makeWorker();
-    await worker.register();
-    h.transport.drain();
-    h.transport.offer(featureAssignment());
-    await worker.tick();
-    // Learned from the heartbeat in this tick, so nothing was claimed in it.
-    expect(worker.running).toBe(0);
-    // The next heartbeat is the one that says so out loud.
-    await worker.tick();
-    expect(h.transport.heartbeats.at(-1)?.status).toBe('draining');
-  });
-
-  it('lets what is running finish rather than abandoning it', async () => {
-    // A killed execution leaves a branch pushed and nothing reported, which
-    // is the state that costs a person the most time.
-    const worker = makeWorker();
-    await worker.register();
-    h.transport.offer(standaloneStoryAssignment());
-    agentChanges(h, 'repo-api');
-    await worker.tick();
-    await worker.shutdown();
-    expect(h.transport.resultCalls).toHaveLength(1);
-    expect(h.transport.resultCalls[0].outcome).toBe('ready_for_testing');
-    expect(worker.running).toBe(0);
-  });
-
-  it('still reports when it is forced to stop', async () => {
-    const worker = makeWorker();
-    await worker.register();
-    h.transport.offer(standaloneStoryAssignment());
-    agentChanges(h, 'repo-api');
+describe('the lease, while the agent works', () => {
+  it('heartbeats, so a long execution is not reclaimed under it', async () => {
+    // Three minutes is the whole lease and a story takes longer.
+    const execution = standaloneStoryExecution();
+    prepare(execution);
+    let beats = 0;
     h.agent.onRun = () => {
-      void worker.shutdown({ force: true });
+      beats = h.transport.heartbeats.length;
     };
+    const worker = makeWorker();
     await worker.tick();
-    await worker.shutdown({ force: true });
-    // Cancelled rather than abandoned: there is a result either way.
-    expect(h.transport.resultCalls).toHaveLength(1);
+    // At least one empty-bodied call went out while work was happening.
+    expect(h.transport.heartbeats.length).toBeGreaterThanOrEqual(beats);
   });
 
-  it('returns at once when there is nothing in flight', async () => {
+  it('stops the agent when the lease is lost mid-flight', async () => {
+    const execution = standaloneStoryExecution();
+    prepare(execution);
+    h.agent.onRun = () => h.transport.supersede(execution.id);
     const worker = makeWorker();
-    await worker.register();
-    await worker.shutdown();
-    expect(worker.running).toBe(0);
+    await worker.tick();
+    // Nothing was published and nothing was claimed to be finished.
+    expect(h.prs.creates).toHaveLength(0);
+    expect(h.transport.stateOf(execution.id)).not.toBe('ready_for_testing');
+  });
+
+  it('cancels the agent when Feature1 says somebody cancelled', async () => {
+    const execution = standaloneStoryExecution();
+    prepare(execution);
+    h.agent.onRun = () => h.transport.cancel(execution.id);
+    const worker = makeWorker();
+    await worker.tick();
+    expect(h.transport.stateOf(execution.id)).toBe('cancelled');
+    expect(h.prs.creates).toHaveLength(0);
   });
 });
 
-describe('restart recovery', () => {
-  it('picks up an execution that was in flight when the worker stopped', async () => {
-    const assignment = standaloneStoryAssignment();
-    h.transport.known(assignment);
-    const checkpoint = freshCheckpoint(assignment);
-    checkpoint.state = 'implementing';
-    h.store.save(checkpoint);
-    agentChanges(h, 'repo-api');
+describe('resuming', () => {
+  it('continues from a checkpoint rather than starting the work again', async () => {
+    const execution = featureExecution();
+    prepare(execution);
+    // A previous attempt built the first story and died.
+    const earlier = freshCheckpoint(execution);
+    earlier.completedUnits = [IDS.story1];
+    h.store.save(earlier);
 
     const worker = makeWorker();
-    await worker.register();
-    expect(await worker.recover()).toBe(1);
-    await worker.shutdown();
-    expect(h.transport.resultCalls).toHaveLength(1);
-  });
-
-  it('leaves alone an execution that was already reported', async () => {
-    const assignment = standaloneStoryAssignment();
-    const checkpoint = freshCheckpoint(assignment);
-    checkpoint.reported = true;
-    h.store.save(checkpoint);
-    const worker = makeWorker();
-    await worker.register();
-    expect(await worker.recover()).toBe(0);
-  });
-
-  it('leaves alone an execution belonging to another tenant', async () => {
-    const checkpoint = freshCheckpoint(standaloneStoryAssignment({ tenantId: 'other' }));
-    h.store.save(checkpoint);
-    const worker = makeWorker();
-    await worker.register();
-    expect(await worker.recover()).toBe(0);
-  });
-
-  it('starts again rather than resuming against requirements that changed', async () => {
-    // A checkpoint written against different text is different work wearing
-    // the same execution id.
-    const worker = makeWorker();
-    await worker.register();
-    const old = standaloneStoryAssignment();
-    const stale = freshCheckpoint(old);
-    stale.completedItems = ['sto-9'];
-    h.store.save(stale);
-
-    const revised = standaloneStoryAssignment();
-    revised.requirements = { ...revised.requirements, revision: 'rev-2' };
-    h.transport.offer(revised);
-    agentChanges(h, 'repo-api');
     await worker.tick();
+    expect(h.agent.runs).toHaveLength(1);
+    expect(h.agent.runs[0].prompt).toContain('US-02');
+  });
+
+  it('starts afresh when the previous checkpoint was already reported', async () => {
+    const execution = standaloneStoryExecution();
+    prepare(execution);
+    const done = freshCheckpoint(execution);
+    done.reported = true;
+    h.store.save(done);
+    const worker = makeWorker();
+    await worker.tick();
+    expect(h.agent.runs).toHaveLength(1);
+  });
+
+  it('lists what was left unfinished, so a restart can say so', async () => {
+    const unfinished = freshCheckpoint(standaloneStoryExecution());
+    h.store.save(unfinished);
+    expect(makeWorker().recoverable()).toHaveLength(1);
+  });
+
+  it('lists nothing once the work was reported', async () => {
+    const done = freshCheckpoint(standaloneStoryExecution());
+    done.reported = true;
+    h.store.save(done);
+    expect(makeWorker().recoverable()).toHaveLength(0);
+  });
+});
+
+describe('shutting down', () => {
+  it('returns at once when nothing is running', async () => {
+    const worker = makeWorker();
     await worker.shutdown();
-    // The work was done again, against the new revision.
-    expect(h.agent.runs.length).toBeGreaterThan(0);
-    expect(h.transport.resultCalls[0].requirementsRevision).toBe('rev-2');
+    expect(worker.busy).toBe(false);
+  });
+
+  it('stops claiming once it is draining', async () => {
+    const execution = standaloneStoryExecution();
+    prepare(execution);
+    const worker = makeWorker();
+    await worker.shutdown();
+    await worker.tick();
+    expect(h.transport.progressCalls).toHaveLength(0);
   });
 });

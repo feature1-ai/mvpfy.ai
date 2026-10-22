@@ -1,8 +1,40 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { Assignment, VerificationResult, VerificationStep } from '../shared/runner/contract';
 import { CommandRunner } from './exec';
 import { Redactor } from './redact';
+
+/**
+ * A command the worker decides to run in a repository.
+ *
+ * Feature1 does not send these. It takes the *result* — and only passing
+ * ones — so choosing what to run is the worker's job, and saying honestly
+ * what it chose is part of the record.
+ */
+export interface VerificationStep {
+  id: string;
+  kind: 'test' | 'lint' | 'build' | 'typecheck' | 'other';
+  name: string;
+  command: string;
+  repositoryId: string;
+  optional?: boolean;
+  timeoutMs?: number;
+}
+
+export type VerificationOutcome = 'passed' | 'failed' | 'skipped' | 'unavailable';
+
+export interface VerificationResult {
+  stepId: string;
+  kind: VerificationStep['kind'];
+  name: string;
+  command: string;
+  repositoryId: string;
+  outcome: VerificationOutcome;
+  exitCode: number | null;
+  durationMs: number;
+  summary: string;
+  reason?: string;
+  discovered?: boolean;
+}
 
 /**
  * Deciding whether it actually worked.
@@ -24,6 +56,21 @@ export interface VerifyOptions {
   /** Where each repository's checkout is, by repository id. */
   worktrees: Record<string, string>;
 }
+
+/**
+ * What Feature1 needs, and what the worker therefore has to produce.
+ *
+ * The server accepts a repository result only when it carries at least one
+ * command with exit code zero. There is no way to report a repository whose
+ * checks failed, and no way to report one where nothing ran: both are a
+ * failed execution with a message instead.
+ *
+ * That is a stricter bar than the worker set for itself, and it is the
+ * right way round — "ready for testing" with nothing tested was always a
+ * weak claim. It does mean a repository with no runnable check cannot be
+ * handed over, which is worth knowing before pointing a worker at one.
+ */
+export const VERIFICATION_IS_MANDATORY = true;
 
 const DEFAULT_STEP_TIMEOUT = 20 * 60_000;
 
@@ -158,15 +205,13 @@ export class Verifier {
 
   /** Every step for one repository, in order. */
   async verifyRepository(
-    assignment: Assignment,
     repositoryId: string,
-    opts: VerifyOptions
+    opts: VerifyOptions & { steps?: VerificationStep[] }
   ): Promise<VerificationResult[]> {
     const worktree = opts.worktrees[repositoryId];
-    const given = assignment.verification.steps.filter((s) => s.repositoryId === repositoryId);
-    let steps = given;
+    let steps = opts.steps ?? [];
     let discovered = false;
-    if (steps.length === 0 && assignment.verification.allowDiscovery && worktree) {
+    if (steps.length === 0 && worktree) {
       steps = this.discoverSteps(repositoryId, worktree);
       discovered = true;
     }
@@ -184,9 +229,7 @@ export class Verifier {
           exitCode: null,
           durationMs: 0,
           summary: 'Nothing was verified',
-          reason: assignment.verification.allowDiscovery
-            ? 'The assignment named no checks and none could be discovered here'
-            : 'The assignment named no checks for this repository',
+          reason: 'No runnable check could be found in this repository',
         },
       ];
     }
@@ -204,10 +247,7 @@ export class Verifier {
 }
 
 /**
- * Something ran and said no.
- *
- * This is what fails an execution, and only this. An optional step never
- * does.
+ * Something ran and said no. An optional step never counts.
  */
 export function verificationFailed(
   results: VerificationResult[],
@@ -215,6 +255,33 @@ export function verificationFailed(
 ): boolean {
   const optional = new Set(steps.filter((s) => s.optional).map((s) => s.id));
   return results.some((r) => !optional.has(r.stepId) && r.outcome === 'failed');
+}
+
+/**
+ * Whether this repository can be handed to Feature1 at all.
+ *
+ * It needs at least one command that ran and passed, and nothing that ran
+ * and failed. Anything else and the server refuses the result — so the
+ * worker finds out here, before it spends a lease discovering it.
+ */
+export function canReport(
+  results: VerificationResult[],
+  steps: VerificationStep[]
+): { ok: true } | { ok: false; reason: string } {
+  if (verificationFailed(results, steps)) {
+    const failed = results.filter((r) => r.outcome === 'failed');
+    return {
+      ok: false,
+      reason: `${failed.length} check${failed.length === 1 ? '' : 's'} failed: ${failed
+        .map((r) => r.name)
+        .join(', ')}`,
+    };
+  }
+  if (!results.some((r) => r.outcome === 'passed')) {
+    const why = results.find((r) => r.reason)?.reason ?? 'nothing ran';
+    return { ok: false, reason: `No check passed in this repository — ${why}` };
+  }
+  return { ok: true };
 }
 
 /**

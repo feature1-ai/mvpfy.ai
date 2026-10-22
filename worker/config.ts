@@ -14,14 +14,17 @@ import { AgentKind } from './agentRun';
  */
 
 export interface WorkerConfig {
-  /** Shown in Feature1, so a person can tell their workers apart. */
+  /** For this worker's own logs. Feature1 names the credential, not us. */
   name: string;
-  tenantId: string;
   feature1BaseUrl: string;
-  runnerToken?: string;
+  /**
+   * The runner credential: 64 hex characters, minted by a Feature1
+   * organisation admin and valid for 24 hours. The worker does not register
+   * itself and cannot renew this; when it expires, somebody mints another.
+   */
+  runnerToken: string;
   /** Absolute. Everything the worker writes lives under it. */
   root: string;
-  concurrency: number;
   claimIntervalMs: number;
   heartbeatIntervalMs: number;
   agent: AgentKind;
@@ -41,12 +44,20 @@ function intFrom(value: string | undefined, fallback: number, name: string): num
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
   const fake = env.MVPFY_FAKE_FEATURE1 === '1';
-  const tenantId = (env.MVPFY_TENANT_ID ?? '').trim();
-  if (!tenantId) throw new Error('MVPFY_TENANT_ID is required: a worker serves one tenant');
 
   const baseUrl = (env.MVPFY_FEATURE1_URL ?? '').trim();
   if (!fake && !baseUrl) {
     throw new Error('MVPFY_FEATURE1_URL is required (or set MVPFY_FAKE_FEATURE1=1 to run offline)');
+  }
+  const runnerToken = (env.MVPFY_RUNNER_TOKEN ?? '').trim();
+  // Checked for shape at start-up: Feature1 answers 401 to anything that is
+  // not 64 hex characters, and an outage is a worse thing to suspect than a
+  // mistyped variable.
+  if (!fake && !/^[0-9a-f]{64}$/.test(runnerToken)) {
+    throw new Error(
+      'MVPFY_RUNNER_TOKEN must be the 64-character runner credential an organisation ' +
+        'admin minted with POST /api/implementation-runs/runners/credentials'
+    );
   }
 
   const root = (env.MVPFY_WORKER_ROOT ?? '/var/lib/mvpfy').trim();
@@ -57,25 +68,26 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): WorkerConfi
     throw new Error(`MVPFY_AGENT must be claude or codex, not ${JSON.stringify(agent)}`);
   }
 
-  const concurrency = intFrom(env.MVPFY_CONCURRENCY, 1, 'MVPFY_CONCURRENCY');
-  // Concurrency is per worker and each execution holds checkouts, an agent
-  // and its build. A number somebody typed by accident costs real money.
-  if (concurrency > 8) throw new Error('MVPFY_CONCURRENCY above 8 is almost certainly a mistake');
-
   const model = (env.MVPFY_AGENT_MODEL ?? '').trim();
+  const heartbeatIntervalMs = intFrom(
+    env.MVPFY_HEARTBEAT_INTERVAL_MS,
+    45_000,
+    'MVPFY_HEARTBEAT_INTERVAL_MS'
+  );
+  // The lease is three minutes. A heartbeat slower than that loses every
+  // long execution to a reclaim, which looks like random failure.
+  if (heartbeatIntervalMs > 120_000) {
+    throw new Error(
+      'MVPFY_HEARTBEAT_INTERVAL_MS must stay well under the three-minute lease; 30000–60000 is right'
+    );
+  }
   return {
     name: (env.MVPFY_WORKER_NAME ?? 'mvpfy worker').trim(),
-    tenantId,
     feature1BaseUrl: baseUrl,
-    ...(env.MVPFY_RUNNER_TOKEN?.trim() ? { runnerToken: env.MVPFY_RUNNER_TOKEN.trim() } : {}),
+    runnerToken,
     root,
-    concurrency,
     claimIntervalMs: intFrom(env.MVPFY_CLAIM_INTERVAL_MS, 15_000, 'MVPFY_CLAIM_INTERVAL_MS'),
-    heartbeatIntervalMs: intFrom(
-      env.MVPFY_HEARTBEAT_INTERVAL_MS,
-      30_000,
-      'MVPFY_HEARTBEAT_INTERVAL_MS'
-    ),
+    heartbeatIntervalMs,
     agent,
     ...(model ? { agentModel: model } : {}),
     fake,
@@ -86,6 +98,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): WorkerConfi
 export function secretsIn(config: WorkerConfig, env: NodeJS.ProcessEnv = process.env): string[] {
   return [
     config.runnerToken,
+    // The lease token is a per-attempt credential too; it is remembered as
+    // each execution is claimed, not here.
     env.GH_TOKEN,
     env.GITHUB_TOKEN,
     env.ANTHROPIC_API_KEY,

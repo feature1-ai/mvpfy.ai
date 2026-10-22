@@ -29,14 +29,13 @@ export interface Project {
   /** Slugs of planned features (one plan/spec file pair per slug). */
   planSlugs?: string[];
   /**
-   * When a repository was last added to a project that already existed.
+   * Repositories added since the environment was generated, by directory.
    *
-   * Kept so the overview can say that what is running was generated before
-   * it. Regenerating somebody's environment because they added a repository
-   * is not a decision to make for them, but letting them believe the new
-   * part is running would be worse.
+   * The list rather than a flag, because setting up has to be told which
+   * ones are new: it then extends the stack with those and leaves every
+   * existing service, port and volume alone. Cleared once setup has run.
    */
-  reposAddedAt?: string;
+  reposPendingSetup?: string[];
   /**
    * The PM has seen the app running with its demo login and accepted the
    * setup — the human gate on the last bootstrap card. Kept in mvpfy's own

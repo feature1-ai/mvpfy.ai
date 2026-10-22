@@ -86,6 +86,8 @@ export interface ProjectActions {
    * running does not include all of them.
    */
   reposChangedSinceSetup: boolean;
+  /** Extend the running environment with them, rather than regenerating it. */
+  extendSetup(): Promise<boolean>;
   /** The public address this app is shared on, while a share is running. */
   shareUrl: string | null;
   /** True once a share has started but before its address exists. */
@@ -621,9 +623,10 @@ export function useProjectActions(
         return {
           ...p,
           repos: [...p.repos, ...fresh],
-          // What is running was built without these. Recorded so the
-          // overview can say so instead of quietly being wrong.
-          reposAddedAt: new Date().toISOString(),
+          // Setting up has to be told WHICH are new, so it extends the
+          // stack with those and leaves every existing service, port,
+          // volume and built image alone.
+          reposPendingSetup: [...(p.reposPendingSetup ?? []), ...fresh.map((r) => r.dir)],
         };
       }),
     }));
@@ -665,7 +668,20 @@ export function useProjectActions(
   };
 
   // Generated at setup, so a repository added afterwards is not in it.
-  const reposChangedSinceSetup = Boolean(project.reposAddedAt && project.generatedFiles.length > 0);
+  const reposChangedSinceSetup =
+    (project.reposPendingSetup ?? []).length > 0 && project.generatedFiles.length > 0;
+
+  /**
+   * Add the new repositories to the environment that is already running.
+   *
+   * Not `rebootstrap`, which rewrites the compose file, the Dockerfiles and
+   * mvpfy.yml "to what you would write today". That is right for a setup
+   * that has gone stale and wrong here: it risks renaming a service or a
+   * volume — and a renamed volume is a database nothing points at any more
+   * — and it rebuilds images that are already built and correct. The
+   * pending list is what turns setting up into extending.
+   */
+  const extendSetup = () => bootstrap(false);
 
   const addRemote = (dir: string, url: string) =>
     guarded(async () => {
@@ -761,6 +777,7 @@ export function useProjectActions(
     unlistedRepos,
     adoptRepos,
     reposChangedSinceSetup,
+    extendSetup,
     bootstrap,
     saveAnswersAndRerun,
     dismissQuestions,

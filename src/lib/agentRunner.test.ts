@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildBootstrapPrompt,
   buildShipFeaturePrompt,
   isAmbientRun,
   codexThreadId,
@@ -486,5 +487,75 @@ describe('the feature map in a story prompt', () => {
     expect(prompt).toMatch(/match its patterns/i);
     // Other features' maps are still off limits, map of its own or not.
     expect(prompt).toContain('mvpfy-notes.*');
+  });
+});
+
+describe('setting up after a repository is added', () => {
+  const project = (pending: string[]): Project =>
+    ({
+      id: 'p',
+      localPath: '/w/shop',
+      basePort: 4100,
+      repos: [],
+      generatedFiles: ['docker-compose.mvpfy.yml'],
+      ...(pending.length ? { reposPendingSetup: pending } : {}),
+    }) as unknown as Project;
+
+  it('extends the stack instead of rewriting it', async () => {
+    // Regenerating is right for a setup that has gone stale and wrong here:
+    // it rewrites the compose file "to what you would write today", which
+    // can rename a service or a volume — and a renamed volume is a database
+    // nothing points at any more.
+    const prompt = buildBootstrapPrompt(project(['/w/shop/payments']));
+    expect(prompt).toMatch(/ALREADY SET UP/);
+    expect(prompt).toMatch(/EXTEND what is here, not to regenerate/);
+    expect(prompt).toMatch(/Edit docker-compose\.mvpfy\.yml in place/);
+    expect(prompt).not.toMatch(/REGENERATED/);
+  });
+
+  it('names the repositories that are new', () => {
+    const prompt = buildBootstrapPrompt(project(['/w/shop/payments', '/w/shop/search']));
+    expect(prompt).toContain('• payments');
+    expect(prompt).toContain('• search');
+    expect(prompt).toMatch(/2 repositories/);
+  });
+
+  it('forbids the three changes that lose somebody’s data or their tab', () => {
+    const prompt = buildBootstrapPrompt(project(['/w/shop/payments']));
+    expect(prompt).toMatch(/NEVER rename an existing service or an existing volume/);
+    expect(prompt).toMatch(/NEVER change a host port that is already allocated/);
+    expect(prompt).toMatch(/demo credentials exactly as they are/);
+  });
+
+  it('says the images that exist are built and must not be rebuilt', () => {
+    // They are on the machine already; rebuilding them is minutes of
+    // nothing, and tearing them down takes the app away mid-session.
+    const prompt = buildBootstrapPrompt(project(['/w/shop/payments']));
+    expect(prompt).toMatch(/ARE BUILT AND PRESENT/);
+    expect(prompt).toMatch(/Only the new services need building/);
+  });
+
+  it('allows the answer that nothing needed adding', () => {
+    const prompt = buildBootstrapPrompt(project(['/w/shop/payments']));
+    expect(prompt).toMatch(/That is a good outcome, not a failure/);
+  });
+
+  it('extends rather than regenerates, even when regenerate was asked for', () => {
+    // A project with a repository waiting is asking for that repository to
+    // be added, not for its stack to be rewritten underneath it.
+    const prompt = buildBootstrapPrompt(project(['/w/shop/payments']), true);
+    expect(prompt).toMatch(/EXTEND what is here/);
+    expect(prompt).not.toMatch(/REGENERATED/);
+  });
+
+  it('still regenerates when nothing is pending', () => {
+    const prompt = buildBootstrapPrompt(project([]), true);
+    expect(prompt).toMatch(/REGENERATED/);
+    expect(prompt).not.toMatch(/EXTEND what is here/);
+  });
+
+  it('says none of it on a first setup', () => {
+    const prompt = buildBootstrapPrompt(project([]));
+    expect(prompt).not.toMatch(/REGENERATED|EXTEND what is here/);
   });
 });

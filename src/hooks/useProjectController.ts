@@ -107,6 +107,8 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   adoptRepos(dirs: string[]): Promise<void>;
   /** A repository was added after the environment was generated. */
   reposChangedSinceSetup: boolean;
+  /** Extend the running environment with them, rather than regenerating it. */
+  extendSetup(): Promise<boolean>;
   /** Point one repo at a remote and push what it has. */
   addRemote(dir: string, url: string): Promise<boolean>;
   /** The public address this app is shared on, while a share is running. */

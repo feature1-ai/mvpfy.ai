@@ -1471,12 +1471,16 @@ function AddRepository({ c }: { c: ProjectController }) {
             What is running was set up before this was added, so it is not part of it yet.
           </p>
           <button
-            onClick={() => void c.rebootstrap()}
+            onClick={() => void c.extendSetup()}
             disabled={c.busy}
             className="btn-secondary h-[26px] self-start px-2.5 text-[11.5px] disabled:opacity-50"
           >
-            Set up again
+            Add it to the environment
           </button>
+          <p className="text-[11px] leading-snug text-faint">
+            Adds what the new part needs. Everything already running — its ports, its data and its
+            images — is left exactly as it is.
+          </p>
         </div>
       )}
 

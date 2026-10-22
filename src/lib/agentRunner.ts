@@ -120,6 +120,49 @@ function resumeNoteFor(session?: RunSession): string {
   return session?.resume ? RESUME_NOTE : '';
 }
 
+/**
+ * A repository was added to a project whose environment already works.
+ *
+ * Deliberately not REGENERATE_NOTE. Regenerating rewrites the compose file,
+ * the Dockerfiles and mvpfy.yml "to what you would write today" — which is
+ * right when the setup is old and wrong when the only thing that changed is
+ * that there is one more repository. A rewrite risks renaming a service or
+ * a volume, and a renamed volume is a database the product manager can no
+ * longer see. It also costs a full setup to add one service.
+ *
+ * So this says the opposite: the stack is correct, extend it.
+ */
+function extendNoteFor(newRepos: string[]): string {
+  if (newRepos.length === 0) return '';
+  const names = newRepos.map((dir) => dir.split(/[/\\]/).pop() ?? dir);
+  return (
+    'IMPORTANT — this project is ALREADY SET UP and its environment works. The product ' +
+    'manager has added ' +
+    (names.length === 1 ? 'a repository' : `${names.length} repositories`) +
+    ' to it, and your job is to EXTEND what is here, not to regenerate it:\n' +
+    names.map((n) => `  • ${n}`).join('\n') +
+    '\n' +
+    'Work out what each new part is and what it needs to run, then ADD it:\n' +
+    '• Edit docker-compose.mvpfy.yml in place. Add the new services. Do not rewrite the ' +
+    'file, do not reorder it, and do not touch a service that is already in it.\n' +
+    '• NEVER rename an existing service or an existing volume. A renamed volume is a ' +
+    'database the product manager can no longer see, and the data is still on their disk ' +
+    'under a name nothing points at.\n' +
+    '• NEVER change a host port that is already allocated — something may be open in their ' +
+    'browser right now. Give the new services ports that do not collide with any in use.\n' +
+    '• Keep the existing env file and every value in it, and the demo credentials exactly ' +
+    'as they are: the login on screen must keep working. Append new variables; change none.\n' +
+    '• Add the new parts to mvpfy.yml alongside the existing ones rather than rewriting it.\n' +
+    '• The images for everything already here ARE BUILT AND PRESENT on this machine. Do not ' +
+    'rebuild them, do not change their build context or Dockerfile, and do not run anything ' +
+    'that would tear them down. Only the new services need building, and bringing the stack ' +
+    'up afterwards is enough to do that.\n' +
+    '• If a new part needs nothing added — it is a library, or it is already covered — say ' +
+    'so and change nothing. That is a good outcome, not a failure.\n' +
+    'Their app code is not yours to change.'
+  );
+}
+
 function regenerateNoteFor(regenerate: boolean): string {
   return regenerate ? REGENERATE_NOTE : '';
 }
@@ -244,21 +287,25 @@ function agentFor(settings: Settings): { agent: AgentKind; model?: string } {
 }
 
 export function buildBootstrapPrompt(project: Project, regenerate = false): string {
+  const extending = project.reposPendingSetup ?? [];
   return fillTemplate(bootstrapTemplate, {
     repoPath: project.localPath,
     basePort: String(project.basePort),
     workspaceNote: workspaceNoteFor(project),
-    regenerateNote: regenerateNoteFor(regenerate),
+    // Extending wins over regenerating: a project with a repository waiting
+    // to be added is asking for that, not for its stack to be rewritten.
+    regenerateNote: extending.length > 0 ? extendNoteFor(extending) : regenerateNoteFor(regenerate),
     bootstrapFile: configDirFor(project.mode) + BOOTSTRAP_FILE,
   });
 }
 
 /** Phase A of bootstrap: the task list the PM watches, written before any work. */
 export function buildBootstrapPlanPrompt(project: Project, regenerate = false): string {
+  const extending = project.reposPendingSetup ?? [];
   return fillTemplate(bootstrapPlanTemplate, {
     repoPath: project.localPath,
     workspaceNote: workspaceNoteFor(project),
-    regenerateNote: regenerateNoteFor(regenerate),
+    regenerateNote: extending.length > 0 ? extendNoteFor(extending) : regenerateNoteFor(regenerate),
     bootstrapFile: configDirFor(project.mode) + BOOTSTRAP_FILE,
   });
 }

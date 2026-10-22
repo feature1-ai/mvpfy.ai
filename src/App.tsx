@@ -64,7 +64,13 @@ export default function App() {
         projects: prev.projects.map((p) => {
           if (p.id !== projectId) return p;
           const patch: Partial<Project> = {};
-          if (kind === 'bootstrap' && run.exitCode === 0) patch.status = 'needs-review';
+          if (kind === 'bootstrap' && run.exitCode === 0) {
+            patch.status = 'needs-review';
+            // Whatever was waiting to be added has now been. Cleared only
+            // on success: a setup that failed leaves the repositories
+            // pending, so the offer to add them is still there.
+            patch.reposPendingSetup = [];
+          }
           if (kind === 'docker-up' && run.exitCode === 0) patch.status = 'running';
           if (kind === 'docker-down' && run.exitCode === 0) patch.status = 'stopped';
           if (kind === 'ship' && storyId) patch.lastStoryId = storyId;

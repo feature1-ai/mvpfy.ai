@@ -267,6 +267,12 @@ export async function addRepositories(
   workspacePath: string,
   repoUrls: string[]
 ): Promise<{ repos: RepoCloneOutcome[]; error?: string }> {
+  // Cloning runs with PROJECTS_DIR as its working directory, so that has to
+  // exist before git is spawned — otherwise the failure is `spawn ENOENT`,
+  // which says nothing about the real cause. The app makes these at boot;
+  // this makes the function true on its own, as creating a project already
+  // does.
+  ensureDirs();
   const root = path.resolve(expandHome(workspacePath.trim()));
   if (!isAllowedWorkspace(root)) {
     return { repos: [], error: 'Repositories can only be added to a project mvpfy manages' };

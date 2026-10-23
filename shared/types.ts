@@ -529,6 +529,15 @@ export interface MvpfyApi {
   openExternal(url: string): Promise<void>;
   createProject(repoUrls: string[], link?: boolean): Promise<CreateProjectResult>;
   /**
+   * The environment a running container was actually given, or null when
+   * that could not be read. Null and empty mean different things.
+   */
+  serviceEnv(
+    workspacePath: string,
+    linked: boolean,
+    service: string
+  ): Promise<Record<string, string> | null>;
+  /**
    * Add repositories to a project that already exists. Partial success is a
    * real outcome: three addresses with one typo add two and say which failed.
    */

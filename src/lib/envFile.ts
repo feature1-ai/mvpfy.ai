@@ -55,3 +55,66 @@ function stripQuotes(value: string): string {
 function quoteIfNeeded(value: string): string {
   return /[\s#]/.test(value) ? `"${value}"` : value;
 }
+
+/**
+ * Whether the app that is running has actually picked a variable up.
+ *
+ * The question the editor could never answer. Saving writes to a file;
+ * whether the app sees it is a different matter, and every way it does not
+ * is silent — the editor says saved, the file has it, and the app behaves
+ * exactly as though it was never set. That has cost real hours.
+ */
+export type EnvStatus = 'live' | 'stale' | 'absent' | 'unknown';
+
+export function envStatusFor(
+  key: string,
+  fileValue: string,
+  running: Record<string, string> | null
+): EnvStatus {
+  // Nothing running, or docker would not say. Not the same as "absent", and
+  // claiming otherwise would send somebody looking for a bug that is not
+  // there.
+  if (running === null) return 'unknown';
+  if (!(key in running)) return 'absent';
+  return running[key] === fileValue ? 'live' : 'stale';
+}
+
+/**
+ * What to say about it, in words a product manager can act on.
+ *
+ * `absent` is deliberately not called an error. A front end that inlines its
+ * API address at build time genuinely has no such variable in its
+ * container, and is working perfectly — so the line names both causes
+ * rather than picking the alarming one.
+ */
+export function envStatusLabel(status: EnvStatus): string {
+  switch (status) {
+    case 'live':
+      return 'in use';
+    case 'stale':
+      return 'saved, not applied';
+    case 'absent':
+      return 'not in the running app';
+    default:
+      return '';
+  }
+}
+
+export function envStatusHint(status: EnvStatus): string {
+  switch (status) {
+    case 'stale':
+      return 'The app is still running with the old value. Restart it to apply this one.';
+    case 'absent':
+      return (
+        'The running app does not have this variable. Either it reads the value when it is ' +
+        'built rather than when it starts, or this is not the file it reads.'
+      );
+    default:
+      return '';
+  }
+}
+
+/** True when anything here is worth drawing the eye to. */
+export function envNeedsAttention(statuses: EnvStatus[]): boolean {
+  return statuses.some((s) => s === 'stale' || s === 'absent');
+}

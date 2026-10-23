@@ -137,6 +137,74 @@ export function composeStatus(workspacePath: string, linked: boolean): ServiceSt
 }
 
 /**
+ * The environment a running container was actually given.
+ *
+ * The question the env editor could not answer. Saving a variable writes it
+ * to a file; whether the app ever sees it is a different matter, and the
+ * three ways it does not are all silent — the container has not been
+ * recreated since, the variable is in a file this service does not read, or
+ * the app baked its value in at build time. Every one of those looks
+ * identical from the outside: the editor says saved, the file has it, and
+ * the app behaves as though it was never set.
+ *
+ * Read from `docker inspect` rather than `exec env`: it needs no process in
+ * the container, works on an image with no shell, and reports what the
+ * container was created with — which is precisely what "picked up" means.
+ */
+export function parseInspectEnv(json: string): Record<string, string> {
+  let rows: unknown;
+  try {
+    rows = JSON.parse(json.trim() || 'null');
+  } catch {
+    return {};
+  }
+  if (!Array.isArray(rows)) return {};
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    if (typeof row !== 'string') continue;
+    const at = row.indexOf('=');
+    if (at <= 0) continue;
+    out[row.slice(0, at)] = row.slice(at + 1);
+  }
+  return out;
+}
+
+/**
+ * Null when it could not be read — no such service, nothing running, docker
+ * not answering. Null and empty are different answers and the interface says
+ * different things about them: one is "we do not know", the other is "this
+ * container has no variables at all".
+ */
+export function runningEnv(
+  workspacePath: string,
+  linked: boolean,
+  service: string
+): Record<string, string> | null {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/.test(service.trim())) return null;
+  const base = linked
+    ? 'docker compose -f .mvpfy/docker-compose.mvpfy.yml --project-directory .'
+    : 'docker compose -f docker-compose.mvpfy.yml';
+  const opts = {
+    encoding: 'utf8' as const,
+    timeout: 15_000,
+    env: spawnEnv(),
+    cwd: workspacePath,
+  };
+  const ids = spawnShellSync(`${base} ps -q ${shellQuote(service.trim())}`, opts);
+  if (ids.status !== 0) return null;
+  // The first line: a service scaled past one is not something mvpfy
+  // generates, and the first container is the honest answer for the rest.
+  const id = (ids.stdout ?? '').trim().split('\n')[0]?.trim();
+  if (!id) return null;
+  const inspected = spawnShellSync(
+    `docker inspect --format ${shellQuote('{{json .Config.Env}}')} ${shellQuote(id)}`,
+    opts
+  );
+  if (inspected.status !== 0) return null;
+  return parseInspectEnv(inspected.stdout ?? '');
+}
+
+/**
  * What the stack is doing, and whether it is still doing anything.
  *
  * The second half is the point. Deciding an app has failed by counting seconds

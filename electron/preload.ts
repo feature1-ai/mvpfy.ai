@@ -29,6 +29,8 @@ const api: MvpfyApi = {
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   createProject: (repoUrls: string[], link?: boolean) =>
     ipcRenderer.invoke('create-project', repoUrls, link),
+  serviceEnv: (workspacePath: string, linked: boolean, service: string) =>
+    ipcRenderer.invoke('service-env', workspacePath, linked, service),
   addRepos: (workspacePath: string, repoUrls: string[]) =>
     ipcRenderer.invoke('add-repos', workspacePath, repoUrls),
   discoverRepos: (workspacePath: string, knownDirs: string[]) =>

@@ -28,6 +28,7 @@ import {
   ideCommand,
   ideStatus,
   seedCommandFor,
+  runningEnv,
 } from './services/docker';
 import { installAllCommand, installCommand, installPlans } from './services/install';
 import {
@@ -89,6 +90,9 @@ export function registerIpc(): void {
     }
     return shell.openExternal(url);
   });
+  ipcMain.handle('service-env', (_ev, workspacePath: string, linked: boolean, service: string) =>
+    runningEnv(workspacePath, linked, service)
+  );
   ipcMain.handle('add-repos', (_ev, workspacePath: string, repoUrls: string[]) =>
     addRepositories(workspacePath, repoUrls)
   );

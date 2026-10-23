@@ -7,6 +7,7 @@ import {
   ideCommand,
   ideContainerName,
   parseComposePs,
+  parseInspectEnv,
   restartServiceCommand,
   seedCommandFor,
 } from './docker';
@@ -268,5 +269,33 @@ describe('restartServiceCommand and build-time variables', () => {
     // needs the image built again — otherwise the button appears to work and
     // changes nothing, which is the failure this whole path exists to avoid.
     expect(restartServiceCommand('web')).toContain('--build');
+  });
+});
+
+describe('parseInspectEnv', () => {
+  it('reads what the container was given', () => {
+    expect(parseInspectEnv('["API_URL=http://api:4001","DEBUG=1"]')).toEqual({
+      API_URL: 'http://api:4001',
+      DEBUG: '1',
+    });
+  });
+
+  it('keeps an = inside a value, which a URL or a password will have', () => {
+    expect(parseInspectEnv('["DSN=postgres://u:p@h/db?x=1&y=2"]').DSN).toBe(
+      'postgres://u:p@h/db?x=1&y=2'
+    );
+  });
+
+  it('keeps an empty value, which is a value', () => {
+    expect(parseInspectEnv('["DEBUG="]')).toEqual({ DEBUG: '' });
+  });
+
+  it('is not fooled by anything docker did not give it', () => {
+    expect(parseInspectEnv('null')).toEqual({});
+    expect(parseInspectEnv('')).toEqual({});
+    expect(parseInspectEnv('not json')).toEqual({});
+    expect(parseInspectEnv('{"API_URL":"x"}')).toEqual({});
+    // A row with no name is not a variable.
+    expect(parseInspectEnv('["=orphan","OK=1"]')).toEqual({ OK: '1' });
   });
 });

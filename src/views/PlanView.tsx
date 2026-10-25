@@ -1785,6 +1785,20 @@ function FeatureCard({
         >
           {plan?.spec.feature || feature.slug || 'Feature'}
         </button>
+        {/* Feature1's own code for this feature, where there is one. It is
+            what a person says out loud and searches for, and the board was
+            the one place identifying a feature meant reading its name. A
+            feature mvpfy planned here has no code until Feature1 gives it
+            one, and inventing a second numbering scheme to fill the gap
+            would be worse than the gap. */}
+        {plan?.feature1FeatureRef && (
+          <span
+            title={`Feature1 · ${plan.feature1FeatureRef}`}
+            className="shrink-0 rounded-[4px] border border-line px-1.5 py-0.5 font-mono text-[10px] text-muted"
+          >
+            {plan.feature1FeatureRef}
+          </span>
+        )}
       </div>
       {plan?.spec.overview.problem && (
         <p className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-body">
@@ -1857,13 +1871,14 @@ function FeatureChip({
   onClick: () => void;
 }) {
   const label = feature.plan?.spec.feature || feature.slug || 'Feature';
+  const code = feature.plan?.feature1FeatureRef ?? '';
   const activeRun = feature.generating || feature.runningStory !== null;
   const doneCount = feature.plan?.stories.filter((s) => s.lane === 'done').length ?? 0;
   const total = feature.plan?.stories.length ?? 0;
   return (
     <button
       onClick={onClick}
-      title={feature.generating ? 'Writing the spec…' : label}
+      title={feature.generating ? 'Writing the spec…' : code ? `${code} — ${label}` : label}
       className={`flex h-7 max-w-[280px] items-center gap-1.5 rounded-full border px-3 text-xs transition-colors ${
         selected
           ? 'border-ink bg-ink text-white'
@@ -1874,6 +1889,16 @@ function FeatureChip({
         <span
           className={`dot-pulse h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-white' : 'bg-go'}`}
         />
+      )}
+      {/* Ahead of the name and never truncated: the code is the short thing,
+          and a row of pills all reading the same first few words is exactly
+          where it earns its place. */}
+      {code && (
+        <span
+          className={`shrink-0 font-mono text-[10px] ${selected ? 'text-white/70' : 'text-faint'}`}
+        >
+          {code}
+        </span>
       )}
       <span className="truncate">{label}</span>
       {total > 0 && (

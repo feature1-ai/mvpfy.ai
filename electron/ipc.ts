@@ -63,6 +63,7 @@ import {
   featureConflicts,
   finishMergeCommand,
   pushFeatureBranchCommand,
+  pushTrunkCommand,
   raisePrCommand,
   removeWorktrees,
   repoSyncCommand,
@@ -353,6 +354,19 @@ export function registerIpc(): void {
       );
     }
   );
+  ipcMain.handle('push-trunk', (_ev, runId: string, workspacePath: string, dirs: string[]) => {
+    const resolved = path.resolve(workspacePath);
+    if (!isAllowedWorkspace(resolved)) {
+      throw new Error('Pushing is restricted to managed and linked project directories');
+    }
+    const command = pushTrunkCommand(dirs);
+    startRun(
+      runId,
+      command ||
+        `echo ${JSON.stringify('Nothing to push — the remote trunk already has every commit.')}`,
+      resolved
+    );
+  });
   ipcMain.handle('auto-merge-prs', (_ev, runId: string, workspacePath: string, urls: string[]) => {
     const resolved = path.resolve(workspacePath);
     if (!isAllowedWorkspace(resolved)) {

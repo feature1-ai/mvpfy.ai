@@ -159,6 +159,79 @@ function SetupQuestions({ c }: { c: ProjectController }) {
 }
 
 /**
+ * How a feature's work reaches the trunk: on a branch of its own with a pull
+ * request at the end, or straight onto the trunk story by story.
+ *
+ * Per project for the same reason the pull-request policy is: the same person
+ * has a repository a team reviews and one that ships every commit. Pinned while
+ * any feature is part-way through, because a feature half on a branch and half
+ * on the trunk has no single place where all of it is.
+ */
+function FlowPolicy({ c }: { c: ProjectController }) {
+  const trunk = c.trunkBased;
+  const pinned = c.featuresMidway.length > 0;
+  const option = (value: 'feature' | 'trunk', label: string) => {
+    const on = (value === 'trunk') === trunk;
+    return (
+      <button
+        role="radio"
+        aria-checked={on}
+        onClick={() => void c.setFlow(value)}
+        disabled={c.busy || (pinned && !on)}
+        title={
+          pinned && !on
+            ? `Finish ${c.featuresMidway.join(', ')} first — it was started the other way`
+            : undefined
+        }
+        className={`h-7 flex-1 rounded-md px-2.5 text-[12.5px] transition-colors disabled:opacity-50 ${
+          on ? 'bg-surface font-medium text-body shadow-sm' : 'text-muted hover:text-body'
+        }`}
+      >
+        {label}
+      </button>
+    );
+  };
+  return (
+    <section className="card px-[18px] py-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="section-label">How work lands</span>
+      </div>
+      <div
+        role="radiogroup"
+        aria-label="How work lands"
+        className="mb-2 flex gap-1 rounded-lg bg-sunken p-0.5"
+      >
+        {option('feature', 'Branch per feature')}
+        {option('trunk', 'Straight to trunk')}
+      </div>
+      <p className="text-[12px] leading-normal text-muted">
+        {trunk ? (
+          <>
+            <span className="font-medium text-body">Every story is pushed to the trunk.</span> No
+            branches and no pull requests — each story is committed on the default branch and pushed
+            as soon as its tests pass, so the trunk always has everything built so far. Features
+            take turns, and unfinished work goes behind a feature flag.
+          </>
+        ) : (
+          <>
+            <span className="font-medium text-body">Each feature gets its own branch.</span> Its
+            stories build up there, apart from the trunk, and one pull request opens once you have
+            accepted the whole feature.
+          </>
+        )}
+        {pinned && (
+          <>
+            {' '}
+            Locked until {c.featuresMidway.join(', ')}{' '}
+            {c.featuresMidway.length === 1 ? 'is' : 'are'} accepted.
+          </>
+        )}
+      </p>
+    </section>
+  );
+}
+
+/**
  * What happens to this project's pull requests once they are raised.
  *
  * Per project, and never a setting across all of them: the same person has a
@@ -793,12 +866,7 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                 {/* Which code is running is not a detail: accepting a story
                     against another feature's build is the mistake this
                     prevents. */}
-                {testingFeature && (
-                  <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-go-bg px-2 py-0.5 text-[11.5px] text-go">
-                    <span className="h-1.5 w-1.5 rounded-full bg-go" />
-                    Running the feature “{testingFeature}”
-                  </p>
-                )}
+                <WhichCode c={c} featureName={testingFeature} />
               </div>
               <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                 {/* The containers are up in both states — the app answering
@@ -1241,7 +1309,8 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
               </div>
             </section>
           )}
-          <PullRequestPolicy c={c} />
+          <FlowPolicy c={c} />
+          {!c.trunkBased && <PullRequestPolicy c={c} />}
           <section className="card px-[18px] py-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="section-label">Repositories</span>
@@ -1399,6 +1468,55 @@ function PortItem({ label, port }: { label: string; port: number }) {
  * so the new one is not in it — said plainly, with the button that fixes it,
  * rather than regenerating somebody's compose file on their behalf.
  */
+/**
+ * Which code the running app is, and how to run the other one.
+ *
+ * Two problems, one control. The first is that accepting a story against
+ * another feature's build is the mistake this exists to prevent — so the
+ * state is always stated, including when it is the trunk. Absence of a
+ * badge is not a statement; somebody reading a blank space has to remember
+ * what they last pressed.
+ *
+ * The second is that the way back from a feature used to be the feature's
+ * own button on another tab, whose label read "● Running this feature" —
+ * a status, not an action. Returning to main meant knowing that badge was a
+ * toggle, and knowing which of several features was the live one. The only
+ * place that said so was a tooltip.
+ */
+function WhichCode({ c, featureName }: { c: ProjectController; featureName: string | null }) {
+  const onFeature = Boolean(featureName);
+  // A story being implemented is moving the branch under us, so there is
+  // nothing settled to check out either way.
+  const implementing = c.anyStoryRunning;
+  const blocked = c.busy || c.preparingPreview || implementing;
+  return (
+    <span className="mt-1.5 flex flex-wrap items-center gap-2">
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] ${
+          onFeature ? 'bg-go-bg text-go' : 'bg-surface text-muted'
+        }`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${onFeature ? 'bg-go' : 'bg-dot-idle'}`} />
+        {onFeature ? `Running the feature “${featureName}”` : 'Running main'}
+      </span>
+      {onFeature && (
+        <button
+          onClick={() => void c.testFeature(null)}
+          disabled={blocked}
+          title={
+            implementing
+              ? 'A story is being implemented — its code is still changing.'
+              : 'Put every repository back on its default branch and restart the app'
+          }
+          className="text-[11.5px] text-go hover:underline disabled:opacity-50 disabled:no-underline"
+        >
+          {c.preparingPreview ? 'Switching…' : 'Run main instead'}
+        </button>
+      )}
+    </span>
+  );
+}
+
 function AddRepository({ c }: { c: ProjectController }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');

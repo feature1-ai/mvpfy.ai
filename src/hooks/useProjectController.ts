@@ -293,6 +293,16 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   runningFeatures: string[];
   /** Why this feature cannot start implementing now, or null when it can. */
   cannotImplement(slug: string): string | null;
+  /** How many features this project implements at once. */
+  featureLimit: number;
+  /** True when work lands straight on the trunk, with no branch or pull request. */
+  trunkBased: boolean;
+  /** Push a trunk-based project's commits that have not reached the remote. */
+  pushTrunk(): Promise<boolean>;
+  /** Choose how this project's work lands: one branch and pull request per feature, or the trunk. */
+  setFlow(flow: 'feature' | 'trunk'): Promise<boolean>;
+  /** Features part-way through, which pin the flow until they are finished. */
+  featuresMidway: string[];
   /** Work through several features at once, the rest waiting their turn. */
   implementFeatures(slugs: string[]): Promise<boolean>;
   /** Features picked but waiting for room. */

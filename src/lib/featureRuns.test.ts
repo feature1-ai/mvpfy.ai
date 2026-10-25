@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_FEATURES_AT_ONCE,
   cannotStartReason,
+  featureLimitFor,
   featuresRunning,
   storyRunningFor,
 } from './featureRuns';
@@ -52,5 +53,15 @@ describe('cannotStartReason', () => {
     // Said as a cost on their machine and their allowance, which is the real
     // reason for a limit at all — not as a rule without one.
     expect(why).toMatch(/allowance/);
+  });
+});
+
+describe('a trunk-based project', () => {
+  it('runs one feature at a time, because there is one workspace to write', () => {
+    expect(featureLimitFor(true)).toBe(1);
+    expect(featureLimitFor(false)).toBe(MAX_FEATURES_AT_ONCE);
+    const why = cannotStartReason('invoices', [run('paging')], featureLimitFor(true));
+    expect(why).toContain('paging');
+    expect(why).toMatch(/take turns/);
   });
 });

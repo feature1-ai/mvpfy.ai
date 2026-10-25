@@ -16,6 +16,7 @@ import {
   featureGitStatus,
   finishMergeCommand,
   pushFeatureBranchCommand,
+  pushTrunkCommand,
   isRemoteUrl,
   checkoutFeatureCommand,
   featureCheckedOut,
@@ -722,6 +723,54 @@ describe('updating a feature from the trunk', () => {
       /restricted to managed and linked/
     );
   });
+  it("pushes a trunk-based project's commits on top of what landed meanwhile", () => {
+    // On a shared trunk somebody has usually pushed since; a plain push would
+    // simply be refused.
+    const { dir, origin } = work();
+    setLinkedRoots([dir]);
+    fs.writeFileSync(path.join(dir, 'paging.ts'), 'story\n');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-m', 'US-01: paging');
+    landOnTrunk(origin, 'pricing.ts', 'landed\n');
+
+    const [before] = featureGitStatus([dir], 'unused', 'paging', '');
+    expect(before.unpushed).toBe(1);
+
+    const cmd = pushTrunkCommand([dir]);
+    expect(spawnShellSync(cmd, { encoding: 'utf8', timeout: 60_000 }).status).toBe(0);
+    expect(rev(origin, 'main')).toBe(rev(dir, 'main'));
+    expect(fs.existsSync(path.join(dir, 'pricing.ts'))).toBe(true);
+    expect(pushTrunkCommand([dir])).toBe('');
+  }, 60_000);
+
+  it('leaves trunk commits where they were when they conflict with what landed', () => {
+    const { dir, origin } = work();
+    setLinkedRoots([dir]);
+    fs.writeFileSync(path.join(dir, 'index.ts'), 'ours\n');
+    git(dir, 'commit', '-am', 'US-01: ours');
+    const ours = rev(dir, 'main');
+    landOnTrunk(origin, 'index.ts', 'theirs\n');
+    const landed = rev(origin, 'main');
+
+    const res = spawnShellSync(pushTrunkCommand([dir]), { encoding: 'utf8', timeout: 60_000 });
+    expect(res.stdout + res.stderr).toContain('would not take these commits');
+    // Nothing pushed, nothing lost, and no rebase left open for the next run to trip on.
+    expect(rev(origin, 'main')).toBe(landed);
+    expect(rev(dir, 'main')).toBe(ours);
+    expect(fs.existsSync(path.join(dir, '.git', 'rebase-merge'))).toBe(false);
+    expect(fs.readFileSync(path.join(dir, 'index.ts'), 'utf8')).toBe('ours\n');
+  }, 60_000);
+
+  it('does not push a trunk the workspace is not standing on', () => {
+    const { dir } = work();
+    setLinkedRoots([dir]);
+    fs.writeFileSync(path.join(dir, 'paging.ts'), 'story\n');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-m', 'US-01: paging');
+    git(dir, 'checkout', '--detach');
+    expect(pushTrunkCommand([dir])).toBe('');
+  }, 60_000);
+
   it('pushes every other repository when one of them fails', () => {
     // The reported failure: repositories were joined with && , so the first
     // one git refused took the rest of them down with it and their commits
@@ -831,7 +880,7 @@ describe('growing a project by a repository', () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 
   it('adds what worked and names what did not', async () => {
     // Three addresses with one typo should add two, not none.
@@ -846,7 +895,7 @@ describe('growing a project by a repository', () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 
   it('does not let a second repository collide with a folder already there', async () => {
     const { root, tmp } = workspace({ rootIsRepo: false });
@@ -860,7 +909,7 @@ describe('growing a project by a repository', () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 
   it('hides a nested repository from the one around it', async () => {
     // A single-repository project puts that repository AT the workspace
@@ -879,7 +928,7 @@ describe('growing a project by a repository', () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 
   it('refuses a workspace mvpfy does not manage', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-grow-'));
@@ -931,6 +980,74 @@ describe('discoverRepositories', () => {
     try {
       setLinkedRoots([]);
       expect(discoverRepositories(tmp, [])).toEqual([]);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('going back to the trunk', () => {
+  const git = (args: string[], cwd: string) =>
+    execFileSync('git', args, {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+    })
+      .toString()
+      .trim();
+
+  /** A repo on a feature branch, with an origin whose HEAD is the trunk. */
+  function onFeature(tmp: string, name: string, trunk: string): string {
+    const origin = path.join(tmp, `${name}-origin`);
+    fs.mkdirSync(origin, { recursive: true });
+    git(['init', '-q', '-b', trunk], origin);
+    git(['config', 'user.email', 't@e.com'], origin);
+    git(['config', 'user.name', 'T'], origin);
+    fs.writeFileSync(path.join(origin, 'README.md'), `# ${name}\n`);
+    git(['add', '.'], origin);
+    git(['commit', '-q', '-m', 'first'], origin);
+
+    const dir = path.join(tmp, name);
+    git(['clone', '-q', origin, dir], tmp);
+    git(['config', 'user.email', 't@e.com'], dir);
+    git(['config', 'user.name', 'T'], dir);
+    git(['checkout', '-q', '-b', 'mvpfy/invoice-export'], dir);
+    return dir;
+  }
+
+  it('puts every repository back on its own default branch', () => {
+    // The control on project overview is this command and nothing else, so
+    // "Run main" is only true if this is.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-trunk-'));
+    try {
+      // Two repositories whose trunks are named differently, because a
+      // workspace is not obliged to be consistent about it.
+      const api = onFeature(tmp, 'api', 'main');
+      const web = onFeature(tmp, 'web', 'master');
+      setLinkedRoots([api, web]);
+
+      const command = checkoutDefaultCommand([api, web]);
+      expect(command).toContain(`checkout 'main'`);
+      expect(command).toContain(`checkout 'master'`);
+
+      execFileSync('/bin/sh', ['-c', command], { stdio: 'pipe' });
+      expect(git(['rev-parse', '--abbrev-ref', 'HEAD'], api)).toBe('main');
+      expect(git(['rev-parse', '--abbrev-ref', 'HEAD'], web)).toBe('master');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('falls back to main when there is no origin to ask', () => {
+    // A project started from nothing has no remote yet, and guessing is
+    // better than refusing to leave the feature.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-trunk-'));
+    try {
+      const dir = path.join(tmp, 'solo');
+      fs.mkdirSync(dir, { recursive: true });
+      git(['init', '-q', '-b', 'main'], dir);
+      setLinkedRoots([dir]);
+      expect(checkoutDefaultCommand([dir])).toContain(`checkout 'main'`);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

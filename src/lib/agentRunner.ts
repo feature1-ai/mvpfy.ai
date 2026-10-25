@@ -747,13 +747,63 @@ export async function designFor(
   return { block: lines.join('\n'), imagePaths: paths };
 }
 
+/** True when this project lands work straight on its trunk rather than on a feature branch. */
+export function isTrunkBased(project: Pick<Project, 'flow'>): boolean {
+  return project.flow === 'trunk';
+}
+
+/**
+ * Where a run does its work, in the prompt's own words.
+ *
+ * A feature-branch project works in the feature's checkouts and leaves the
+ * workspace alone, because the workspace is what the builder is running. A
+ * trunk-based project has no branch to keep apart: the workspace on its trunk
+ * IS where the work goes, and the running app picking it up is the point.
+ */
+function whereBlockFor(
+  project: Project,
+  worktrees: Record<string, string>,
+  branch: string,
+  holding: string,
+  step: string
+): string {
+  if (isTrunkBased(project)) {
+    return (
+      `${step}Work directly in the workspace, on each repository's default branch — this project\n` +
+      `   is trunk-based: there is no feature branch and no pull request, and every commit goes\n` +
+      `   straight to the trunk the whole team builds on. Before changing anything, run\n` +
+      `   \`git pull --rebase --autostash\` in each repository you will touch, so you build on\n` +
+      `   what is there now. Never create, switch or delete a branch.\n` +
+      `   Because the trunk ships, it must keep working after every commit: a half-built part of\n` +
+      `   this feature that a user could stumble on goes behind the codebase's existing feature\n` +
+      `   flag mechanism if it has one, and otherwise stays unreachable until the story that\n` +
+      `   completes it.`
+    );
+  }
+  const checkouts = Object.entries(worktrees);
+  const list =
+    checkouts.length > 0
+      ? checkouts.map(([repo, tree]) => `   • ${repo} → ${tree}`).join('\n')
+      : `   • ${project.localPath} (no separate checkout — work here)`;
+  return (
+    `${step}Work in this feature's own checkouts, already on the branch ${branch} and already\n` +
+    `   holding ${holding}:\n` +
+    `${list}\n` +
+    `   Read the product's code there, make every change there, and run every git command there.\n` +
+    `   Never edit the product's code in ${project.localPath} — that copy is what the product manager has\n` +
+    `   running, and changing it under them would swap the app they are testing.\n` +
+    `   The mvpfy files named above stay in ${project.localPath}. Read them from there; do not copy\n` +
+    `   them into a checkout.`
+  );
+}
+
 /**
  * When a planned story was pulled from Feature1, implementing it should also
  * drive the Feature1 workflow over MCP so its ACs and status stay in sync —
  * the same ship-feature sequence, folded into the plan-story run. Empty for
  * locally-planned stories.
  */
-function feature1BlockFor(feature1StoryId?: string): string {
+function feature1BlockFor(feature1StoryId?: string, trunk = false): string {
   if (!feature1StoryId) return '';
   return (
     'This story was planned in Feature1 (session id ' +
@@ -766,10 +816,14 @@ function feature1BlockFor(feature1StoryId?: string): string {
     'mcp__feature1__generate_prompts_for_all_acs() and implement to those prompts (they are ' +
     'codebase-grounded and authoritative — reconcile them with the acceptance criteria in ' +
     'the plan file).\n' +
-    '• After tests pass and the PR is open: call ' +
-    'mcp__feature1__mark_all_acs_implementation_done(), then ' +
-    'mcp__feature1__attach_pr(pr_url="<the PR URL you just printed>"), then ' +
-    'mcp__feature1__mark_ready_for_testing().\n' +
+    (trunk
+      ? '• After tests pass and the commit is on the trunk: call ' +
+        'mcp__feature1__mark_all_acs_implementation_done(), then ' +
+        'mcp__feature1__mark_ready_for_testing(). There is no pull request to attach.\n'
+      : '• After tests pass and the PR is open: call ' +
+        'mcp__feature1__mark_all_acs_implementation_done(), then ' +
+        'mcp__feature1__attach_pr(pr_url="<the PR URL you just printed>"), then ' +
+        'mcp__feature1__mark_ready_for_testing().\n') +
     '• If any Feature1 MCP call fails, retry once, then continue the local implementation ' +
     'and note the failure — do not abandon the code changes over a sync error.'
   );
@@ -797,7 +851,7 @@ export async function startPlanStoryRun(
   design?: { images: string[]; links: string[] }
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
-  const checkouts = Object.entries(worktrees);
+  const trunk = isTrunkBased(project);
   const art = await designFor(project, planSlug, design);
   const notesFile = await notesFileFound(project, planSlug);
   await window.mvpfy.runAgent({
@@ -817,12 +871,30 @@ export async function startPlanStoryRun(
       planFile: configDirFor(project.mode) + planFileFor(planSlug),
       specFile: configDirFor(project.mode) + specFileFor(planSlug),
       // One branch per FEATURE: every story in it commits here, and the
-      // feature opens a single pull request when the builder is ready.
-      branchSlug: planSlug || 'feature',
+      // feature opens a single pull request when the builder is ready. A
+      // trunk-based project has no branch: each story lands on the trunk.
+      whereBlock: whereBlockFor(
+        project,
+        worktrees,
+        `mvpfy/${planSlug || 'feature'}`,
+        'any earlier story of this feature',
+        '2. '
+      ),
+      shipBlock: trunk
+        ? `4. Commit in each repository you changed, with the message "${storyCode}: <story title>" — the\n` +
+          '   story code is how anyone reading the trunk tells this story from the rest.\n' +
+          '5. Push it to the trunk: `git pull --rebase --autostash`, then `git push`. If the rebase\n' +
+          '   stops on conflicts, fit the two together, run the tests again, and only push when they\n' +
+          '   pass. Never force-push. Do NOT open a pull request — this project has none. Stop after\n' +
+          '   pushing.'
+        : `4. Commit in the checkout, with the message "${storyCode}: <story title>" — the story code is\n` +
+          "   how a reviewer tells this story's work from the rest of the feature's. Push with -u.\n" +
+          '5. Do NOT open a pull request. One is opened for the whole feature, by mvpfy, once the\n' +
+          '   builder has tested every story in it. Stop after pushing.',
       feedbackBlock: storyFeedback
         ? `The product manager tested the previous round and sent it back with this feedback — address it fully:\n---\n${storyFeedback}\n---`
         : '',
-      feature1Block: feature1BlockFor(feature1StoryId),
+      feature1Block: feature1BlockFor(feature1StoryId, trunk),
       designBlock: art.block,
       // Without this the run starts the story over, on top of a checkout that
       // already holds half of it — which is how the same work lands twice and
@@ -840,10 +912,6 @@ export async function startPlanStoryRun(
           'finish it properly rather than deleting it and beginning afresh. Commit the ' +
           'uncommitted work along with the rest when the story is done.'
         : '',
-      worktrees:
-        checkouts.length > 0
-          ? checkouts.map(([repo, tree]) => `   • ${repo} → ${tree}`).join('\n')
-          : `   • ${project.localPath} (no separate checkout — work here)`,
     }),
     ...agentFor(settings),
     ...(mcp ? { mcp } : {}),
@@ -878,7 +946,6 @@ export async function startFeatureChangeRun(
 ): Promise<RunHandle> {
   const runId = makeRunId('featurechange');
   const cfg = configDirFor(project.mode);
-  const checkouts = Object.entries(worktrees);
   const art = await designFor(project, planSlug, design);
   await window.mvpfy.runAgent({
     runId,
@@ -888,14 +955,26 @@ export async function startFeatureChangeRun(
       repoPath: project.localPath,
       featureName,
       instruction,
-      branch: `mvpfy/${planSlug || 'feature'}`,
+      whereBlock: whereBlockFor(
+        project,
+        worktrees,
+        `mvpfy/${planSlug || 'feature'}`,
+        'everything implemented for this feature so far',
+        ''
+      ).replace(/^ {3}/gm, ''),
+      shipBlock: isTrunkBased(project)
+        ? '3. Commit in each repository you changed, with a one-line message in plain language\n' +
+          '   saying what changed — no story code, because this is not a story. Then push it to the\n' +
+          '   trunk: `git pull --rebase --autostash`, then `git push`. If the rebase stops on\n' +
+          '   conflicts, fit the two together and run the tests again before pushing. Never\n' +
+          '   force-push, and do not open a pull request — this project has none.'
+        : '3. Commit in each checkout you changed, with a one-line message in plain language saying\n' +
+          '   what changed — no story code, because this is not a story. Do not push, and do not open\n' +
+          "   a pull request: the feature's pull request is raised once, by mvpfy, when the product\n" +
+          '   manager is finished with the whole feature.',
       designBlock: art.block,
       planFile: cfg + planFileFor(planSlug),
       specFile: cfg + specFileFor(planSlug),
-      worktrees:
-        checkouts.length > 0
-          ? checkouts.map(([repo, tree]) => `   • ${repo} → ${tree}`).join('\n')
-          : `   • ${project.localPath} (no separate checkout — work here)`,
     }),
     ...agentFor(settings),
     ...(session ? { session } : {}),

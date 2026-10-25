@@ -539,13 +539,16 @@ export function featureGitStatus(
             .filter(Boolean)
         : [];
     const base = defaultBranchOf(dir);
-    const onBranch = hasBranch(dir, branch);
+    // No branch named: a trunk-based project, whose work is the trunk itself,
+    // so what matters is how much of it has not reached the remote yet.
+    const ref = branch || base;
+    const onBranch = hasBranch(dir, ref);
     const trunk = trunkRefFor(dir, base);
-    const ahead = onBranch ? commitsAhead(dir, base, branch) : 0;
-    const behind = onBranch ? commitsBehind(dir, branch, trunk) : 0;
+    const ahead = onBranch ? commitsAhead(dir, base, ref) : 0;
+    const behind = onBranch ? commitsBehind(dir, ref, trunk) : 0;
     // -1 rather than 0: a branch that was never pushed is a different answer
     // from one whose commits are all on the remote already.
-    const pushedRange = ask(`rev-list --count ${shellQuote(`origin/${branch}..${branch}`)}`);
+    const pushedRange = ask(`rev-list --count ${shellQuote(`origin/${ref}..${ref}`)}`);
     const unpushed = pushedRange.status === 0 ? Number(pushedRange.stdout.trim()) || 0 : -1;
     const merge = has ? ask('rev-parse -q --verify MERGE_HEAD') : null;
 
@@ -858,6 +861,52 @@ export function pushFeatureBranchCommand(dirs: string[], branch: string): string
       name: path.basename(dir),
       command: `git -C ${shellQuote(dir)} push origin ${shellQuote(branch)}`,
       whenItFails: `the remote copy of ${branch} would not take this push — git says why above. Nothing here was changed or lost, and every other repository was still pushed`,
+    });
+  }
+  return chainPerRepo(steps);
+}
+
+/**
+ * Send what a trunk-based project committed on this machine to the remote's
+ * trunk.
+ *
+ * Rebased onto the remote first, because on a shared trunk somebody else has
+ * usually pushed in the meantime and a plain push would just be refused. A
+ * rebase that stops on conflicts is undone rather than left open: the commits
+ * stay exactly where they were, the workspace stays runnable, and the trouble
+ * is reported — the next story run, which pulls and pushes itself, is where an
+ * agent can actually fit the two together.
+ */
+export function pushTrunkCommand(dirs: string[]): string {
+  const steps: Array<{ name: string; command: string; whenItFails: string }> = [];
+  for (const d of dirs) {
+    const dir = path.resolve(d);
+    if (!isAllowedWorkspace(dir)) {
+      throw new Error('Pushing is restricted to managed and linked project directories');
+    }
+    if (!hasOrigin(dir)) continue;
+    const base = defaultBranchOf(dir);
+    const head = spawnShellSync(`git -C ${shellQuote(dir)} rev-parse --abbrev-ref HEAD`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    // Only ever the trunk, and only when standing on it: a workspace left on
+    // something else holds nothing this is meant to send.
+    if (head.status !== 0 || head.stdout.trim() !== base) continue;
+    const count = spawnShellSync(
+      `git -C ${shellQuote(dir)} rev-list --count ${shellQuote(`origin/${base}..${base}`)}`,
+      { encoding: 'utf8', timeout: 10_000 }
+    );
+    if (count.status === 0 && (Number(count.stdout.trim()) || 0) === 0) continue;
+    const q = shellQuote(dir);
+    const b = shellQuote(base);
+    steps.push({
+      name: path.basename(dir),
+      command:
+        `(git -C ${q} pull --rebase --autostash origin ${b} || ` +
+        `(git -C ${q} rebase --abort >/dev/null 2>&1; exit 1)) && ` +
+        `git -C ${q} push origin ${b}`,
+      whenItFails: `${base} on the remote would not take these commits — git says why above. They are still committed here, nothing was lost, and every other repository was still pushed`,
     });
   }
   return chainPerRepo(steps);

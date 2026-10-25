@@ -13,20 +13,10 @@ belong to other runs.
 
 Follow this sequence:
 1. Read the story's acceptance criteria and the spec context. {groundingBlock}
-2. Work in this feature's own checkouts, already on the branch mvpfy/{branchSlug} and already
-   holding any earlier story of this feature:
-{worktrees}
-   Read the product's code there, make every change there, and run every git command there.
-   Never edit the product's code in {repoPath} — that copy is what the product manager has
-   running, and changing it under them would swap the app they are testing.
-   The mvpfy files named above ({planFile}, {specFile}{notesAlso}) stay in {repoPath}. Read
-   them from there; do not copy them into a checkout.
+{whereBlock}
 3. Implement every acceptance criterion, with tests. Run the repo's test command and only
    proceed when tests pass.
-4. Commit in the checkout, with the message "{storyCode}: <story title>" — the story code is
-   how a reviewer tells this story's work from the rest of the feature's. Push with -u.
-5. Do NOT open a pull request. One is opened for the whole feature, by mvpfy, once the
-   builder has tested every story in it. Stop after pushing.
+{shipBlock}
 
 Hard rules:
 • Touch only what this story needs. Never modify {planFile}, {specFile}, or any
@@ -35,11 +25,11 @@ Hard rules:
 • Never COMMIT mvpfy's own files either, even if they show as untracked: mvpfy.yml,
   docker-compose.mvpfy.yml, .env.mvpfy.example, .env, mvpfy-*.md, mvpfy-*.json and
   anything under mvpfy/. They are local scaffolding, not part of the product, and a
-  reviewer should never see them in this pull request. Stage the files you changed by
+  reviewer should never see them in the history. Stage the files you changed by
   name rather than staging everything.
 • Commit any new incremental database migrations with this story. Test them against an
   isolated test database. Never migrate/reset the product manager's running preview database
-  from a feature checkout; mvpfy applies pending migrations when they choose Test this feature.
+  yourself; mvpfy applies pending migrations when they choose to test the feature.
 • Never commit env files or secrets.
 • Do not ask for confirmation mid-flow. If truly blocked on information only the product
   manager has, write numbered questions to mvpfy-questions.md and stop.

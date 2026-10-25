@@ -1,4 +1,4 @@
-import { prepareFeaturePreview } from '../lib/prepareFeaturePreview';
+import { prepareFeaturePreview, updateLocalDatabase } from '../lib/prepareFeaturePreview';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RunSession, configDirFor, planFileFor, specFileFor } from '../../shared/types';
 import {
@@ -16,6 +16,7 @@ import {
   makeRunId,
   startGitAuthRun,
   startRaisePrRun,
+  isTrunkBased,
 } from '../lib/agentRunner';
 import { Feature1McpClient, mcpBaseUrl } from '../lib/feature1Mcp';
 import { preflightAuth } from '../lib/cliCheck';
@@ -31,13 +32,14 @@ import {
   quotaStillOut,
 } from '../lib/notices';
 import {
-  MAX_FEATURES_AT_ONCE,
   cannotStartReason,
+  featureLimitFor,
   featuresRunning,
   storyRunningFor,
 } from '../lib/featureRuns';
 import {
   canMove,
+  featureLane,
   parsePlan,
   ProjectPlan,
   serializePlan,
@@ -138,6 +140,16 @@ export interface PlanActions {
   runningFeatures: string[];
   /** Why this feature cannot start implementing now, or null when it can. */
   cannotImplement(slug: string): string | null;
+  /** How many features this project implements at once. */
+  featureLimit: number;
+  /** True when work lands straight on the trunk, with no branch or pull request. */
+  trunkBased: boolean;
+  /** Push a trunk-based project's commits that have not reached the remote. */
+  pushTrunk(): Promise<boolean>;
+  /** Choose how this project's work lands: one branch and pull request per feature, or the trunk. */
+  setFlow(flow: 'feature' | 'trunk'): Promise<boolean>;
+  /** Features part-way through, which pin the flow until they are finished. */
+  featuresMidway: string[];
   /** Work through several features at once, the rest waiting their turn. */
   implementFeatures(slugs: string[]): Promise<boolean>;
   /** Features picked but waiting for room. */
@@ -154,6 +166,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   // One FeaturePlan per known slug; the empty slug is the legacy single plan.
   // A slug with no file yet still shows while its spec run is generating.
   const storyRuns = projectRuns.filter((r) => r.handle.kind === 'plan-story');
+  const trunkBased = isTrunkBased(project);
+  const featureLimit = featureLimitFor(trunkBased);
   const specRuns = projectRuns.filter((r) => r.handle.kind === 'plan-spec');
   const plans: FeaturePlan[] = ['', ...(project.planSlugs ?? [])]
     .map((slug): FeaturePlan => {
@@ -350,6 +364,14 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
             p.id === project.id ? { ...p, testingSlug: null } : p
           ),
         }));
+        // The workspace already is a trunk-based feature: there is no branch to
+        // check out, only its migrations to apply and the app to restart.
+        if (trunkBased) {
+          if (contentOf(files, pf('mvpfy.yml'))) {
+            await updateLocalDatabase(project, runsApi, slug ?? '');
+          }
+          return;
+        }
         await prepareFeaturePreview(
           project,
           slug,
@@ -419,6 +441,11 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     guarded(async () => {
       const active = activePlan;
       if (!active?.plan) return;
+      if (trunkBased) {
+        throw new Error(
+          'This project commits straight to its trunk — there is no pull request to raise.'
+        );
+      }
       // Pushing and opening a pull request are git and gh, and nothing else.
       // Without a GitHub sign-in the push fails and the run exits non-zero,
       // which read as the button doing nothing at all.
@@ -434,6 +461,63 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         `${active.plan.spec.overview.summary}\n\n## Stories\n${stories}\n\n— planned and implemented with mvpfy`,
         runsApi
       );
+    });
+
+  // Started and not finished. Switching flow under one of these would leave
+  // half of it on a branch and half on the trunk, with no pull request that
+  // holds it all and no trunk that does either.
+  const featuresMidway = plans
+    .filter((p) => {
+      const lane = featureLane(p.plan, storyRunningFor(p.slug, storyRuns));
+      return lane === 'coding' || lane === 'testing';
+    })
+    .map((p) => p.plan?.spec.feature || p.slug || 'the first feature');
+
+  const setFlow = (flow: 'feature' | 'trunk') =>
+    guarded(async () => {
+      if ((project.flow ?? 'feature') === flow) return;
+      if (
+        projectRuns.some(
+          (r) => r.running && (r.handle.kind === 'plan-story' || r.handle.kind === 'feature-change')
+        )
+      ) {
+        throw new Error(
+          'Wait for the feature being implemented to finish before changing how work lands.'
+        );
+      }
+      if (featuresMidway.length > 0) {
+        throw new Error(
+          `${featuresMidway.join(', ')} ${featuresMidway.length === 1 ? 'is' : 'are'} part-way through ${
+            flow === 'trunk' ? 'on a branch of its own' : 'on the trunk'
+          }. Accept ${featuresMidway.length === 1 ? 'it' : 'them'} first — switching halfway would leave part of a feature on a branch and part on the trunk.`
+        );
+      }
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, flow } : p)),
+      }));
+    });
+
+  /**
+   * Send commits a trunk-based project left on this machine to the remote.
+   * Each story pushes its own; this is for the one whose push was refused, or
+   * a run that stopped between committing and pushing.
+   */
+  const pushTrunk = () =>
+    guarded(async () => {
+      const runId = makeRunId('pushtrunk');
+      runsApi.track({
+        runId,
+        kind: 'sync',
+        projectId: project.id,
+        ...(activePlan?.slug !== undefined ? { planSlug: activePlan.slug } : {}),
+      });
+      await window.mvpfy.pushTrunk(
+        runId,
+        project.localPath,
+        project.repos.map((r) => r.dir)
+      );
+      await runsApi.completed(runId);
     });
 
   /**
@@ -647,7 +731,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
         project.repos.map((r) => r.dir),
         `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
         slug,
-        `mvpfy/${slug || 'feature'}`
+        // No branch for a trunk-based project: the trunk itself is read.
+        trunkBased ? '' : `mvpfy/${slug || 'feature'}`
       )
       .then((rows) => {
         if (!cancelled) setFeatureGit(rows);
@@ -658,7 +743,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     return () => {
       cancelled = true;
     };
-  }, [gitKey, activePlan?.slug, project.id, project.localPath, project.repos]);
+  }, [gitKey, activePlan?.slug, project.id, project.localPath, project.repos, trunkBased]);
 
   // What GitHub says about the pull requests this feature raised. Read on
   // opening the feature and on request: everything interesting here happens
@@ -1152,6 +1237,47 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     });
 
   /**
+   * Put the workspace on each repository's trunk, attached, for a trunk-based
+   * run to commit on. It may have been left detached by testing a feature
+   * before the project switched, and a commit on a detached HEAD reaches no
+   * branch at all — the story would push nothing and say it had.
+   */
+  const standOnTrunk = async () => {
+    const res = await window.mvpfy.checkoutFeature(
+      project.localPath,
+      project.repos.map((r) => r.dir),
+      null
+    );
+    if (!res.ok) {
+      throw new Error(
+        res.error ||
+          'Could not put the workspace on its default branch — this project commits straight to it.'
+      );
+    }
+    if (project.testingSlug) {
+      updateState((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, testingSlug: null } : p)),
+      }));
+    }
+  };
+
+  /** This feature's checkouts, made on first use — none for a trunk-based project. */
+  const featureTrees = async (
+    slug: string
+  ): Promise<{ ok: boolean; paths?: Record<string, string> }> =>
+    trunkBased
+      ? { ok: true, paths: {} }
+      : window.mvpfy.worktree(
+          project.localPath,
+          project.repos.map((r) => r.dir),
+          `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
+          slug,
+          `mvpfy/${slug || 'feature'}`,
+          'add'
+        );
+
+  /**
    * `forSlug` names the feature, rather than this reading whichever feature
    * happens to be open. With one feature running that was the same thing; with
    * several it is not, and the chain that starts the next story would have put
@@ -1170,14 +1296,16 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       // Per feature, not per project. Two features implement in two checkouts,
       // on two branches, in two conversations — the reason this was ever one
       // at a time stopped being true when each feature got its own worktree.
-      const why = cannotStartReason(slug, storyRuns);
+      const why = cannotStartReason(slug, storyRuns, featureLimit);
       if (why) throw new Error(why);
       if (planBlocked) {
         throw new Error('Wait for the current environment run to finish first');
       }
-      // Ship lands a PR at Testing, so the agent AND gh must be signed in.
-      const authProblem = await preflightAuth(state.settings.defaultAgent, true);
+      // Ship lands a PR at Testing, so the agent AND gh must be signed in. A
+      // trunk-based story pushes with git and never touches gh.
+      const authProblem = await preflightAuth(state.settings.defaultAgent, !trunkBased);
       if (authProblem) throw new Error(authProblem);
+      if (trunkBased) await standOnTrunk();
       // Implementing moves the branch, and the workspace is detached at a
       // commit — it would silently fall behind and keep claiming to be this
       // feature. So testing stops here and is picked up again afterwards,
@@ -1208,16 +1336,8 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       const mcp = story.feature1StoryId ? await feature1Mcp() : undefined;
       // The feature's own checkouts, created on first use. A failure here is
       // not fatal: the run falls back to the workspace, which is how it worked
-      // before worktrees existed.
-      const branch = `mvpfy/${slug || 'feature'}`;
-      const trees = await window.mvpfy.worktree(
-        project.localPath,
-        project.repos.map((r) => r.dir),
-        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
-        slug,
-        branch,
-        'add'
-      );
+      // before worktrees existed. A trunk-based project has none to create.
+      const trees = await featureTrees(slug);
       const handle = await startPlanStoryRun(
         project,
         state.settings,
@@ -1261,7 +1381,9 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
       // for the whole feature, when the builder says it is finished.
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
-      if ((project.testingSlug ?? null) === slug) {
+      if (trunkBased) {
+        await standOnTrunk();
+      } else if ((project.testingSlug ?? null) === slug) {
         await window.mvpfy.checkoutFeature(
           project.localPath,
           project.repos.map((r) => r.dir),
@@ -1274,15 +1396,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
           ),
         }));
       }
-      const branch = `mvpfy/${slug || 'feature'}`;
-      const trees = await window.mvpfy.worktree(
-        project.localPath,
-        project.repos.map((r) => r.dir),
-        `${project.localPath.split(/[/\\]/).pop() ?? 'project'}-${project.id.slice(0, 6)}`,
-        slug,
-        branch,
-        'add'
-      );
+      const trees = await featureTrees(slug);
       const handle = await startFeatureChangeRun(
         project,
         state.settings,
@@ -1367,7 +1481,7 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
   useEffect(() => {
     if (queued.length === 0) return;
     const running = featuresRunning(storyRuns);
-    if (running.length + starting.current.size >= MAX_FEATURES_AT_ONCE) return;
+    if (running.length + starting.current.size >= featureLimit) return;
     const next = queued.find((slug) => !running.includes(slug) && !starting.current.has(slug));
     if (!next) return;
     starting.current.add(next);
@@ -1594,7 +1708,12 @@ export function usePlanActions(ctx: ControllerContext): PlanActions {
     ),
     implementFeature,
     runningFeatures: featuresRunning(storyRuns),
-    cannotImplement: (slug: string) => cannotStartReason(slug, storyRuns),
+    cannotImplement: (slug: string) => cannotStartReason(slug, storyRuns, featureLimit),
+    featureLimit,
+    trunkBased,
+    pushTrunk,
+    setFlow,
+    featuresMidway,
     implementFeatures,
     queuedFeatures: queued,
     quotaWait: quotaWait ? { slug: quotaWait.slug, at: quotaWait.at } : null,

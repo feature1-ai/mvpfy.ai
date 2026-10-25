@@ -358,6 +358,53 @@ describe('continuing an interrupted story', () => {
   });
 });
 
+describe('where a story lands', () => {
+  const promptFor = async (flow?: 'feature' | 'trunk') => {
+    let captured = '';
+    vi.stubGlobal('window', {
+      mvpfy: {
+        runAgent: async (req: { promptText: string }) => {
+          captured = req.promptText;
+        },
+      },
+    });
+    try {
+      await startPlanStoryRun(
+        { id: 'p', localPath: '/repo', repos: [], flow } as unknown as Project,
+        { ...DEFAULT_STATE.settings },
+        'paging',
+        'US-01',
+        null,
+        undefined,
+        undefined,
+        undefined,
+        { '/repo/api': '/trees/paging/api' }
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return captured;
+  };
+
+  it('keeps a feature on its own branch and checkout by default', async () => {
+    const prompt = await promptFor();
+    expect(prompt).toContain('already on the branch mvpfy/paging');
+    expect(prompt).toContain('/trees/paging/api');
+    expect(prompt).toMatch(/Push with -u/);
+    expect(prompt).not.toMatch(/\{[a-zA-Z]\w*\}/);
+  });
+
+  it('commits a trunk-based story to the trunk, with no branch or pull request', async () => {
+    const prompt = await promptFor('trunk');
+    expect(prompt).not.toContain('mvpfy/paging');
+    expect(prompt).not.toContain('/trees/paging/api');
+    expect(prompt).toMatch(/pull --rebase/);
+    expect(prompt).toMatch(/Never force-push/);
+    expect(prompt).toMatch(/Never create, switch or delete a branch/);
+    expect(prompt).not.toMatch(/\{[a-zA-Z]\w*\}/);
+  });
+});
+
 describe('runs that are not activity', () => {
   it('does not count a followed log or a live share as busy', () => {
     // Both last exactly as long as somebody wants them to. Counting either as

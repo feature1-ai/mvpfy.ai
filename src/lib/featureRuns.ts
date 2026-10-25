@@ -44,13 +44,31 @@ export function storyRunningFor(slug: string, runs: StoryRunLike[]): boolean {
  * when it can. A feature already running says so; a full house names the
  * others, because "wait" is only useful when you know what for.
  */
-export function cannotStartReason(slug: string, runs: StoryRunLike[]): string | null {
+/**
+ * How many features this project may implement at once.
+ *
+ * A trunk-based project has no checkouts of its own per feature — every story
+ * is written in the one workspace, on the one trunk — so the reason features
+ * could run side by side does not hold there, and they take turns.
+ */
+export function featureLimitFor(trunkBased: boolean): number {
+  return trunkBased ? 1 : MAX_FEATURES_AT_ONCE;
+}
+
+export function cannotStartReason(
+  slug: string,
+  runs: StoryRunLike[],
+  limit: number = MAX_FEATURES_AT_ONCE
+): string | null {
   const running = featuresRunning(runs);
   if (running.includes(slug)) {
     return 'This feature already has a story being implemented — its stories run one after another, so the next one starts by itself.';
   }
-  if (running.length >= MAX_FEATURES_AT_ONCE) {
-    return `${MAX_FEATURES_AT_ONCE} features are already being implemented (${running
+  if (limit === 1 && running.length >= 1) {
+    return `${running[0] || 'Another feature'} is being implemented. This project commits straight to its trunk, in the one workspace, so features take turns — this one can start when it finishes.`;
+  }
+  if (running.length >= limit) {
+    return `${limit} features are already being implemented (${running
       .map((s) => s || 'the first feature')
       .join(
         ', '

@@ -66,6 +66,17 @@ export interface Project {
    */
   autoMerge?: boolean;
   /**
+   * How a feature's work reaches the trunk.
+   *
+   * 'feature' (default): every feature gets its own branch and checkouts, and
+   * one pull request opens when the builder has accepted it. 'trunk': there is
+   * no branch — each story is committed on the default branch in the
+   * workspace and pushed straight to it, so the trunk always holds everything
+   * built so far. Hiding unfinished work behind a flag is then the team's
+   * business, which is the trade trunk-based development makes on purpose.
+   */
+  flow?: 'feature' | 'trunk';
+  /**
    * One Claude conversation per feature, by plan slug. Planning, refining and
    * implementing a feature all continue it, so refining a spec knows why the
    * spec says what it does. Kept here rather than in the agent-written plan
@@ -637,6 +648,8 @@ export interface MvpfyApi {
     dirs: string[],
     branch: string
   ): Promise<void>;
+  /** Rebase a trunk-based project's local commits onto the remote trunk and push them. */
+  pushTrunk(runId: string, workspacePath: string, dirs: string[]): Promise<void>;
   /** Recreate one compose service, so a changed variable is actually read. */
   restartService(runId: string, repoPath: string, service: string): Promise<void>;
   /** What this machine can run a phone app on: simulators, emulators, phones. */

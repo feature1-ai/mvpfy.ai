@@ -14,7 +14,6 @@ import {
 } from '../lib/plan';
 import { Feature1Feature } from '../lib/feature1Mcp';
 import { explainRaiseFailure } from '../lib/raiseFailure';
-import { MAX_FEATURES_AT_ONCE } from '../lib/featureRuns';
 import QuotaCountdown from '../components/QuotaCountdown';
 import Feature1LoginPrompt from './Feature1LoginPrompt';
 import ReadinessPanel from './ReadinessPanel';
@@ -367,7 +366,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
                     ? 'Wait for the current environment run to finish first'
                     : `Work through ${chosen.length || 'the picked'} feature${
                         chosen.length === 1 ? '' : 's'
-                      } — ${MAX_FEATURES_AT_ONCE} at a time, the rest in turn`
+                      } — ${c.featureLimit === 1 ? 'one' : c.featureLimit} at a time, the rest in turn`
                 }
                 className="btn-primary h-8 px-3.5 disabled:opacity-50"
               >
@@ -425,7 +424,8 @@ export default function PlanView({ c, onOpenTab }: Props) {
         </div>
         <p className="mt-3 text-[11.5px] text-muted">
           A feature moves across as its stories do: Coding once any story has started, Testing once
-          you have accepted them all, Done when its pull request is open.
+          you have accepted them all, Done when{' '}
+          {c.trunkBased ? 'you accept the feature' : 'its pull request is open'}.
         </p>
       </div>
     );
@@ -582,12 +582,12 @@ export default function PlanView({ c, onOpenTab }: Props) {
       <ContinueFeature c={c} />
 
       {/* Read from git, not from any run's account of what it did. */}
-      <UnfinishedMerge c={c} />
+      {!c.trunkBased && <UnfinishedMerge c={c} />}
 
       {/* Where this feature stands against the trunk, and the way to close it. */}
-      <TrunkUpdate c={c} />
+      {c.trunkBased ? <UnpushedTrunk c={c} /> : <TrunkUpdate c={c} />}
 
-      <FailedRaise c={c} plan={plan} />
+      {!c.trunkBased && <FailedRaise c={c} plan={plan} />}
 
       {/* A run that reached Feature1 and was turned away says so only in its
           own log, and exits zero doing it. */}
@@ -595,7 +595,7 @@ export default function PlanView({ c, onOpenTab }: Props) {
 
       {/* The other half of the same question: whether the pull request happened
           is the point of the button, so success is stated as plainly as failure. */}
-      <RaisedPullRequests c={c} plan={plan} />
+      {!c.trunkBased && <RaisedPullRequests c={c} plan={plan} />}
 
       {/* Whose turn it is, when every story is accepted but the feature is not. */}
       <AwaitingAcceptance c={c} plan={plan} />
@@ -649,8 +649,10 @@ export default function PlanView({ c, onOpenTab }: Props) {
       <p className="mt-3 text-[11.5px] text-muted">
         mvpfy moves stories through Coding into Testing as it implements the feature. Only you can
         move a story to Done — test it in the App tab first, and send it back with feedback if it is
-        not right. Every story in this feature commits to one branch, and one pull request opens for
-        the whole feature once you have accepted them all.
+        not right.{' '}
+        {c.trunkBased
+          ? 'This project is trunk-based: every story is pushed straight to the trunk as soon as its tests pass, with no branch and no pull request.'
+          : 'Every story in this feature commits to one branch, and one pull request opens for the whole feature once you have accepted them all.'}
       </p>
 
       {/* Asking for a change in words, when the change is not a story. The
@@ -757,6 +759,24 @@ function ImplementFeatureButton({
  * builder to guess which branch they are testing.
  */
 function TestFeatureButton({ c, slug }: { c: ProjectController; slug: string }) {
+  // Trunk-based: the workspace already is the feature. What is left is to
+  // apply its migrations and restart, so the running app has every story.
+  if (c.trunkBased) {
+    return (
+      <button
+        onClick={() => void c.testFeature(slug)}
+        disabled={c.busy || c.anyStoryRunning || c.preparingPreview}
+        title={
+          c.anyStoryRunning
+            ? 'A story is being implemented — its code is still changing. Refresh once that finishes.'
+            : 'Apply new migrations and restart, so the running app has every story pushed so far'
+        }
+        className="btn-secondary h-8 px-3 disabled:opacity-50"
+      >
+        {c.preparingPreview ? 'Refreshing the app…' : 'Refresh the app'}
+      </button>
+    );
+  }
   const live = c.project.testingSlug === slug;
   // A feature being implemented has a branch that is still moving, so there is
   // nothing settled to check out yet. Implementing also ends any test in
@@ -1006,8 +1026,9 @@ function ConfirmDeleteFeature({
 }) {
   const built = c.featureGit.reduce((n, r) => n + r.ahead, 0);
   const prs = plan.prUrls?.length ?? 0;
-  const keeps =
-    built > 0 || prs > 0
+  const keeps = c.trunkBased
+    ? 'Whatever it pushed stays on the trunk — deleting a feature never rewrites history.'
+    : built > 0 || prs > 0
       ? `The branch keeps its ${built > 0 ? `${built} commit${built === 1 ? '' : 's'}` : 'work'}${
           prs > 0 ? `, and ${prs} pull request${prs === 1 ? '' : 's'} stay open` : ''
         }.`
@@ -1262,6 +1283,42 @@ function ContinueFeature({ c }: { c: ProjectController }) {
  * last fetch — a feature that says it is level may simply not have asked
  * lately, and the button is what asks.
  */
+/**
+ * Commits a trunk-based project made here that the remote has not got.
+ *
+ * Each story pushes its own work, so this is normally empty. It shows when a
+ * push was refused or a run stopped between committing and pushing — the one
+ * way "it is on the trunk" can be untrue while every story looks finished.
+ */
+function UnpushedTrunk({ c }: { c: ProjectController }) {
+  const rows = c.featureGit.filter((r) => r.unpushed > 0);
+  if (rows.length === 0) return null;
+  const trunk = (rows.find((r) => r.trunk)?.trunk ?? 'main').replace(/^origin\//, '');
+  const total = rows.reduce((n, r) => n + r.unpushed, 0);
+  const where = rows.map((r) => r.repo.split(/[/\\]/).pop()).join(', ');
+  return (
+    <section className="card mb-5 overflow-hidden border-warn-border">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <p className="max-w-[560px] text-[13px] text-body">
+          <span className="font-medium text-warn-text">
+            {total} commit{total === 1 ? ' is' : 's are'} on this machine but not on {trunk}
+            {rows.length > 1 ? ` (${where})` : ''}.
+          </span>{' '}
+          Pushing rebases them onto whatever has landed on {trunk} since, then pushes. If they
+          conflict, nothing is changed here and the log says where.
+        </p>
+        <button
+          onClick={() => void c.pushTrunk()}
+          disabled={c.busy || c.anyStoryRunning}
+          className="btn-primary h-8 px-3.5 disabled:opacity-50"
+        >
+          Push to {trunk}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function TrunkUpdate({ c }: { c: ProjectController }) {
   const rows = c.featureGit.filter((r) => r.worktree);
   if (rows.length === 0) return null;
@@ -1467,6 +1524,29 @@ function AwaitingAcceptance({ c, plan }: { c: ProjectController; plan: ProjectPl
  * the second gate, over what they add up to.
  */
 function FeatureShipControls({ c, plan }: { c: ProjectController; plan: ProjectPlan }) {
+  // Trunk-based: every story is on the trunk already, so there is nothing to
+  // raise — only the builder's word that the feature as a whole is right.
+  if (c.trunkBased) {
+    if (plan.tested === true) {
+      return (
+        <span className="flex items-center gap-1.5 text-[13px] font-medium text-go">
+          <span className="h-1.5 w-1.5 rounded-full bg-go" />
+          Accepted — on the trunk
+        </span>
+      );
+    }
+    const allAccepted = plan.stories.length > 0 && plan.stories.every((s) => s.lane === 'done');
+    return allAccepted ? (
+      <button
+        onClick={() => void c.markFeatureTested()}
+        disabled={c.busy}
+        title="Every story is already on the trunk; this moves the feature to Done"
+        className="btn-primary h-8 px-3.5 disabled:opacity-50"
+      >
+        Accept feature
+      </button>
+    ) : null;
+  }
   const prUrls = plan.prUrls ?? [];
   // The raise is a run like any other, and a run that failed said so only in
   // the Logs tab. Whether the pull request happened is the whole point of the

@@ -323,6 +323,15 @@ function Composer({
   };
   return (
     <div className="border-t border-line p-3">
+      {/* Feature-branch projects only: the workspace is showing a feature's
+          checkout, and an edit made now would sit on top of it, in no
+          feature's branch and in nobody's pull request. */}
+      {!c.trunkBased && c.project.testingSlug && (
+        <p className="mb-2 rounded-md border border-warn-border bg-warn-bg px-2.5 py-1.5 text-[12px] text-warn-text">
+          The app is running the {c.project.testingSlug} feature. A change asked for here lands on
+          top of it, uncommitted — put the workspace back on main from Plan first if it should not.
+        </p>
+      )}
       {c.chatError && (
         <p className="mb-2 rounded-md border border-danger/30 bg-red-50 px-2.5 py-1.5 text-[12px] text-danger">
           {c.chatError}

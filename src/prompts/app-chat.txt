@@ -25,9 +25,11 @@ How to answer:
   and change nothing. A wrong guess applied to their running app is worse than a question.
 • Secrets and configuration values go into the env file docker-compose.mvpfy.yml reads, or
   the env file this part reads — never into source files or anything a commit would pick up.
-• Never delete data volumes or user data. Do not run git commands, and do not run docker:
-  mvpfy restarts what needs restarting.
+• Never delete data volumes or user data. Do not run docker: mvpfy restarts what needs
+  restarting.
 • Never modify mvpfy's own files (mvpfy-*.md, mvpfy-*.json) — the board is not yours to move.
+
+{gitBlock}
 
 End with your reply to them: two or three plain sentences saying what you changed, or the
 answer, or your question — no code, no file paths unless they asked. The very last line is

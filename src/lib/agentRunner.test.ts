@@ -424,6 +424,49 @@ describe('where a story lands', () => {
   });
 });
 
+describe('where a chat change lands', () => {
+  const promptFor = async (flow?: 'feature' | 'trunk') => {
+    let captured = '';
+    vi.stubGlobal('window', {
+      mvpfy: {
+        runAgent: async (req: { promptText: string }) => {
+          captured = req.promptText;
+        },
+      },
+    });
+    try {
+      await startChatRun(
+        { id: 'p', localPath: '/repo', repos: [], flow } as unknown as Project,
+        { ...DEFAULT_STATE.settings },
+        {
+          conversationId: 'c1',
+          message: 'make the button green',
+          agent: 'claude',
+          app: { id: 'web', name: 'Customer portal', kind: 'web' },
+        }
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return captured;
+  };
+
+  it('commits and pushes a trunk-based change, without ever force-pushing', async () => {
+    const prompt = await promptFor('trunk');
+    expect(prompt).toMatch(/git pull --rebase --autostash/);
+    expect(prompt).toMatch(/Never force-push/);
+    expect(prompt).not.toMatch(/Do not run git commands/);
+    expect(prompt).not.toMatch(/\{[a-zA-Z]\w*\}/);
+  });
+
+  it("leaves a feature-branch project's change uncommitted in the workspace", async () => {
+    const prompt = await promptFor();
+    expect(prompt).toMatch(/Do not run git commands/);
+    expect(prompt).not.toMatch(/git push/);
+    expect(prompt).not.toMatch(/\{[a-zA-Z]\w*\}/);
+  });
+});
+
 describe('runs that are not activity', () => {
   it('does not count a followed log or a live share as busy', () => {
     // Both last exactly as long as somebody wants them to. Counting either as

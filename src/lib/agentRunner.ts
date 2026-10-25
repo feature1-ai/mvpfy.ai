@@ -1160,6 +1160,21 @@ export async function startChatRun(
       contractNote: WORKSPACE_CONTRACT,
       troubleNote: opts.trouble ?? '',
       message: opts.message,
+      // Trunk-based: a change is not done until it is on the trunk, so it is
+      // committed and pushed like a story. Otherwise work reaches the trunk
+      // through a feature's pull request, and a commit made here would belong
+      // to no feature — so the edit stays in the workspace for the builder.
+      gitBlock: isTrunkBased(project)
+        ? 'This project is trunk-based: when you changed files, the change goes straight to the\n' +
+          'trunk. Stage only the files you changed, by name — never mvpfy.yml,\n' +
+          'docker-compose.mvpfy.yml, .env files, mvpfy-* files, anything under mvpfy/, or a\n' +
+          'secret. Commit in each repository you changed with a one-line message in plain\n' +
+          'language saying what changed. Then `git pull --rebase --autostash` and `git push`. If\n' +
+          'the rebase stops on conflicts, fit the two together and check it still works before\n' +
+          'pushing. Never force-push, and never create, switch or delete a branch. If you only\n' +
+          'answered a question, commit nothing.'
+        : 'Do not run git commands. The change stays in the workspace, where the product\n' +
+          'manager sees it running; it reaches the trunk through a feature, not from here.',
     }),
     ...agentFor(settings, opts.agent),
     ...(opts.session ? { session: opts.session } : {}),

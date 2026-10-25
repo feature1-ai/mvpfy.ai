@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AgentKind, ChatTurn, Conversation, RunSession } from '../../shared/types';
-import { codexThreadId, lostConversation, startChatRun } from '../lib/agentRunner';
+import { codexThreadId, isTrunkBased, lostConversation, startChatRun } from '../lib/agentRunner';
 import { AppTarget, PROJECT_APP_ID, agentReply, titleFrom } from '../lib/chat';
 import { preflightAuth } from '../lib/cliCheck';
 import type { RunState } from '../lib/useRuns';
@@ -221,6 +221,30 @@ export function useAppChat(
       const agent = existing?.agent ?? agentForApp(selectedApp.id);
       const authProblem = await preflightAuth(agent, false);
       if (authProblem) throw new Error(authProblem);
+      // A trunk-based change is committed where it is made, so the workspace
+      // has to be on the trunk itself — a commit on a detached HEAD reaches no
+      // branch, and the push that follows would send nothing.
+      if (isTrunkBased(project)) {
+        const res = await window.mvpfy.checkoutFeature(
+          project.localPath,
+          project.repos.map((r) => r.dir),
+          null
+        );
+        if (!res.ok) {
+          throw new Error(
+            res.error ||
+              'Could not put the workspace on its default branch — this project commits chat changes straight to it.'
+          );
+        }
+        if (project.testingSlug) {
+          updateState((prev) => ({
+            ...prev,
+            projects: prev.projects.map((p) =>
+              p.id === project.id ? { ...p, testingSlug: null } : p
+            ),
+          }));
+        }
+      }
 
       const id = existing?.id ?? crypto.randomUUID();
       // Claude is handed the id of the conversation it opens; codex opens one

@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { CHANGE_FILE } from '../../shared/types';
-import { startInstructRun, startShipChangeRun, startShipFeatureRun } from '../lib/agentRunner';
+import { startShipChangeRun, startShipFeatureRun } from '../lib/agentRunner';
 import { preflightAuth } from '../lib/cliCheck';
 import { Feature1McpClient, UserStory, mcpBaseUrl } from '../lib/feature1Mcp';
 import { ControllerContext } from './controllerContext';
 
-/** Agent-driven changes: instructions, shipping, and Feature1 stories. */
+/** Agent-driven changes: shipping, and Feature1 stories. */
 export interface AgentActions {
-  /** Free-form PM instruction ("add env var X…") applied by the agent. */
-  instruct(instruction: string): Promise<boolean>;
   dismissChange(): Promise<boolean>;
   /** Commit + push the workspace's product changes and open PR(s). */
   shipChange(): Promise<boolean>;
@@ -21,11 +19,7 @@ export interface AgentActions {
   setTargetRepoDir(dir: string): void;
 }
 
-export function useAgentActions(
-  ctx: ControllerContext,
-  /** What is wrong with the environment, so asking about it starts informed. */
-  trouble: string
-): AgentActions {
+export function useAgentActions(ctx: ControllerContext): AgentActions {
   const { project, state, runsApi, pf, refreshFiles, guarded } = ctx;
   const storyRequest = useRef(0);
   // Stamped with the workspace they were fetched for, and read back through
@@ -52,17 +46,6 @@ export function useAgentActions(
       ++storyRequest.current;
     };
   }, [tenantKey]);
-
-  const instruct = (instruction: string) =>
-    guarded(async () => {
-      const text = instruction.trim();
-      if (!text) return;
-      const authProblem = await preflightAuth(state.settings.defaultAgent, false);
-      if (authProblem) throw new Error(authProblem);
-      await window.mvpfy.writeRepoFile(project.localPath, pf(CHANGE_FILE), '');
-      const handle = await startInstructRun(project, state.settings, text, trouble);
-      runsApi.track(handle);
-    });
 
   const dismissChange = () =>
     guarded(async () => {
@@ -141,7 +124,6 @@ export function useAgentActions(
     });
 
   return {
-    instruct,
     dismissChange,
     shipChange,
     refreshStories,

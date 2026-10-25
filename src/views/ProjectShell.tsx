@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { MvpfyState, Project } from '../../shared/types';
 import { UpdateState, useProjectController } from '../hooks/useProjectController';
 import { RunsApi, RunState } from '../lib/useRuns';
-import AgentView from './AgentView';
+import AppView from './AppView';
 import LogPanel from '../components/LogPanel';
 import PlanActivityPanel from '../components/PlanActivityPanel';
 import { parseUsage, shortCount, totalIn } from '../lib/usage';
@@ -11,7 +11,7 @@ import OverviewView from './OverviewView';
 import PlanView from './PlanView';
 import WorkspaceIcon from '../components/WorkspaceIcon';
 
-export type ProjectTab = 'overview' | 'plan' | 'agent' | 'app' | 'code' | 'logs';
+export type ProjectTab = 'overview' | 'plan' | 'app' | 'code' | 'logs';
 
 interface Props {
   project: Project;
@@ -32,8 +32,6 @@ export default function ProjectShell({
 }: Props) {
   const c = useProjectController(project, state, updateState, runsApi);
   const mvpfyYml = c.viewerFiles.find((f) => f.relativePath === 'mvpfy.yml')?.content ?? null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const appWebview = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ideWebview = useRef<any>(null);
 
@@ -59,8 +57,7 @@ export default function ProjectShell({
   const tabs: Array<{ id: ProjectTab; label: string; hint?: string }> = [
     { id: 'overview', label: 'Overview' },
     { id: 'plan', label: 'Plan' },
-    { id: 'agent', label: 'Ask agent' },
-    { id: 'app', label: 'App preview', hint: `:${project.basePort}` },
+    { id: 'app', label: 'App' },
     { id: 'code', label: 'Code' },
     { id: 'logs', label: 'Activity & logs' },
   ];
@@ -88,27 +85,6 @@ export default function ProjectShell({
           </button>
         ))}
         <div className="ml-auto flex flex-wrap items-center gap-3.5 py-1 text-xs">
-          {tab === 'app' && c.appHealthy && (
-            <>
-              <span className="flex h-7 items-center gap-1.5 rounded-md border border-go-border bg-go-bgalt px-[11px] font-mono text-xs text-go">
-                <span className="h-1.5 w-1.5 rounded-full bg-go" />
-                localhost:{project.basePort}
-              </span>
-              <button
-                onClick={() => appWebview.current?.reloadIgnoringCache?.()}
-                className="text-go hover:text-go-hover hover:underline"
-                title="Force refresh — reloads the app ignoring cached files"
-              >
-                Refresh
-              </button>
-              <button
-                onClick={() => c.openExternal(c.appUrl)}
-                className="text-go hover:text-go-hover hover:underline"
-              >
-                Open in browser ↗
-              </button>
-            </>
-          )}
           {tab === 'code' && c.ideUrl && (
             <>
               <button
@@ -152,35 +128,8 @@ export default function ProjectShell({
           </div>
         </Pane>
 
-        <Pane active={tab === 'agent'} scroll>
-          <AgentView c={c} agent={state.settings.defaultAgent} />
-        </Pane>
-
         <Pane active={tab === 'app'}>
-          {c.appHealthy ? (
-            <div className="h-full p-4">
-              <div className="h-full overflow-hidden rounded-[10px] border border-line bg-surface">
-                <webview
-                  ref={appWebview}
-                  src={c.appUrl}
-                  partition="persist:mvpfy-embedded"
-                  style={{ display: 'flex', width: '100%', height: '100%' }}
-                />
-              </div>
-            </div>
-          ) : (
-            <Placeholder
-              title={
-                project.status === 'running' ? 'Waiting for the app…' : 'The app is not running'
-              }
-              body={
-                project.status === 'running'
-                  ? `Waiting for localhost:${project.basePort} to answer.`
-                  : 'Start the environment from Overview and the running app will appear here.'
-              }
-              action={{ label: 'Go to Overview', onClick: () => onTabChange('overview') }}
-            />
-          )}
+          <AppView c={c} onOpenOverview={() => onTabChange('overview')} />
         </Pane>
 
         <Pane active={tab === 'code'}>
@@ -333,6 +282,7 @@ const RUN_LABELS: Record<string, string> = {
   seed: 'Adding the demo login and sample data',
   triage: 'Diagnosing a failure',
   instruct: 'Making a change',
+  chat: 'Answering in the App tab',
   sync: 'Syncing repositories',
   readiness: 'Checking launch readiness',
   'readiness-fix': 'Fixing a readiness finding',

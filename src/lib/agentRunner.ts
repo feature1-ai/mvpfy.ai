@@ -7,7 +7,6 @@ import readinessFixTemplate from '../prompts/readiness-fix.txt?raw';
 import launchPlanTemplate from '../prompts/launch-plan.txt?raw';
 import shipFeatureTemplate from '../prompts/ship-feature.txt?raw';
 import triageTemplate from '../prompts/triage.txt?raw';
-import instructTemplate from '../prompts/instruct.txt?raw';
 import shipChangeTemplate from '../prompts/ship-change.txt?raw';
 import planSpecTemplate from '../prompts/plan-spec.txt?raw';
 import planImplementTemplate from '../prompts/plan-implement.txt?raw';
@@ -18,6 +17,7 @@ import featureChangeTemplate from '../prompts/feature-change.txt?raw';
 import resolveConflictsTemplate from '../prompts/resolve-conflicts.txt?raw';
 import runClientTemplate from '../prompts/run-client.txt?raw';
 import installToolsTemplate from '../prompts/install-tools.txt?raw';
+import appChatTemplate from '../prompts/app-chat.txt?raw';
 import {
   AgentKind,
   BOOTSTRAP_FILE,
@@ -195,7 +195,8 @@ export type RunKind =
   | 'install-tools'
   | 'migrate'
   | 'seed'
-  | 'git-auth';
+  | 'git-auth'
+  | 'chat';
 
 /**
  * A resume that failed because the conversation was never there.
@@ -253,6 +254,11 @@ export const AMBIENT_RUNS: ReadonlySet<RunKind> = new Set<RunKind>([
   'app-logs',
   'share',
   'run-client',
+  // A conversation in the App tab. It does work, but it is the builder working
+  // alongside everything else — one per part of the product, several at once —
+  // and counting it as busy would switch the rest of the app off every time
+  // somebody asked for a colour change.
+  'chat',
 ]);
 
 export function isAmbientRun(kind: RunKind): boolean {
@@ -268,6 +274,8 @@ export interface RunHandle {
   planSlug?: string;
   /** IDE runs only: the host port code-server was asked to bind. */
   port?: number;
+  /** The App-tab conversation a chat run answers. */
+  conversationId?: string;
 }
 
 function fillTemplate(template: string, vars: Record<string, string>): string {
@@ -280,8 +288,11 @@ export function makeRunId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function agentFor(settings: Settings): { agent: AgentKind; model?: string } {
-  return settings.defaultAgent === 'codex'
+function agentFor(
+  settings: Settings,
+  agent: AgentKind = settings.defaultAgent
+): { agent: AgentKind; model?: string } {
+  return agent === 'codex'
     ? { agent: 'codex', model: settings.codexModel }
     : { agent: 'claude', ...(settings.claudeModel ? { model: settings.claudeModel } : {}) };
 }
@@ -1107,27 +1118,53 @@ export async function startTriageRun(
   return { runId, kind: 'triage', projectId: project.id };
 }
 
-export async function startInstructRun(
+/**
+ * One message in an App-tab conversation, sent to that part of the product's
+ * own runner.
+ *
+ * Runs in the workspace root, not the part's repository: a change to one
+ * portal often needs the env file or the compose service beside it, and the
+ * agent is told which part is meant instead of being walled into it.
+ */
+export async function startChatRun(
   project: Project,
   settings: Settings,
-  instruction: string,
-  /** What is wrong with the environment, when something is. */
-  trouble = ''
+  opts: {
+    conversationId: string;
+    message: string;
+    agent: AgentKind;
+    session?: RunSession;
+    app: { id: string; name: string; kind: string; repo?: string; url?: string | null };
+    trouble?: string;
+  }
 ): Promise<RunHandle> {
-  const runId = makeRunId('instruct');
+  const runId = makeRunId('chat');
+  const { app } = opts;
+  const appNote =
+    app.kind === 'project'
+      ? 'This conversation is about the workspace as a whole — the environment, configuration, ' +
+        'and any part of the product.'
+      : `This conversation is about one part of the product: ${app.name} (${app.kind})` +
+        (app.repo ? `, whose code is in ${app.repo}` : '') +
+        (app.url ? `, running at ${app.url}` : '') +
+        '. Keep changes to it unless the request genuinely needs something beside it, such as ' +
+        'an env value or the API it calls — and say so when it does.';
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
-    promptText: fillTemplate(instructTemplate, {
-      contractNote: WORKSPACE_CONTRACT,
-      troubleNote: trouble,
+    promptText: fillTemplate(appChatTemplate, {
       repoPath: project.localPath,
-      instruction,
       workspaceNote: workspaceNoteFor(project),
+      resumeNote: resumeNoteFor(opts.session),
+      appNote,
+      contractNote: WORKSPACE_CONTRACT,
+      troubleNote: opts.trouble ?? '',
+      message: opts.message,
     }),
-    ...agentFor(settings),
+    ...agentFor(settings, opts.agent),
+    ...(opts.session ? { session: opts.session } : {}),
   });
-  return { runId, kind: 'instruct', projectId: project.id };
+  return { runId, kind: 'chat', projectId: project.id, conversationId: opts.conversationId };
 }
 
 /**

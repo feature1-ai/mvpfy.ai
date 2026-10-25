@@ -42,6 +42,8 @@ import { useAgentActions } from './useAgentActions';
 import { LaunchActions, useLaunchActions } from './useLaunchActions';
 import { ReadinessActions, useReadinessActions } from './useReadinessActions';
 import { FeaturePlan, usePlanActions } from './usePlanActions';
+import { AppChat, useAppChat } from './useAppChat';
+import { appTargets } from '../lib/chat';
 import { useProjectActions } from './useProjectActions';
 
 export type { UpdateState } from './controllerContext';
@@ -73,7 +75,8 @@ function hiddenFromViewer(name: string): boolean {
  * Controller for a project's detail view: owns all project actions, file and
  * health polling, and derived view state. Components stay presentational.
  */
-export interface ProjectController extends BootstrapFlowState, ReadinessActions, LaunchActions {
+export interface ProjectController
+  extends BootstrapFlowState, ReadinessActions, LaunchActions, AppChat {
   /** Signing in to Feature1, available wherever the user needs it. */
   feature1Login: Feature1LoginState;
   /** The features Feature1 says are assigned to the signed-in user. */
@@ -196,8 +199,6 @@ export interface ProjectController extends BootstrapFlowState, ReadinessActions,
   /** Re-run the step the triage file says to retry. */
   retryFix(): Promise<boolean>;
   dismissTriage(): Promise<boolean>;
-  /** Free-form PM instruction ("add env var X…") applied by the agent. */
-  instruct(instruction: string): Promise<boolean>;
   dismissChange(): Promise<boolean>;
   /** Commit + push the workspace's product changes and open PR(s). */
   shipChange(): Promise<boolean>;
@@ -600,10 +601,17 @@ export function useProjectController(
     refreshFiles();
     refreshPrStates();
   }, [refreshFiles, refreshPrStates]);
-  const agentActions = useAgentActions(ctx, trouble);
+  const agentActions = useAgentActions(ctx);
   const bootstrapFlow = useBootstrapFlow(ctx, appHealthy);
   const readinessActions = useReadinessActions(ctx);
   const launchActions = useLaunchActions(ctx, readinessActions.readinessVerdict);
+  const appChat = useAppChat(
+    ctx,
+    appTargets(bootstrapFlow.productComponents, mvpfyYmlContent, `http://localhost:${appPort}`),
+    (service) =>
+      service ? projectActions.restartService(service) : projectActions.docker('restart'),
+    trouble
+  );
 
   // Adding a project IS the consent to set it up: a project created as
   // 'queued' bootstraps itself as soon as its view opens, so the PM lands on
@@ -650,6 +658,7 @@ export function useProjectController(
     ...bootstrapFlow,
     ...readinessActions,
     ...launchActions,
+    ...appChat,
     project,
     appUrl: `http://localhost:${appPort}`,
     appHealthy,

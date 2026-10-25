@@ -113,6 +113,50 @@ export interface Project {
    * matches no tenant, and the visitor is shown nothing.
    */
   shareHostHeader?: string;
+  /**
+   * Conversations held in the App tab, each about one part of the product.
+   *
+   * Kept in mvpfy's own state rather than the workspace: they are this
+   * builder's working notes, not the product's, and nothing a run writes
+   * should be able to rewrite what was said in them.
+   */
+  conversations?: Conversation[];
+  /** Which agent each part of the product talks to, by app id. Unset: the default agent. */
+  appAgents?: Record<string, AgentKind>;
+}
+
+/** One message in an App-tab conversation. */
+export interface ChatTurn {
+  id: string;
+  role: 'user' | 'agent';
+  text: string;
+  /** Epoch milliseconds. */
+  at: number;
+  /** The agent run that answers this turn, on agent turns. */
+  runId?: string;
+  status?: 'running' | 'done' | 'failed' | 'stopped';
+  /** The agent said the environment must restart to pick the change up. */
+  restart?: boolean;
+}
+
+/**
+ * A conversation with one part of the product's own runner.
+ *
+ * `appId` is a component id from the product inventory, or 'project' for the
+ * workspace as a whole. The agent and its session are fixed when the first
+ * message is sent: a conversation is one agent's memory, and handing it to the
+ * other agent halfway would start it over without saying so.
+ */
+export interface Conversation {
+  id: string;
+  appId: string;
+  title: string;
+  agent: AgentKind;
+  /** Claude session id, or codex thread id once codex announces it. */
+  sessionId?: string;
+  createdAt: number;
+  updatedAt: number;
+  turns: ChatTurn[];
 }
 
 /** Where mvpfy's generated/communication files live inside a workspace. */

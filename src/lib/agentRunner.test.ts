@@ -6,7 +6,7 @@ import {
   codexThreadId,
   lostConversation,
   extractPrUrl,
-  startInstructRun,
+  startChatRun,
   startReadinessFixRun,
   startTriageRun,
   startGitAuthRun,
@@ -18,14 +18,24 @@ import type { Project, RunExitEvent } from '../../shared/types';
 import { DEFAULT_STATE } from '../../shared/types';
 
 describe('selected agent routing', () => {
-  it('sends a product change to Codex when Codex is selected', async () => {
+  it('sends a product change to the agent chosen for that part, not the default', async () => {
     const runAgent = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('window', { mvpfy: { runAgent } });
     try {
-      await startInstructRun(
+      await startChatRun(
         { id: 'p', localPath: '/fixture', repos: [], basePort: 4100 } as unknown as Project,
-        { ...DEFAULT_STATE.settings, defaultAgent: 'codex', codexModel: '', claudeModel: 'unused' },
-        'Fix the addition function'
+        {
+          ...DEFAULT_STATE.settings,
+          defaultAgent: 'claude',
+          codexModel: '',
+          claudeModel: 'unused',
+        },
+        {
+          conversationId: 'c1',
+          message: 'Fix the addition function',
+          agent: 'codex',
+          app: { id: 'web', name: 'Customer portal', kind: 'web', repo: 'web' },
+        }
       );
       expect(runAgent).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -232,7 +242,16 @@ describe('the workspace contract', () => {
 
   const starters: Array<[string, () => Promise<unknown>]> = [
     ['triage', () => startTriageRun(project, settings, 'starting the environment', 'boom')],
-    ['instruct', () => startInstructRun(project, settings, 'make the button blue')],
+    [
+      'chat',
+      () =>
+        startChatRun(project, settings, {
+          conversationId: 'c1',
+          message: 'make the button blue',
+          agent: 'claude',
+          app: { id: 'project', name: 'Whole project', kind: 'project' },
+        }),
+    ],
     [
       'readiness-fix',
       () =>

@@ -150,7 +150,11 @@ describe('Git', () => {
     // Feature1 sends a base branch, not a commit; the worker starts from
     // its tip and reports the sha it actually used.
     expect(add?.command).toContain('refs/remotes/origin/main');
-  });
+    // Bounded because this one failed once in a full suite run and never
+    // in isolation: it makes temp directories while every other test file
+    // is doing the same, and vitest's five seconds is not a bound that
+    // means anything under that load.
+  }, 30_000);
 
   it('continues an execution branch that already exists, rather than making another', async () => {
     const runner = new ScriptedRunner().when(/rev-parse --verify/, { code: 0 });
@@ -162,7 +166,11 @@ describe('Git', () => {
     const add = runner.calls.find((c) => c.command.includes('worktree add'));
     expect(add?.command).not.toContain('-b');
     expect(add?.command).toContain(`mvpfy/${IDS.execFeature}`);
-  });
+    // Bounded because this one failed once in a full suite run and never
+    // in isolation: it makes temp directories while every other test file
+    // is doing the same, and vitest's five seconds is not a bound that
+    // means anything under that load.
+  }, 30_000);
 
   it('never fetches into refs/heads, because prune would delete the work', async () => {
     // Proven against real git: the mirror refspec plus --prune removes every

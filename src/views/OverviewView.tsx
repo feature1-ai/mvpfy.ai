@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ProjectController } from '../hooks/useProjectController';
+import { envStatusFor, envStatusHint, envStatusLabel, parseEnv } from '../lib/envFile';
 import { parsePorts } from '../lib/ports';
 import {
   COMPONENT_LABELS,
@@ -867,6 +868,10 @@ export default function OverviewView({ c, mvpfyYml, onOpenTab }: Props) {
                     against another feature's build is the mistake this
                     prevents. */}
                 <WhichCode c={c} featureName={testingFeature} />
+                {/* The branch and the configuration the running app actually
+                    has, for when it is behaving oddly and restarting it in
+                    hope is the alternative. */}
+                {env.kind === 'running' && <WhatIsRunning c={c} branches={branches} />}
               </div>
               <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                 {/* The containers are up in both states — the app answering
@@ -1483,6 +1488,138 @@ function PortItem({ label, port }: { label: string; port: number }) {
  * toggle, and knowing which of several features was the live one. The only
  * place that said so was a tooltip.
  */
+/**
+ * What the app that is answering on that port is actually made of.
+ *
+ * Two questions a builder asks about a running app and the overview could
+ * not answer. Which code is this — the pill said which feature, which is
+ * not the same as which branch, and the branch was in a card further down
+ * labelled as repositories rather than as what is running. And what is it
+ * configured with — the env editors show a file, and a file is what was
+ * saved rather than what the container was given.
+ *
+ * Folded away, because the answer is boring until the moment it is not:
+ * the point is that an app behaving oddly can be interrogated without
+ * leaving the screen, instead of being restarted in hope.
+ */
+function WhatIsRunning({
+  c,
+  branches,
+}: {
+  c: ProjectController;
+  branches: Record<string, string>;
+}) {
+  const [open, setOpen] = useState(false);
+  /** Container environments, by service. Null for one we could not read. */
+  const [envs, setEnvs] = useState<Record<string, Record<string, string> | null>>({});
+
+  const withService = c.componentEnvFiles.filter((f) => f.service);
+  const serviceKey = withService.map((f) => f.service).join('|');
+  const workspace = c.project.localPath;
+  const linked = c.project.mode === 'linked';
+
+  useEffect(() => {
+    if (!open || !serviceKey) return;
+    let current = true;
+    void Promise.all(
+      serviceKey.split('|').map((service) =>
+        window.mvpfy
+          .serviceEnv(workspace, linked, service)
+          .then((env) => [service, env] as const)
+          .catch(() => [service, null] as const)
+      )
+    ).then((pairs) => {
+      if (current) setEnvs(Object.fromEntries(pairs));
+    });
+    return () => {
+      current = false;
+    };
+    // Asked when it is opened, so a closed panel costs nothing.
+  }, [open, serviceKey, workspace, linked]);
+
+  const repos = c.project.repos;
+  const onDifferentBranches =
+    new Set(repos.map((r) => branches[r.dir] ?? '')).size > 1 && repos.length > 1;
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen((was) => !was)}
+        aria-expanded={open}
+        className="text-[11.5px] text-go hover:underline"
+      >
+        {open ? 'Hide what is running' : 'What is running?'}
+      </button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-3 rounded-md border border-line bg-surface px-3 py-2.5">
+          <div className="flex flex-col gap-1">
+            <span className="section-label">Code</span>
+            {repos.map((r) => (
+              <div key={r.dir} className="flex min-w-0 items-baseline gap-2">
+                <span className="w-[110px] shrink-0 truncate text-[11.5px] text-muted">
+                  {r.dir.split(/[/\\]/).pop()}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">
+                  {branches[r.dir] || '—'}
+                </span>
+              </div>
+            ))}
+            {onDifferentBranches && (
+              <p className="text-[10.5px] leading-snug text-warn-text">
+                These are not all on the same branch. That is deliberate sometimes and a surprise
+                the rest of the time.
+              </p>
+            )}
+          </div>
+
+          {withService.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-line-subtle pt-2.5">
+              <span className="section-label">Configuration</span>
+              {withService.map((file) => {
+                const env = envs[file.service!];
+                const entries = parseEnv(file.content);
+                return (
+                  <div key={file.name} className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-[11.5px] font-medium text-ink">{file.component}</span>
+                    {entries.length === 0 && (
+                      <span className="text-[11px] text-faint">nothing set</span>
+                    )}
+                    {entries.map((e) => {
+                      const status = envStatusFor(e.key, e.value, env ?? null);
+                      return (
+                        <div key={e.key} className="flex min-w-0 items-baseline gap-2">
+                          <span className="w-[110px] shrink-0 truncate font-mono text-[10.5px] text-muted">
+                            {e.key}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate font-mono text-[10.5px]">
+                            {e.value || '(empty)'}
+                          </span>
+                          {status !== 'unknown' && status !== 'live' && (
+                            <span
+                              title={envStatusHint(status)}
+                              className="shrink-0 text-[10px] text-danger"
+                            >
+                              {envStatusLabel(status)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              <p className="text-[10.5px] leading-snug text-faint">
+                Read from the containers themselves, not from the files — so a value saved and not
+                yet applied says so.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WhichCode({ c, featureName }: { c: ProjectController; featureName: string | null }) {
   const onFeature = Boolean(featureName);
   // A story being implemented is moving the branch under us, so there is
@@ -1651,7 +1788,7 @@ function AddRepository({ c }: { c: ProjectController }) {
           </p>
         </div>
       )}
-      {problem && <p className="text-[11px] leading-snug text-stop">{problem}</p>}
+      {problem && <p className="text-[11px] leading-snug text-danger">{problem}</p>}
     </div>
   );
 }

@@ -11,7 +11,14 @@ import {
   MvpfyState,
   RunAgentRequest,
 } from '../shared/types';
-import { ensureDirs, isAllowedWorkspace, isLinkedPath, isManagedPath, TMP_DIR } from './paths';
+import {
+  ensureDirs,
+  isAllowedWorkspace,
+  isLinkedPath,
+  isManagedPath,
+  isWorktreePath,
+  TMP_DIR,
+} from './paths';
 import { removeQuietly, runAgent, runToolingAgent } from './services/agents';
 import {
   agentModels,
@@ -502,8 +509,13 @@ export function registerIpc(): void {
   );
   ipcMain.handle('open-terminal', (_ev, workspacePath: string) => {
     const resolved = path.resolve(workspacePath);
-    if (!isAllowedWorkspace(resolved)) {
-      throw new Error('Terminals are restricted to managed and linked project directories');
+    // A feature's checkout is somewhere mvpfy made, under the worktrees
+    // directory it owns outright — not a project directory, so the
+    // workspace guard alone refused it. It is as much the builder's code as
+    // the workspace is, and opening a shell in it is the point of showing
+    // them where it lives.
+    if (!isAllowedWorkspace(resolved) && !isWorktreePath(resolved)) {
+      throw new Error('Terminals are restricted to project directories and feature checkouts');
     }
     // Detached and unwatched: it is the user's shell now, not a run of ours.
     spawnShell(openTerminalCommand(resolved), { cwd: resolved, detached: true }).unref();

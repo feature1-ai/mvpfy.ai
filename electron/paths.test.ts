@@ -1,10 +1,12 @@
 import * as path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  PROJECTS_DIR,
+  WORKTREES_DIR,
   isAllowedWorkspace,
   isLinkedPath,
   isManagedPath,
-  PROJECTS_DIR,
+  isWorktreePath,
   setLinkedRoots,
 } from './paths';
 
@@ -58,5 +60,32 @@ describe('isAllowedWorkspace', () => {
     expect(isAllowedWorkspace('/Users/pm/code/shop/api')).toBe(true);
     expect(isAllowedWorkspace('/Users/pm/code/other')).toBe(false);
     expect(isAllowedWorkspace('/')).toBe(false);
+  });
+});
+
+describe('what a terminal may be opened in', () => {
+  // The handler admits a project directory or a feature's checkout, and the
+  // second was added so "Terminal" beside a worktree path does something.
+  // Worth stating as a test, because widening a guard is the kind of change
+  // that quietly widens further.
+  const admitted = (candidate: string) =>
+    isAllowedWorkspace(candidate) || isWorktreePath(candidate);
+
+  it('admits a feature checkout, which is a directory mvpfy made', () => {
+    expect(admitted(path.join(WORKTREES_DIR, 'shop-a1b2c3', 'invoice-export', 'api'))).toBe(true);
+  });
+
+  it('still admits a managed project', () => {
+    expect(admitted(path.join(PROJECTS_DIR, 'shop'))).toBe(true);
+  });
+
+  it('does not admit the worktrees directory itself', () => {
+    expect(admitted(WORKTREES_DIR)).toBe(false);
+  });
+
+  it('does not admit anywhere else, which is the whole point of the guard', () => {
+    for (const elsewhere of ['/etc', '/Users/pm/Documents', `${WORKTREES_DIR}-next-door`]) {
+      expect(admitted(elsewhere), elsewhere).toBe(false);
+    }
   });
 });

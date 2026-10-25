@@ -587,6 +587,9 @@ export default function PlanView({ c, onOpenTab }: Props) {
       {/* Where this feature stands against the trunk, and the way to close it. */}
       {c.trunkBased ? <UnpushedTrunk c={c} /> : <TrunkUpdate c={c} />}
 
+      {/* Where the feature's code lives, for anyone who wants to open it. */}
+      <FeatureCheckouts c={c} />
+
       {!c.trunkBased && <FailedRaise c={c} plan={plan} />}
 
       {/* A run that reached Feature1 and was turned away says so only in its
@@ -1315,6 +1318,83 @@ function UnpushedTrunk({ c }: { c: ProjectController }) {
           Push to {trunk}
         </button>
       </div>
+    </section>
+  );
+}
+
+/**
+ * Where this feature's code actually is.
+ *
+ * A feature is built in its own checkout, somewhere under the directory
+ * mvpfy owns, precisely so that implementing a story never disturbs the
+ * copy the builder is running. The cost of that is a question with no
+ * answer anywhere in the app: where is it? Somebody who wants to open the
+ * branch in their own editor, or run one command against it by hand, had
+ * to know the layout of a directory they were never told about.
+ *
+ * It is read from git rather than computed, so a checkout that does not
+ * exist yet is absent rather than wrong — the paths appear once the first
+ * story has run and made them.
+ */
+function FeatureCheckouts({ c }: { c: ProjectController }) {
+  const rows = c.featureGit.filter((r) => r.worktree);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  if (rows.length === 0) return null;
+
+  const copy = (path: string) => {
+    void navigator.clipboard.writeText(path).then(() => {
+      setCopied(path);
+      setTimeout(() => setCopied((was) => (was === path ? null : was)), 1500);
+    });
+  };
+
+  return (
+    <section className="card mb-5 overflow-hidden">
+      <button
+        onClick={() => setOpen((was) => !was)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left"
+      >
+        <span className="text-[13px] text-body">
+          This feature&apos;s code is checked out in{' '}
+          {rows.length === 1 ? 'its own folder' : `${rows.length} folders`}, away from the app you
+          are running.
+        </span>
+        <span className="shrink-0 text-[11.5px] text-go">{open ? 'Hide' : 'Where?'}</span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2.5 border-t border-line-subtle px-5 py-3.5">
+          {rows.map((r) => (
+            <div key={r.repo} className="flex min-w-0 flex-col gap-1">
+              <span className="text-[12px] font-medium text-ink">
+                {r.repo.split(/[/\\]/).pop()}
+              </span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-[5px] border border-line bg-surface px-2 py-1 font-mono text-[11px] text-muted">
+                  {r.worktree.replace(/^\/Users\/[^/]+/, '~')}
+                </code>
+                <button
+                  onClick={() => copy(r.worktree)}
+                  className="shrink-0 text-[11.5px] text-go hover:underline"
+                >
+                  {copied === r.worktree ? 'Copied' : 'Copy'}
+                </button>
+                <button
+                  onClick={() => void window.mvpfy.openTerminal(r.worktree)}
+                  className="shrink-0 text-[11.5px] text-go hover:underline"
+                >
+                  Terminal
+                </button>
+              </div>
+            </div>
+          ))}
+          <p className="text-[11px] leading-snug text-faint">
+            Editing here changes this feature and not the app you are testing. mvpfy removes these
+            once the work is safely on the remote.
+          </p>
+        </div>
+      )}
     </section>
   );
 }

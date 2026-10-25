@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentReply, appTargets, replySoFar, stripRestart, titleFrom } from './chat';
+import { agentReply, appTargets, replySoFar, stripMarkers, titleFrom } from './chat';
 import type { ProductComponent } from './components';
 
 const part = (
@@ -85,6 +85,7 @@ describe('reading what the agent said', () => {
     expect(agentReply(log)).toEqual({
       text: 'The checkout button is green now.',
       restart: false,
+      proposal: false,
       error: null,
     });
   });
@@ -105,7 +106,12 @@ describe('reading what the agent said', () => {
         item: { type: 'agent_message', text: 'Added STRIPE_KEY.\nRestart: yes' },
       }),
     ].join('\n');
-    expect(agentReply(log)).toEqual({ text: 'Added STRIPE_KEY.', restart: true, error: null });
+    expect(agentReply(log)).toEqual({
+      text: 'Added STRIPE_KEY.',
+      restart: true,
+      proposal: false,
+      error: null,
+    });
   });
 
   it('says so when the agent failed', () => {
@@ -129,9 +135,24 @@ describe('reading what the agent said', () => {
     expect(replySoFar('')).toBeNull();
   });
 
-  it('reads a restart line however it is dressed', () => {
-    expect(stripRestart('Done.\n**Restart: Yes**')).toEqual({ text: 'Done.', restart: true });
-    expect(stripRestart('No line here')).toEqual({ text: 'No line here', restart: false });
+  it('reads the closing lines however they are dressed, in either order', () => {
+    expect(stripMarkers('Done.\n**Restart: Yes**')).toEqual({
+      text: 'Done.',
+      restart: true,
+      proposal: false,
+    });
+    expect(
+      stripMarkers('I would make the button green. Shall I?\nProposal: yes\nRestart: no')
+    ).toEqual({
+      text: 'I would make the button green. Shall I?',
+      restart: false,
+      proposal: true,
+    });
+    expect(stripMarkers('No line here')).toEqual({
+      text: 'No line here',
+      restart: false,
+      proposal: false,
+    });
   });
 });
 

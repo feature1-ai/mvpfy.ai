@@ -18,6 +18,7 @@ import resolveConflictsTemplate from '../prompts/resolve-conflicts.txt?raw';
 import runClientTemplate from '../prompts/run-client.txt?raw';
 import installToolsTemplate from '../prompts/install-tools.txt?raw';
 import appChatTemplate from '../prompts/app-chat.txt?raw';
+import appChatApplyTemplate from '../prompts/app-chat-apply.txt?raw';
 import {
   AgentKind,
   BOOTSTRAP_FILE,
@@ -1126,11 +1127,21 @@ export async function startTriageRun(
  * portal often needs the env file or the compose service beside it, and the
  * agent is told which part is meant instead of being walled into it.
  */
+/**
+ * One message in an App-tab conversation.
+ *
+ * 'ask' is every message the person types: the agent reads, answers and, when
+ * a change is wanted, says what it would do and asks — on a run the CLI keeps
+ * read-only, so a misread request cannot reach their app. 'apply' is the run
+ * their yes starts, in the same session, and the only one allowed to edit.
+ */
 export async function startChatRun(
   project: Project,
   settings: Settings,
   opts: {
     conversationId: string;
+    mode: 'ask' | 'apply';
+    /** What they typed; an apply run carries their approval instead. */
     message: string;
     agent: AgentKind;
     session?: RunSession;
@@ -1149,35 +1160,42 @@ export async function startChatRun(
         (app.url ? `, running at ${app.url}` : '') +
         '. Keep changes to it unless the request genuinely needs something beside it, such as ' +
         'an env value or the API it calls — and say so when it does.';
+  const common = {
+    repoPath: project.localPath,
+    workspaceNote: workspaceNoteFor(project),
+    resumeNote: resumeNoteFor(opts.session),
+    appNote,
+    contractNote: WORKSPACE_CONTRACT,
+    troubleNote: opts.trouble ?? '',
+  };
+  const promptText =
+    opts.mode === 'ask'
+      ? fillTemplate(appChatTemplate, { ...common, message: opts.message })
+      : fillTemplate(appChatApplyTemplate, {
+          ...common,
+          // Trunk-based: a change is not done until it is on the trunk, so it
+          // is committed and pushed like a story. Otherwise work reaches the
+          // trunk through a feature's pull request, and a commit made here
+          // would belong to no feature — so the edit stays in the workspace.
+          gitBlock: isTrunkBased(project)
+            ? 'This project is trunk-based: once you have changed files, the change goes straight\n' +
+              'to the trunk. Stage only the files you changed, by name — never mvpfy.yml,\n' +
+              'docker-compose.mvpfy.yml, .env files, mvpfy-* files, anything under mvpfy/, or a\n' +
+              'secret. Commit in each repository you changed with a one-line message in plain\n' +
+              'language saying what changed. Then `git pull --rebase --autostash` and `git push`.\n' +
+              'If the rebase stops on conflicts, fit the two together and check it still works\n' +
+              'before pushing. Never force-push, and never create, switch or delete a branch. If\n' +
+              'you stopped without changing anything, commit nothing.'
+            : 'Do not run git commands. The change stays in the workspace, where the product\n' +
+              'manager sees it running; it reaches the trunk through a feature, not from here.',
+        });
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,
-    promptText: fillTemplate(appChatTemplate, {
-      repoPath: project.localPath,
-      workspaceNote: workspaceNoteFor(project),
-      resumeNote: resumeNoteFor(opts.session),
-      appNote,
-      contractNote: WORKSPACE_CONTRACT,
-      troubleNote: opts.trouble ?? '',
-      message: opts.message,
-      // Trunk-based: a change is not done until it is on the trunk, so it is
-      // committed and pushed like a story. Otherwise work reaches the trunk
-      // through a feature's pull request, and a commit made here would belong
-      // to no feature — so the edit stays in the workspace for the builder.
-      gitBlock: isTrunkBased(project)
-        ? 'This project is trunk-based: when you changed files, the change goes straight to the\n' +
-          'trunk. Stage only the files you changed, by name — never mvpfy.yml,\n' +
-          'docker-compose.mvpfy.yml, .env files, mvpfy-* files, anything under mvpfy/, or a\n' +
-          'secret. Commit in each repository you changed with a one-line message in plain\n' +
-          'language saying what changed. Then `git pull --rebase --autostash` and `git push`. If\n' +
-          'the rebase stops on conflicts, fit the two together and check it still works before\n' +
-          'pushing. Never force-push, and never create, switch or delete a branch. If you only\n' +
-          'answered a question, commit nothing.'
-        : 'Do not run git commands. The change stays in the workspace, where the product\n' +
-          'manager sees it running; it reaches the trunk through a feature, not from here.',
-    }),
+    promptText,
     ...agentFor(settings, opts.agent),
     ...(opts.session ? { session: opts.session } : {}),
+    ...(opts.mode === 'ask' ? { readOnly: true } : {}),
   });
   return { runId, kind: 'chat', projectId: project.id, conversationId: opts.conversationId };
 }

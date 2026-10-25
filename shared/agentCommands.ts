@@ -28,8 +28,25 @@ export const posixShell: CommandShell = {
  * optional flags whose order matters to the CLI — can be tested without
  * spawning anything.
  */
+/**
+ * What claude may do on a read-only run: look, never change. In print mode a
+ * tool outside this list is refused outright rather than asked about, so the
+ * list is the whole of what it can do.
+ */
+export const CLAUDE_READ_ONLY_TOOLS = [
+  'Read',
+  'Grep',
+  'Glob',
+  'LS',
+  'Bash(git status:*)',
+  'Bash(git log:*)',
+  'Bash(git diff:*)',
+  'Bash(git show:*)',
+  'Bash(ls:*)',
+];
+
 export function claudeCommandFor(
-  req: Pick<RunAgentRequest, 'model' | 'session'>,
+  req: Pick<RunAgentRequest, 'model' | 'session' | 'readOnly'>,
   opts: { repoPath: string; promptFile: string; mcpConfig?: string },
   shell: CommandShell
 ): string {
@@ -45,9 +62,12 @@ export function claudeCommandFor(
       ? `--resume ${q(req.session.id)} `
       : `--session-id ${q(req.session.id)} `
     : '';
+  const permissions = req.readOnly
+    ? `--permission-mode default --allowedTools ${q(CLAUDE_READ_ONLY_TOOLS.join(' '))} `
+    : '--dangerously-skip-permissions ';
   return (
     `${shell.cd(opts.repoPath)} && claude ${mcpFlag}${modelFlag}${sessionFlag}` +
-    `-p --verbose --output-format stream-json --dangerously-skip-permissions ` +
+    `-p --verbose --output-format stream-json ${permissions}` +
     `< ${q(opts.promptFile)}`
   );
 }
@@ -64,7 +84,7 @@ export function claudeCommandFor(
  * does, so the two differ only in the subcommand and the id.
  */
 export function codexCommandFor(
-  req: Pick<RunAgentRequest, 'model' | 'session' | 'images'>,
+  req: Pick<RunAgentRequest, 'model' | 'session' | 'images' | 'readOnly'>,
   opts: { repoPath: string; promptFile: string; mcpFlag?: string },
   shell: CommandShell
 ): string {
@@ -79,10 +99,12 @@ export function codexCommandFor(
   const imageFlags = (req.images ?? []).map((f) => `--image ${q(f)} `).join('');
   // Only ever resume: an id mvpfy invented would name no thread, and codex
   // would open a fresh one under a different id without saying so.
+  // `resume` goes last, right before the prompt: it accepts only a few options
+  // of its own and rejects --sandbox, so the exec options have to precede it.
   const resume = req.session?.resume ? `resume ${q(req.session.id)} ` : '';
   return (
-    `${shell.cd(opts.repoPath)} && codex exec ${resume}${opts.mcpFlag ?? ''}${imageFlags}` +
-    `${modelFlag}--sandbox danger-full-access --skip-git-repo-check --json - ` +
-    `< ${q(opts.promptFile)}`
+    `${shell.cd(opts.repoPath)} && codex exec ${opts.mcpFlag ?? ''}${imageFlags}` +
+    `${modelFlag}--sandbox ${req.readOnly ? 'read-only' : 'danger-full-access'} ` +
+    `--skip-git-repo-check --json ${resume}- < ${q(opts.promptFile)}`
   );
 }

@@ -32,6 +32,7 @@ describe('selected agent routing', () => {
         },
         {
           conversationId: 'c1',
+          mode: 'ask',
           message: 'Fix the addition function',
           agent: 'codex',
           app: { id: 'web', name: 'Customer portal', kind: 'web', repo: 'web' },
@@ -43,6 +44,7 @@ describe('selected agent routing', () => {
           model: '',
           repoPath: '/fixture',
           promptText: expect.stringContaining('Fix the addition function'),
+          readOnly: true,
         })
       );
     } finally {
@@ -242,16 +244,17 @@ describe('the workspace contract', () => {
 
   const starters: Array<[string, () => Promise<unknown>]> = [
     ['triage', () => startTriageRun(project, settings, 'starting the environment', 'boom')],
-    [
-      'chat',
+    ...(['ask', 'apply'] as const).map((mode): [string, () => Promise<unknown>] => [
+      `chat ${mode}`,
       () =>
         startChatRun(project, settings, {
           conversationId: 'c1',
+          mode,
           message: 'make the button blue',
           agent: 'claude',
           app: { id: 'project', name: 'Whole project', kind: 'project' },
         }),
-    ],
+    ]),
     [
       'readiness-fix',
       () =>
@@ -425,12 +428,12 @@ describe('where a story lands', () => {
 });
 
 describe('where a chat change lands', () => {
-  const promptFor = async (flow?: 'feature' | 'trunk') => {
-    let captured = '';
+  const runFor = async (mode: 'ask' | 'apply', flow?: 'feature' | 'trunk') => {
+    let captured: { promptText: string; readOnly?: boolean } = { promptText: '' };
     vi.stubGlobal('window', {
       mvpfy: {
-        runAgent: async (req: { promptText: string }) => {
-          captured = req.promptText;
+        runAgent: async (req: { promptText: string; readOnly?: boolean }) => {
+          captured = req;
         },
       },
     });
@@ -440,6 +443,7 @@ describe('where a chat change lands', () => {
         { ...DEFAULT_STATE.settings },
         {
           conversationId: 'c1',
+          mode,
           message: 'make the button green',
           agent: 'claude',
           app: { id: 'web', name: 'Customer portal', kind: 'web' },
@@ -451,19 +455,32 @@ describe('where a chat change lands', () => {
     return captured;
   };
 
-  it('commits and pushes a trunk-based change, without ever force-pushing', async () => {
-    const prompt = await promptFor('trunk');
-    expect(prompt).toMatch(/git pull --rebase --autostash/);
-    expect(prompt).toMatch(/Never force-push/);
-    expect(prompt).not.toMatch(/Do not run git commands/);
-    expect(prompt).not.toMatch(/\{[a-zA-Z]\w*\}/);
+  it('only asks on a typed message: read-only, and nothing about committing', async () => {
+    // A request misread on the way in would otherwise be in their app — and,
+    // trunk-based, on the trunk — before they had seen what it was going to be.
+    const run = await runFor('ask', 'trunk');
+    expect(run.readOnly).toBe(true);
+    expect(run.promptText).toContain('make the button green');
+    expect(run.promptText).toMatch(/Proposal: yes/);
+    expect(run.promptText).not.toMatch(/git push/);
+    expect(run.promptText).not.toMatch(/\{[a-zA-Z]\w*\}/);
   });
 
-  it("leaves a feature-branch project's change uncommitted in the workspace", async () => {
-    const prompt = await promptFor();
-    expect(prompt).toMatch(/Do not run git commands/);
-    expect(prompt).not.toMatch(/git push/);
-    expect(prompt).not.toMatch(/\{[a-zA-Z]\w*\}/);
+  it('commits and pushes an approved trunk-based change, without ever force-pushing', async () => {
+    const run = await runFor('apply', 'trunk');
+    expect(run.readOnly).toBeUndefined();
+    expect(run.promptText).toMatch(/approved the change you proposed/);
+    expect(run.promptText).toMatch(/git pull --rebase --autostash/);
+    expect(run.promptText).toMatch(/Never force-push/);
+    expect(run.promptText).not.toMatch(/Do not run git commands/);
+    expect(run.promptText).not.toMatch(/\{[a-zA-Z]\w*\}/);
+  });
+
+  it("leaves a feature-branch project's approved change uncommitted in the workspace", async () => {
+    const run = await runFor('apply');
+    expect(run.promptText).toMatch(/Do not run git commands/);
+    expect(run.promptText).not.toMatch(/git push/);
+    expect(run.promptText).not.toMatch(/\{[a-zA-Z]\w*\}/);
   });
 });
 

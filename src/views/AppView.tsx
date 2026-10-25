@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AgentKind, ChatTurn, Conversation } from '../../shared/types';
+import { pendingProposal } from '../hooks/useAppChat';
 import { ProjectController } from '../hooks/useProjectController';
 import { replySoFar } from '../lib/chat';
 import { COMPONENT_LABELS } from '../lib/components';
@@ -237,13 +238,14 @@ function Thread({ c, convo }: { c: ProjectController; convo: Conversation | null
         {!convo && (
           <p className="text-[13px] leading-normal text-muted">
             A new conversation about {c.selectedApp.name}, with{' '}
-            {AGENT_LABEL[c.agentForApp(c.selectedApp.id)]}. It remembers what was said, so you can
-            keep refining.
+            {AGENT_LABEL[c.agentForApp(c.selectedApp.id)]}. Ask anything, or describe a change — it
+            says what it would do and asks first. Nothing changes until you say yes.
           </p>
         )}
         {convo?.turns.map((t) => (
           <Turn key={t.id} turn={t} log={t.runId === run?.handle.runId ? log : ''} />
         ))}
+        {convo && pendingProposal(convo) && <ProposalActions c={c} convo={convo} />}
         <div ref={end} />
       </div>
       {run && convo && (
@@ -260,7 +262,13 @@ function Thread({ c, convo }: { c: ProjectController; convo: Conversation | null
       <Composer
         c={c}
         disabled={run !== null}
-        placeholder={convo ? 'Reply…' : `Ask for a change to ${c.selectedApp.name}…`}
+        placeholder={
+          convo
+            ? pendingProposal(convo)
+              ? 'Or say what should be different…'
+              : 'Reply…'
+            : `Ask about ${c.selectedApp.name}, or describe a change…`
+        }
       />
     </>
   );
@@ -299,6 +307,58 @@ function Turn({ turn, log }: { turn: ChatTurn; log: string }) {
       {turn.restart && (
         <p className="mt-1 text-[11.5px] text-muted">Restarted the app to apply this.</p>
       )}
+      {turn.decision === 'approved' && (
+        <p className="mt-1 text-[11.5px] text-muted">You approved this change.</p>
+      )}
+      {turn.decision === 'declined' && (
+        <p className="mt-1 text-[11.5px] text-muted">You said not now — nothing was changed.</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The explicit yes. The agent has said what it would change; this is the only
+ * way anything in the app — or, trunk-based, on the trunk — actually changes.
+ */
+function ProposalActions({ c, convo }: { c: ProjectController; convo: Conversation }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="rounded-lg border border-line bg-sunken px-3 py-2.5">
+      <p className="text-[12px] leading-normal text-muted">
+        {c.trunkBased
+          ? 'Making it changes the running app, then commits and pushes it to the trunk.'
+          : 'Making it changes the running app. Nothing is committed — it reaches main through a feature.'}
+      </p>
+      {/* Feature-branch projects only: the workspace is showing a feature's
+          checkout, and the change would sit on top of it, in no feature's
+          branch and in nobody's pull request. */}
+      {!c.trunkBased && c.project.testingSlug && (
+        <p className="mt-2 rounded-md border border-warn-border bg-warn-bg px-2.5 py-1.5 text-[12px] text-warn-text">
+          The app is running the {c.project.testingSlug} feature, so this lands on top of it,
+          uncommitted. Put the workspace back on main from Plan first if it should not.
+        </p>
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={async () => {
+            setBusy(true);
+            await c.approveChange(convo.id);
+            setBusy(false);
+          }}
+          disabled={busy}
+          className="btn-primary h-7 px-3 text-[12.5px] disabled:opacity-50"
+        >
+          {busy ? 'Starting…' : 'Make this change'}
+        </button>
+        <button
+          onClick={() => c.declineChange(convo.id)}
+          disabled={busy}
+          className="h-7 rounded-md px-2.5 text-[12.5px] text-muted hover:bg-hoverfill hover:text-ink"
+        >
+          Not now
+        </button>
+      </div>
     </div>
   );
 }
@@ -323,15 +383,6 @@ function Composer({
   };
   return (
     <div className="border-t border-line p-3">
-      {/* Feature-branch projects only: the workspace is showing a feature's
-          checkout, and an edit made now would sit on top of it, in no
-          feature's branch and in nobody's pull request. */}
-      {!c.trunkBased && c.project.testingSlug && (
-        <p className="mb-2 rounded-md border border-warn-border bg-warn-bg px-2.5 py-1.5 text-[12px] text-warn-text">
-          The app is running the {c.project.testingSlug} feature. A change asked for here lands on
-          top of it, uncommitted — put the workspace back on main from Plan first if it should not.
-        </p>
-      )}
       {c.chatError && (
         <p className="mb-2 rounded-md border border-danger/30 bg-red-50 px-2.5 py-1.5 text-[12px] text-danger">
           {c.chatError}

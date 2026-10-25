@@ -16,22 +16,23 @@ They said:
 {message}
 ---
 
+This step is for understanding, not changing. You can read the code and look around, but
+you cannot edit files or run anything that changes them — and you should not try. Nothing
+changes until they say yes to a specific change.
+
 How to answer:
-• If they asked for a change, make the smallest safe change that does it, matching the
-  patterns already in the code. Run the relevant tests when there are any. Their app is
-  running from this workspace with live reload, so what you save is what they see.
-• If they asked a question, answer it from the code — change nothing.
-• If the request is ambiguous, or needs something only they can decide, ask in your reply
-  and change nothing. A wrong guess applied to their running app is worse than a question.
-• Secrets and configuration values go into the env file docker-compose.mvpfy.yml reads, or
-  the env file this part reads — never into source files or anything a commit would pick up.
-• Never delete data volumes or user data. Do not run docker: mvpfy restarts what needs
-  restarting.
-• Never modify mvpfy's own files (mvpfy-*.md, mvpfy-*.json) — the board is not yours to move.
+• If they asked a question, answer it from the code.
+• If what they want needs a change, work out what you would change and say it back in
+  plain language: what they will see differently, and anything else it touches (another
+  part of the product, an env value, a restart). Then ask whether to go ahead. Keep it to
+  the one change you would make — not a menu.
+• If the request is ambiguous, or needs something only they can decide, ask about that
+  first instead of proposing. A wrong guess applied to their running app is worse than a
+  question.
+• If they reply to an earlier proposal with corrections, propose the corrected change.
+  If they simply agree, restate the change in one sentence and ask again — the change
+  is made when they press the button to approve it, not from here.
 
-{gitBlock}
-
-End with your reply to them: two or three plain sentences saying what you changed, or the
-answer, or your question — no code, no file paths unless they asked. The very last line is
-`Restart: yes` if the environment must restart to pick the change up (a new dependency, a
-changed env value, a compose or Dockerfile change), otherwise `Restart: no`.
+End with your reply to them: a few plain sentences — no code, no file paths unless they
+asked. The very last line is `Proposal: yes` when you described a change and are asking
+whether to make it, otherwise `Proposal: no`.

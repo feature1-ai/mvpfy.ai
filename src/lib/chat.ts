@@ -138,24 +138,41 @@ function messages(log: string): { texts: string[]; final: string | null; error: 
 /** What the agent has said so far, while it is still working. */
 export function replySoFar(log: string): string | null {
   const { texts } = messages(log);
-  return texts.length > 0 ? stripRestart(texts[texts.length - 1]).text : null;
+  return texts.length > 0 ? stripMarkers(texts[texts.length - 1]).text : null;
+}
+
+/** What an agent's reply says, once its closing lines are read off it. */
+export interface AgentReply {
+  text: string;
+  /** The environment must restart to pick the change up. */
+  restart: boolean;
+  /** It is asking whether it may make the change it described. */
+  proposal: boolean;
+  error: string | null;
 }
 
 /**
- * The agent's answer once its run has ended, and whether it asked for a
- * restart. Claude's closing `result` is the answer; codex has none, so its
- * last message is.
+ * The agent's answer once its run has ended. Claude's closing `result` is the
+ * answer; codex has none, so its last message is.
  */
-export function agentReply(log: string): { text: string; restart: boolean; error: string | null } {
+export function agentReply(log: string): AgentReply {
   const { texts, final, error } = messages(log);
   const answer = final ?? texts[texts.length - 1] ?? '';
-  const { text, restart } = stripRestart(answer);
-  return { text, restart, error };
+  return { ...stripMarkers(answer), error };
 }
 
-/** Split off the `Restart: yes|no` line the prompt asks every reply to end with. */
-export function stripRestart(text: string): { text: string; restart: boolean } {
-  const match = /\n?\s*\**Restart:\s*(yes|no)\**\s*$/i.exec(text);
-  if (!match) return { text: text.trim(), restart: false };
-  return { text: text.slice(0, match.index).trim(), restart: match[1].toLowerCase() === 'yes' };
+/**
+ * Split off the `Proposal: yes|no` and `Restart: yes|no` lines the prompts ask
+ * a reply to end with, in whichever order they came and however dressed.
+ */
+export function stripMarkers(text: string): { text: string; restart: boolean; proposal: boolean } {
+  const found: Record<string, boolean> = {};
+  let rest = text;
+  for (;;) {
+    const match = /\n?\s*\**(Restart|Proposal):\s*(yes|no)\**\s*$/i.exec(rest);
+    if (!match) break;
+    found[match[1].toLowerCase()] = match[2].toLowerCase() === 'yes';
+    rest = rest.slice(0, match.index);
+  }
+  return { text: rest.trim(), restart: found.restart ?? false, proposal: found.proposal ?? false };
 }

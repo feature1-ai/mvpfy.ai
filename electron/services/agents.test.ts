@@ -105,6 +105,32 @@ describe('session flags', () => {
   });
 });
 
+describe('read-only runs', () => {
+  const opts = { repoPath: '/w/proj', promptFile: '/tmp/p.txt' };
+
+  it('lets claude look but not change anything', () => {
+    // In print mode a tool outside --allowedTools is refused, not asked about,
+    // so without the bypass flag this list is all it can do.
+    const cmd = claudeCommandFor({ readOnly: true }, opts);
+    expect(cmd).not.toContain('--dangerously-skip-permissions');
+    expect(cmd).toContain('--allowedTools');
+    expect(cmd).toContain('Read Grep Glob');
+    expect(cmd).not.toMatch(/\bEdit\b|\bWrite\b/);
+  });
+
+  it('puts codex in its read-only sandbox, resumed or not', () => {
+    expect(codexCommandFor({ readOnly: true }, opts)).toContain('--sandbox read-only');
+    expect(codexCommandFor({ readOnly: true, session: { id: 't', resume: true } }, opts)).toContain(
+      '--sandbox read-only'
+    );
+  });
+
+  it('leaves a run that may change things as it was', () => {
+    expect(claudeCommandFor({}, opts)).toContain('--dangerously-skip-permissions');
+    expect(codexCommandFor({}, opts)).toContain('--sandbox danger-full-access');
+  });
+});
+
 describe('codexCommandFor', () => {
   const opts = { repoPath: '/w/proj', promptFile: '/tmp/p.txt' };
 
@@ -118,7 +144,7 @@ describe('codexCommandFor', () => {
 
   it('continues the feature thread once one is known', () => {
     const cmd = codexCommandFor({ session: { id: 'thread-1', resume: true } }, opts);
-    expect(cmd).toContain("codex exec resume 'thread-1'");
+    expect(cmd).toContain("--json resume 'thread-1' - ");
   });
 
   it('never invents an id for a thread codex has not opened', () => {
@@ -129,12 +155,14 @@ describe('codexCommandFor', () => {
     expect(cmd).not.toContain('invented');
   });
 
-  it('keeps resume ahead of the flags, where the subcommand belongs', () => {
+  it('puts the exec options ahead of resume, which rejects --sandbox after it', () => {
     const cmd = codexCommandFor(
       { session: { id: 't', resume: true }, model: 'gpt-5', images: ['/tmp/a.png'] },
       { ...opts, mcpFlag: '--mcp x ' }
     );
-    expect(cmd).toMatch(/codex exec resume 't' --mcp x --image '\/tmp\/a\.png' --model 'gpt-5'/);
+    expect(cmd).toMatch(
+      /codex exec --mcp x --image '\/tmp\/a\.png' --model 'gpt-5' --sandbox danger-full-access --skip-git-repo-check --json resume 't' - /
+    );
   });
 
   it('reads the prompt from the file rather than the command line', () => {

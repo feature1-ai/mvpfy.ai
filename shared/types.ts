@@ -137,6 +137,12 @@ export interface ChatTurn {
   status?: 'running' | 'done' | 'failed' | 'stopped';
   /** The agent said the environment must restart to pick the change up. */
   restart?: boolean;
+  /** The agent described a change and is asking whether it may make it. */
+  proposal?: boolean;
+  /** What the person said to that proposal. */
+  decision?: 'approved' | 'declined';
+  /** This turn made a change (it ran with leave to edit), rather than only answering. */
+  applied?: boolean;
 }
 
 /**
@@ -416,6 +422,11 @@ export interface RunAgentRequest {
   mcp?: RunAgentMcp;
   /** When set, the run opens or continues a named conversation. */
   session?: RunSession;
+  /**
+   * The agent may read and answer but not change anything: no edits, no
+   * commands beyond looking. Enforced by the CLI, not asked of the model.
+   */
+  readOnly?: boolean;
   /**
    * Images the agent should look at — a feature's design. Codex takes these as
    * --image arguments; Claude Code opens them from the paths in the prompt,

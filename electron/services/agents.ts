@@ -92,14 +92,14 @@ export function removeQuietly(targets: string[]): void {
  * what every caller and test in the Electron app already asks for.
  */
 export function claudeCommandFor(
-  req: Pick<RunAgentRequest, 'model' | 'session'>,
+  req: Pick<RunAgentRequest, 'model' | 'session' | 'readOnly'>,
   opts: { repoPath: string; promptFile: string; mcpConfig?: string }
 ): string {
   return buildClaudeCommand(req, opts, desktopShell);
 }
 
 export function codexCommandFor(
-  req: Pick<RunAgentRequest, 'model' | 'session' | 'images'>,
+  req: Pick<RunAgentRequest, 'model' | 'session' | 'images' | 'readOnly'>,
   opts: { repoPath: string; promptFile: string; mcpFlag?: string }
 ): string {
   return buildCodexCommand(req, opts, desktopShell);

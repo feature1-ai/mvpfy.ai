@@ -1,4 +1,5 @@
 import { AgentKind } from './agentRun';
+import { SavedRunner, isExpired } from './runnerCredential';
 
 /**
  * Everything the worker needs from its environment.
@@ -44,26 +45,52 @@ function intFrom(value: string | undefined, fallback: number, name: string): num
   return parsed;
 }
 
-export function configFromEnv(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
-  const fake = env.MVPFY_FAKE_FEATURE1 === '1';
+/** Where the worker keeps everything, which is also where setup leaves its credential. */
+export function workerRootFrom(env: NodeJS.ProcessEnv = process.env): string {
+  const root = (env.MVPFY_WORKER_ROOT ?? '/var/lib/mvpfy').trim();
+  if (!root.startsWith('/')) throw new Error('MVPFY_WORKER_ROOT must be an absolute path');
+  return root;
+}
 
-  const baseUrl = (env.MVPFY_FEATURE1_URL ?? '').trim();
+/**
+ * @param saved What `setup` left on the worker's volume, if it has run. The
+ *   environment wins where both speak: an operator who sets a variable has
+ *   said what they want, and a file from an earlier setup has not.
+ */
+export function configFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  saved: SavedRunner | null = null,
+  now: Date = new Date()
+): WorkerConfig {
+  const fake = env.MVPFY_FAKE_FEATURE1 === '1';
+  const envToken = (env.MVPFY_RUNNER_TOKEN ?? '').trim();
+  const baseUrl = (env.MVPFY_FEATURE1_URL ?? '').trim() || (saved?.feature1BaseUrl ?? '');
   if (!fake && !baseUrl) {
-    throw new Error('MVPFY_FEATURE1_URL is required (or set MVPFY_FAKE_FEATURE1=1 to run offline)');
+    throw new Error(
+      'This runner has not been set up. Run it once with `setup` to sign in, or set ' +
+        'MVPFY_FEATURE1_URL and MVPFY_RUNNER_TOKEN (MVPFY_FAKE_FEATURE1=1 runs offline)'
+    );
   }
-  const runnerToken = (env.MVPFY_RUNNER_TOKEN ?? '').trim();
+  if (!fake && !envToken && saved && isExpired(saved, now)) {
+    // Said here rather than discovered as a 401 on the first claim, which
+    // reads like an outage.
+    throw new Error(
+      `The runner credential from setup expired at ${saved.expiresAt}. Run \`setup\` again ` +
+        'to renew it'
+    );
+  }
+  const runnerToken = envToken || (saved?.token ?? '');
   // Checked for shape at start-up: Feature1 answers 401 to anything that is
   // not 64 hex characters, and an outage is a worse thing to suspect than a
   // mistyped variable.
   if (!fake && !/^[0-9a-f]{64}$/.test(runnerToken)) {
     throw new Error(
       'MVPFY_RUNNER_TOKEN must be the 64-character runner credential an organisation ' +
-        'admin minted with POST /api/implementation-runs/runners/credentials'
+        'admin minted with POST /api/implementation-runs/runners/credentials — or leave it ' +
+        'unset and run `setup`, which obtains one'
     );
   }
-
-  const root = (env.MVPFY_WORKER_ROOT ?? '/var/lib/mvpfy').trim();
-  if (!root.startsWith('/')) throw new Error('MVPFY_WORKER_ROOT must be an absolute path');
+  const root = workerRootFrom(env);
 
   const agent = (env.MVPFY_AGENT ?? 'claude').trim();
   if (agent !== 'claude' && agent !== 'codex') {

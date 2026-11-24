@@ -36,6 +36,53 @@ docker run -d --name mvpfy-worker \
   mvpfy-worker
 ```
 
+### Set up once, then run
+
+Instead of handing the worker a runner credential and a `GH_TOKEN`, sign it in
+once. The sign-ins are kept on the worker's volume, so the container can be
+replaced and still be signed in.
+
+```sh
+docker run --rm -it -v mvpfy-worker:/var/lib/mvpfy mvpfy-worker setup
+```
+
+Setup is the desktop app's onboarding for a machine with no window. Each step
+prints a code and an address to open on any other device:
+
+1. **GitHub** — `gh`'s own browser sign-in.
+2. **The coding agent** — Claude Code's sign-in, or Codex's device sign-in when
+   `MVPFY_AGENT=codex`. Skipped when an API key is already in the environment.
+3. **Feature1** — the workspace address and a personal token from Feature1 →
+   Settings, belonging to an organisation admin. The token is checked against
+   the workspace, used once to add this runner, and not kept. What is kept is
+   the runner credential it obtained, in `runner.json` on the volume.
+
+After each step setup checks that the sign-in actually took, and it reports
+that check rather than the command's exit. Steps already in place are left
+alone, so running it again only does what is missing.
+
+Then run the worker with no credentials in its environment:
+
+```sh
+docker run -d --name mvpfy-worker -v mvpfy-worker:/var/lib/mvpfy mvpfy-worker
+```
+
+Three things to know:
+
+- **The runner credential lasts 24 hours.** That is Feature1's rule. The worker
+  refuses to start on a lapsed one and says so; run `setup` again to renew it.
+  Setup renews one with less than an hour left. A runner that should stay up
+  unattended needs this renewed on a schedule until Feature1 issues longer
+  ones.
+- **The GitHub sign-in is a person's.** The worker reads the token from `gh` at
+  start-up and gives it to its own clone, fetch and push only. The agent's
+  environment has `GH_CONFIG_DIR` removed, so `gh` inside an agent run is signed
+  out — though, as [Isolation](#isolation) says, that is a narrowing and not a
+  boundary while agent and worker run as the same user.
+- **Variables still win.** `MVPFY_FEATURE1_URL`, `MVPFY_RUNNER_TOKEN` and
+  `GH_TOKEN` override what setup saved. To script the Feature1 step, set
+  `MVPFY_FEATURE1_URL` and `MVPFY_FEATURE1_TOKEN` for the `setup` run.
+
 ### Configuration
 
 | Variable                      | Default                  | What it is                                                                                                                                                                                          |

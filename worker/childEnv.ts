@@ -21,6 +21,8 @@ const WORKER_ONLY = [
   /^GITHUB_TOKEN$/,
   /^GH_ENTERPRISE_TOKEN$/,
   /^GITHUB_ENTERPRISE_TOKEN$/,
+  // Where gh keeps the login setup made. Without it the agent's gh is signed out.
+  /^GH_CONFIG_DIR$/,
 ];
 
 /** What the agent itself signs in with — not needed by a repo's checks. */

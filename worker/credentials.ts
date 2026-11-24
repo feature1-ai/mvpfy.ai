@@ -216,3 +216,19 @@ export function operatorGithubToken(env: NodeJS.ProcessEnv = process.env): strin
   const value = (env.GH_TOKEN ?? env.GITHUB_TOKEN ?? '').trim();
   return value || null;
 }
+
+/**
+ * The token of the GitHub login `setup` made, asked of gh itself.
+ *
+ * Asked once at start-up and then handed to the worker's own git and gh the
+ * same way an operator's `GH_TOKEN` is. The alternative — `gh auth
+ * setup-git` — makes gh the credential helper for every git on the machine,
+ * which includes the agent's.
+ */
+export async function ghLoginToken(
+  run: (command: string) => Promise<{ code: number | null; stdout: string }>
+): Promise<string | null> {
+  const result = await run('gh auth token --hostname github.com');
+  const token = result.stdout.trim();
+  return result.code === 0 && /^[\x21-\x7e]{8,4096}$/.test(token) ? token : null;
+}

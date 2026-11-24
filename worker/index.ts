@@ -1,6 +1,6 @@
 import { CliAgentRunner } from './agentRun';
-import { configFromEnv, secretsIn } from './config';
-import { ExecutionCredentialSession, operatorGithubToken } from './credentials';
+import { configFromEnv, secretsIn, workerRootFrom } from './config';
+import { ExecutionCredentialSession, ghLoginToken, operatorGithubToken } from './credentials';
 import { ExecutionEngine } from './engine';
 import { ShellRunner } from './exec';
 import { FakeFeature1 } from './fakeFeature1';
@@ -10,6 +10,11 @@ import { Layout } from './layout';
 import { PullRequests } from './prs';
 import { Redactor } from './redact';
 import { ExecutionStore } from './store';
+import { Feature1Login } from './feature1Login';
+import { RunnerCredentialStore, timeLeft } from './runnerCredential';
+import { agentStep, feature1Step, githubStep, runSetup } from './setup';
+import { ShellSetupCommands, TerminalIo } from './setupIo';
+import { ensureSignInFolders } from './signInFolders';
 import { Feature1Transport } from './transport';
 import { Verifier } from './verify';
 import { Worker } from './worker';
@@ -33,7 +38,9 @@ export async function main(): Promise<void> {
     // Every command is built for and run through /bin/sh.
     throw new Error('The mvpfy worker runs on Linux or macOS, not Windows');
   }
-  const config = configFromEnv();
+  ensureSignInFolders();
+  const saved = new RunnerCredentialStore(workerRootFrom()).load();
+  const config = configFromEnv(process.env, saved);
   const redactor = new Redactor().remember(...secretsIn(config));
   const layout = new Layout(config.root);
   const store = new ExecutionStore(layout);
@@ -52,7 +59,17 @@ export async function main(): Promise<void> {
 
   // What the claim issues wins; the operator's GH_TOKEN is what a self-hosted
   // worker falls back to when Feature1 issues nothing.
-  const credentials = new ExecutionCredentialSession(operatorGithubToken());
+  const probe = new ShellSetupCommands();
+  const github = operatorGithubToken() ?? (await ghLoginToken((command) => probe.probe(command)));
+  if (github) redactor.remember(github);
+  else if (!config.fake) {
+    log('no GitHub sign-in found: private repositories will not clone until `setup` is run');
+  }
+  if (saved && !process.env.MVPFY_RUNNER_TOKEN?.trim()) {
+    redactor.remember(saved.token);
+    log(`using the runner credential from setup; it lasts another ${timeLeft(saved)}`);
+  }
+  const credentials = new ExecutionCredentialSession(github);
 
   const engine = new ExecutionEngine({
     transport,
@@ -113,8 +130,40 @@ export async function main(): Promise<void> {
   await worker.loop();
 }
 
+/**
+ * `setup`: the sign-ins this runner needs, done once and kept on its volume.
+ * Resolves with the process's exit code.
+ */
+export async function setup(): Promise<number> {
+  if (process.platform === 'win32') {
+    throw new Error('The mvpfy worker runs on Linux or macOS, not Windows');
+  }
+  const agent = (process.env.MVPFY_AGENT ?? 'claude').trim();
+  if (agent !== 'claude' && agent !== 'codex') {
+    throw new Error(`MVPFY_AGENT must be claude or codex, not ${JSON.stringify(agent)}`);
+  }
+  ensureSignInFolders();
+  const io = new TerminalIo();
+  const commands = new ShellSetupCommands();
+  const result = await runSetup(
+    [
+      githubStep(commands),
+      agentStep(agent, commands),
+      feature1Step({
+        io,
+        login: new Feature1Login(),
+        store: new RunnerCredentialStore(workerRootFrom()),
+        name: (process.env.MVPFY_WORKER_NAME ?? 'mvpfy worker').trim(),
+      }),
+    ],
+    io
+  );
+  return result.ok ? 0 : 1;
+}
+
 if (require.main === module) {
-  main().catch((error: Error) => {
+  const start = process.argv[2] === 'setup' ? setup().then((code) => process.exit(code)) : main();
+  start.catch((error: Error) => {
     log(`worker stopped: ${error.message}`);
     process.exit(1);
   });

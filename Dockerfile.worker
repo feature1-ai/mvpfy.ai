@@ -67,8 +67,13 @@ USER mvpfy
 # Everything durable lives here: the clones, the worktrees, the checkpoints.
 # Mount it, or a restart loses work that was in flight.
 VOLUME ["/var/lib/mvpfy"]
+# The sign-ins `setup` makes live on the volume, not in the container's home:
+# a container that is replaced must come back still signed in.
 ENV MVPFY_WORKER_ROOT=/var/lib/mvpfy \
     HOME=/home/mvpfy \
+    GH_CONFIG_DIR=/var/lib/mvpfy/auth/gh \
+    CLAUDE_CONFIG_DIR=/var/lib/mvpfy/auth/claude \
+    CODEX_HOME=/var/lib/mvpfy/auth/codex \
     NODE_ENV=production
 
 # No EXPOSE, and nothing listens. Every connection the worker makes is

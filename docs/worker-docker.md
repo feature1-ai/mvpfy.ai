@@ -97,6 +97,10 @@ Three things to know:
 | `MVPFY_UNIT_ATTEMPTS`         | `3`                      | Tries each story gets before the execution fails: the first build, then repairs fed the failing check's output. `1` turns repair off. At most 5.                                                    |
 | `MVPFY_WORKER_NAME`           | `mvpfy worker <host>`    | This worker's own logs, **and the name `setup` registers the runner under** — what an organisation admin reads when deciding which runner to revoke. The default carries the host name, which in a container is its id; set it per runner to something you will recognise. |
 | `MVPFY_FEATURE1_TOKEN`        | —                        | Read by `setup` only, to script the Feature1 step. An organisation admin's personal token from Feature1 → Settings. Used for two requests and never written to the volume — the runner credential it obtains is what is kept. |
+| `MVPFY_SECRETS_DIR`           | `MVPFY_WORKER_ROOT`      | Where `setup` leaves the runner credential and the worker reads it. Set it, with `GH_CONFIG_DIR`, to somewhere the sandbox does not mount. |
+| `MVPFY_SANDBOX_URL`           | —                        | `http://host:port` of a sandbox. When set, the agent and the checks run there instead of here. Needs `MVPFY_SANDBOX_TOKEN`. |
+| `MVPFY_SANDBOX_TOKEN`         | —                        | At least 32 random characters, the same for a worker and its sandbox. |
+| `MVPFY_SANDBOX_PORT`          | `7070`                   | Read by `sandbox` only: the port it listens on. |
 | `MVPFY_FAKE_FEATURE1`         | —                        | `1` runs against the in-process fake. No server, no credential, nothing real.                                                                                                                       |
 
 There is no tenant setting and no concurrency setting: the credential decides
@@ -188,6 +192,61 @@ So the container is the security boundary, not the agent. What that requires:
 - **No inbound anything.** There is no port, no `EXPOSE`, and no execution
   endpoint. Do not add one: the outbound-only shape is why the worker needs no
   authentication surface of its own.
+
+## Keeping the agent away from the worker's credentials
+
+By default the agent and the repositories' own checks run in the worker's
+container, as the worker's user. The worker takes its credentials out of their
+environment, but they can still read its files and its `/proc`. With a GitHub
+sign-in on the volume, that is the signed-in person's token.
+
+A sandbox closes that. Run the same image a second time with the `sandbox`
+command, sharing the worker's root and nothing else:
+
+```sh
+TOKEN=$(openssl rand -hex 32)
+docker network create mvpfy
+
+docker run -d --name mvpfy-sandbox --network mvpfy \
+  -v mvpfy-work:/var/lib/mvpfy \
+  -v mvpfy-agent:/var/lib/mvpfy-agent \
+  -e CLAUDE_CONFIG_DIR=/var/lib/mvpfy-agent/claude \
+  -e CODEX_HOME=/var/lib/mvpfy-agent/codex \
+  -e MVPFY_SANDBOX_TOKEN=$TOKEN \
+  mvpfy-worker sandbox
+
+docker run -d --name mvpfy-worker --network mvpfy \
+  -v mvpfy-work:/var/lib/mvpfy \
+  -v mvpfy-secrets:/var/lib/mvpfy-secrets \
+  -e GH_CONFIG_DIR=/var/lib/mvpfy-secrets/gh \
+  -e MVPFY_SECRETS_DIR=/var/lib/mvpfy-secrets \
+  -e CLAUDE_CONFIG_DIR=/var/lib/mvpfy-agent/claude \
+  -e CODEX_HOME=/var/lib/mvpfy-agent/codex \
+  -e MVPFY_SANDBOX_URL=http://mvpfy-sandbox:7070 \
+  -e MVPFY_SANDBOX_TOKEN=$TOKEN \
+  mvpfy-worker
+```
+
+Run `setup` with all three volumes mounted and the same variables, so each
+sign-in lands on the volume its container will have.
+
+The worker then sends the agent's command and every check to the sandbox and
+waits for the result. It keeps git fetch and push, `gh`, and Feature1 for
+itself. The sandbox has the checkouts and the agent's own sign-in; the GitHub
+sign-in and the runner credential are on a volume it never mounts.
+
+What this does not close:
+
+- **Git still runs in the worker's container, on checkouts the agent can
+  write.** The worker turns off hooks, the fsmonitor and foreign credential
+  helpers for the commands that carry a token, but a repository's git
+  configuration has other ways to name a program to run. A checkout written
+  to deliberately attack the worker is not yet stopped by this. Closing it
+  means the worker pushing from a clone the sandbox cannot write.
+- **The agent's own sign-in is the agent's to read.** It has to be.
+- **The sandbox token is not a secret from the sandbox.** It keeps other
+  things on the network from running commands in these checkouts. Code already
+  in the sandbox can read it and gains nothing it did not have.
 
 ## Stopping it
 

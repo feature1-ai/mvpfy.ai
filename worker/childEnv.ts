@@ -10,8 +10,8 @@
  * comes away with nothing that can act as the worker.
  *
  * This is a narrowing, not a sandbox: a process running as the same user can
- * still read the worker's own environment from /proc. Running agent and
- * checks as a separate user is what closes that.
+ * still read the worker's own environment from /proc. Running the agent and
+ * the checks somewhere else is what closes that: see sandbox.ts.
  */
 
 /** Credentials only the worker uses: Feature1 and GitHub. */

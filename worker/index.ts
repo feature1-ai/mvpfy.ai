@@ -1,14 +1,23 @@
 import { CliAgentRunner } from './agentRun';
-import { commandFrom, configFromEnv, secretsIn, workerNameFrom, workerRootFrom } from './config';
+import {
+  commandFrom,
+  configFromEnv,
+  secretsDirFrom,
+  secretsIn,
+  workerNameFrom,
+  workerRootFrom,
+} from './config';
 import { ExecutionCredentialSession, ghLoginToken, operatorGithubToken } from './credentials';
 import { ExecutionEngine } from './engine';
-import { ShellRunner } from './exec';
+import { CommandRunner, ShellRunner } from './exec';
 import { FakeFeature1 } from './fakeFeature1';
 import { Git } from './git';
 import { HttpFeature1Transport } from './httpTransport';
 import { Layout } from './layout';
 import { PullRequests } from './prs';
 import { Redactor } from './redact';
+import { RemoteRunner, sandboxClientFrom } from './remoteRunner';
+import { SandboxServer, sandboxServerConfigFrom } from './sandbox';
 import { ExecutionStore } from './store';
 import { Feature1Login } from './feature1Login';
 import { RunnerCredentialStore, timeLeft } from './runnerCredential';
@@ -39,7 +48,7 @@ export async function main(): Promise<void> {
     throw new Error('The mvpfy worker runs on Linux or macOS, not Windows');
   }
   ensureSignInFolders();
-  const saved = new RunnerCredentialStore(workerRootFrom()).load();
+  const saved = new RunnerCredentialStore(secretsDirFrom()).load();
   const config = configFromEnv(process.env, saved);
   const redactor = new Redactor().remember(...secretsIn(config));
   const layout = new Layout(config.root);
@@ -71,14 +80,27 @@ export async function main(): Promise<void> {
   }
   const credentials = new ExecutionCredentialSession(github);
 
+  // Code the worker did not write — the agent, and the repositories' own
+  // checks — runs in the sandbox when there is one. Git, gh and Feature1 stay
+  // here, with the credentials the sandbox never sees.
+  const sandbox = sandboxClientFrom(process.env);
+  let untrusted: CommandRunner = runner;
+  if (sandbox) {
+    redactor.remember(sandbox.token);
+    const remote = new RemoteRunner(sandbox, redactor);
+    await remote.ready();
+    untrusted = remote;
+    log(`running the agent and the checks in the sandbox at ${sandbox.url}`);
+  }
+
   const engine = new ExecutionEngine({
     transport,
     store,
     layout,
     git: new Git(runner, layout, process.env, credentials.git),
-    verifier: new Verifier(runner, redactor),
+    verifier: new Verifier(untrusted, redactor),
     pullRequests: new PullRequests(runner, redactor, process.env, credentials.gh),
-    agent: new CliAgentRunner(runner),
+    agent: new CliAgentRunner(untrusted),
     redactor,
     agentKind: config.agent,
     unitAttempts: config.unitAttempts,
@@ -152,7 +174,7 @@ export async function setup(): Promise<number> {
       feature1Step({
         io,
         login: new Feature1Login(),
-        store: new RunnerCredentialStore(workerRootFrom()),
+        store: new RunnerCredentialStore(secretsDirFrom()),
         name: workerNameFrom(),
       }),
     ],
@@ -161,9 +183,34 @@ export async function setup(): Promise<number> {
   return result.ok ? 0 : 1;
 }
 
+/**
+ * `sandbox`: run what a worker sends, and hold nothing of the worker's.
+ * See sandbox.ts for why this is a separate container.
+ */
+export async function sandbox(): Promise<void> {
+  if (process.platform === 'win32') {
+    throw new Error('The mvpfy worker runs on Linux or macOS, not Windows');
+  }
+  ensureSignInFolders();
+  const config = sandboxServerConfigFrom(process.env, workerRootFrom());
+  const server = new SandboxServer(config, new ShellRunner(), log);
+  const port = await server.listen();
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(signal, () => {
+      log(`${signal} — cancelling what is running and stopping`);
+      void server.close().then(() => process.exit(0));
+    });
+  }
+  log(`sandbox is taking commands on port ${port}, for work under ${config.root}`);
+}
+
 if (require.main === module) {
-  const start = (async () =>
-    commandFrom(process.argv) === 'setup' ? process.exit(await setup()) : main())();
+  const start = (async () => {
+    const command = commandFrom(process.argv);
+    if (command === 'setup') process.exit(await setup());
+    if (command === 'sandbox') return sandbox();
+    return main();
+  })();
   start.catch((error: Error) => {
     log(`worker stopped: ${error.message}`);
     process.exit(1);

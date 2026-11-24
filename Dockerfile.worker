@@ -60,8 +60,11 @@ COPY --from=build /build/dist-worker ./dist-worker
 # code from them; root in the container is one bug away from root on the
 # volume, and anything mounted into it.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin mvpfy \
- && mkdir -p /var/lib/mvpfy \
- && chown -R mvpfy:mvpfy /var/lib/mvpfy /app
+ && mkdir -p /var/lib/mvpfy /var/lib/mvpfy-secrets /var/lib/mvpfy-agent \
+ && chown -R mvpfy:mvpfy /var/lib/mvpfy /var/lib/mvpfy-secrets /var/lib/mvpfy-agent /app
+# The other two exist for a worker split from its sandbox (docs/worker-docker.md):
+# a new volume mounted on a path the image has takes that path's owner, and on
+# one it does not have is root's, which this user could not write to.
 USER mvpfy
 
 # Everything durable lives here: the clones, the worktrees, the checkpoints.

@@ -54,13 +54,15 @@ function intFrom(value: string | undefined, fallback: number, name: string): num
  * second worker claiming executions against the same volume as the one
  * already running, believing they were signing in.
  */
-export function commandFrom(argv: string[]): 'run' | 'setup' {
+export function commandFrom(argv: string[]): 'run' | 'setup' | 'sandbox' {
   const args = argv.slice(2);
   if (args.length === 0) return 'run';
   if (args.length === 1 && args[0] === 'setup') return 'setup';
+  if (args.length === 1 && args[0] === 'sandbox') return 'sandbox';
   throw new Error(
     `Unrecognised argument ${JSON.stringify(args.join(' '))}. The worker takes either ` +
-      'no arguments, to claim work, or `setup`, to sign in once.'
+      'no arguments, to claim work, `setup`, to sign in once, or `sandbox`, to run what ' +
+      'another worker sends it.'
   );
 }
 
@@ -69,6 +71,18 @@ export function workerRootFrom(env: NodeJS.ProcessEnv = process.env): string {
   const root = (env.MVPFY_WORKER_ROOT ?? '/var/lib/mvpfy').trim();
   if (!root.startsWith('/')) throw new Error('MVPFY_WORKER_ROOT must be an absolute path');
   return root;
+}
+
+/**
+ * Where the runner credential is kept. The worker's root unless told
+ * otherwise, which a split deployment does: the root is shared with the
+ * sandbox, and the credential must be somewhere the sandbox cannot see.
+ */
+export function secretsDirFrom(env: NodeJS.ProcessEnv = process.env): string {
+  const dir = (env.MVPFY_SECRETS_DIR ?? '').trim();
+  if (!dir) return workerRootFrom(env);
+  if (!dir.startsWith('/')) throw new Error('MVPFY_SECRETS_DIR must be an absolute path');
+  return dir;
 }
 
 /**

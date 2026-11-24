@@ -23,6 +23,7 @@ export interface PullRequestRecord {
 import { CommandRunner } from './exec';
 import { posixQuote, parseGitHubRepo } from './git';
 import { Redactor } from './redact';
+import { CommandAuth, noAuth } from './credentials';
 
 /**
  * Opening exactly one pull request per repository per execution, however
@@ -63,13 +64,15 @@ export class PullRequests {
   constructor(
     private readonly runner: CommandRunner,
     private readonly redactor: Redactor,
-    private readonly env: NodeJS.ProcessEnv = process.env
+    private readonly env: NodeJS.ProcessEnv = process.env,
+    /** Authorises each command as it runs, so a token can change mid-life. */
+    private readonly auth: CommandAuth = noAuth
   ) {}
 
   private async gh(cwd: string, args: string, timeoutMs = 120_000) {
     return this.runner.run(`gh ${args}`, {
       cwd,
-      env: { ...this.env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' },
+      env: this.auth.apply({ ...this.env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' }),
       timeoutMs,
     });
   }

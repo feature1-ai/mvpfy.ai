@@ -99,6 +99,47 @@ export interface RepositoryResultRecord {
   attempt?: number;
 }
 
+// -- Credentials for one execution ------------------------------------------
+
+/**
+ * A token that lets git and gh act on this execution's repositories.
+ *
+ * Minted by Feature1 from its GitHub app, scoped to the repositories the
+ * execution authorises, and short-lived. The worker holds it; the coding
+ * agent and the repository's own scripts never see it.
+ */
+export interface GitHubCredential {
+  token: string;
+  /** ISO. Informational: a fresher one arrives on a progress response. */
+  expires_at?: string | null;
+}
+
+/**
+ * Read-only access to Feature1's MCP server, for the coding agent.
+ *
+ * The one credential that is meant to reach the agent, which is why it must
+ * be worth nothing beyond reading: Feature1 scopes it to this execution's
+ * project, refuses every tool that writes, and expires it with the lease.
+ */
+export interface McpCredential {
+  url: string;
+  token: string;
+  expires_at?: string | null;
+}
+
+/**
+ * What the claim may carry so the worker needs nothing but its runner token.
+ *
+ * Optional, and additive to protocol version 1: a server that sends none
+ * leaves the worker on whatever its operator configured (`GH_TOKEN`), which
+ * is how a self-hosted worker runs today. Never written to a checkpoint and
+ * never reported — each claim brings its own.
+ */
+export interface ExecutionCredentials {
+  github?: GitHubCredential;
+  feature1_mcp?: McpCredential;
+}
+
 // -- The claimed execution --------------------------------------------------
 
 export type ExecutionState =
@@ -159,6 +200,8 @@ export interface Execution {
   lease_token: string;
   /** ISO. Three minutes, extended by each successful progress call. */
   lease_until: string | null;
+  /** Per-execution credentials, when Feature1 issues them. See above. */
+  credentials?: ExecutionCredentials;
 }
 
 // -- What the worker reports ------------------------------------------------

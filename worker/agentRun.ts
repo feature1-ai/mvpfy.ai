@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { claudeCommandFor, codexCommandFor, posixShell } from '../shared/agentCommands';
+import { AgentMcpServer, claudeMcpConfig, codexMcpOverride } from '../shared/agentMcp';
 import { agentEnv } from './childEnv';
 import { CommandRunner, CommandResult } from './exec';
 
@@ -34,6 +35,11 @@ export interface AgentRunner {
     cwd: string;
     agentDir: string;
     questionsFile: string;
+    /**
+     * Feature1's MCP server, registered for this run only. Read-only by the
+     * token's own scope: the worker hands it over, it does not police it.
+     */
+    mcp?: AgentMcpServer;
     signal?: AbortSignal;
     timeoutMs?: number;
   }): Promise<AgentOutcome>;
@@ -70,21 +76,40 @@ export class CliAgentRunner implements AgentRunner {
 
     const opts = { repoPath: input.cwd, promptFile };
     const req = { ...(input.model ? { model: input.model } : {}) };
-    const command =
-      input.kind === 'claude'
-        ? claudeCommandFor(req, opts, posixShell)
-        : codexCommandFor(req, opts, posixShell);
+    // Per run, and gone after it: nothing is written into the checkout or
+    // into the agent's own home, so one execution's access cannot be found
+    // by the next.
+    const scratch = [promptFile];
+    let env = this.env;
+    let command: string;
+    if (input.kind === 'claude') {
+      let mcpConfig: string | undefined;
+      if (input.mcp) {
+        mcpConfig = path.join(input.agentDir, `mcp-${Date.now()}.json`);
+        fs.writeFileSync(mcpConfig, claudeMcpConfig(input.mcp), { mode: 0o600 });
+        scratch.push(mcpConfig);
+      }
+      command = claudeCommandFor(req, { ...opts, ...(mcpConfig ? { mcpConfig } : {}) }, posixShell);
+    } else {
+      const override = input.mcp ? codexMcpOverride(input.mcp, posixShell.quote) : undefined;
+      if (override) env = { ...env, ...override.env };
+      command = codexCommandFor(
+        req,
+        { ...opts, ...(override ? { mcpFlag: override.flag } : {}) },
+        posixShell
+      );
+    }
 
     let res: CommandResult;
     try {
       res = await this.runner.run(command, {
         cwd: input.cwd,
-        env: this.env,
+        env,
         ...(input.signal ? { signal: input.signal } : {}),
         timeoutMs: input.timeoutMs ?? 2 * 60 * 60_000,
       });
     } finally {
-      fs.rmSync(promptFile, { force: true });
+      for (const file of scratch) fs.rmSync(file, { force: true });
     }
 
     let questions: string[] = [];

@@ -108,7 +108,12 @@ export class ExecutionStore {
   save(checkpoint: ExecutionCheckpoint, now = new Date()): void {
     const file = this.fileFor(checkpoint);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const next = { ...checkpoint, updatedAt: now.toISOString() };
+    // Credentials are issued per claim and are not the checkpoint's to keep:
+    // a file on a shared volume outlives the hour a token was meant to last,
+    // and a resumed execution is handed fresh ones with its new lease.
+    const execution: Execution = { ...checkpoint.execution };
+    delete execution.credentials;
+    const next = { ...checkpoint, execution, updatedAt: now.toISOString() };
     const temp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(temp, JSON.stringify(next, null, 2), 'utf8');
     fs.renameSync(temp, file);

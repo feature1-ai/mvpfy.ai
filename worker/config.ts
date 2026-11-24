@@ -29,6 +29,8 @@ export interface WorkerConfig {
   heartbeatIntervalMs: number;
   agent: AgentKind;
   agentModel?: string;
+  /** Tries each story gets before the execution fails. 1 means no repair. */
+  unitAttempts: number;
   /** Use the in-process fake instead of HTTP. For local development. */
   fake: boolean;
 }
@@ -81,6 +83,10 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): WorkerConfi
       'MVPFY_HEARTBEAT_INTERVAL_MS must stay well under the three-minute lease; 30000–60000 is right'
     );
   }
+  const unitAttempts = intFrom(env.MVPFY_UNIT_ATTEMPTS, 3, 'MVPFY_UNIT_ATTEMPTS');
+  // Each one is a whole agent run. Past a handful, a story that cannot pass
+  // is not being repaired, it is being paid for.
+  if (unitAttempts > 5) throw new Error('MVPFY_UNIT_ATTEMPTS must be between 1 and 5');
   return {
     name: (env.MVPFY_WORKER_NAME ?? 'mvpfy worker').trim(),
     feature1BaseUrl: baseUrl,
@@ -90,6 +96,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): WorkerConfi
     heartbeatIntervalMs,
     agent,
     ...(model ? { agentModel: model } : {}),
+    unitAttempts,
     fake,
   };
 }

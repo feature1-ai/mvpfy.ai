@@ -1,4 +1,5 @@
 import { load } from 'js-yaml';
+import { manifestPorts } from '../../shared/manifest';
 
 export interface PortEntry {
   label: string;
@@ -15,10 +16,9 @@ export interface PortEntry {
  */
 export function parseAppPort(mvpfyYml: string | null | undefined): number | null {
   if (!mvpfyYml) return null;
-  const hostPort = mvpfyYml.match(/^\s*host_port:\s*["']?(\d{2,5})["']?\s*$/m);
-  if (hostPort) return Number(hostPort[1]);
-  const url = mvpfyYml.match(/^\s*url:\s*["']?https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})/m);
-  if (url) return Number(url[1]);
+  const { hostPort, urlPort } = manifestPorts(mvpfyYml);
+  if (hostPort !== null) return hostPort;
+  if (urlPort !== null) return urlPort;
   const first = parsePorts(mvpfyYml)[0];
   return first ? first.port : null;
 }

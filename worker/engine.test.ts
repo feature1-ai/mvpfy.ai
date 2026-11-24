@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { StaleAttemptError } from '../shared/runner/contract';
 import {
@@ -152,7 +153,9 @@ describe('verification', () => {
     expect(h.transport.stateOf(claimed.id)).toBe('failed');
     expect(Object.keys(h.transport.resultsOf(claimed.id))).toHaveLength(0);
     const last = h.transport.progressCalls.at(-1)?.body;
-    expect(last?.message).toMatch(/check.*failed/i);
+    // Named for the person reading it: which story, and that it was tried.
+    expect(last?.message).toMatch(/US-01.*checks were still failing after 3 attempts/);
+    expect(last?.message).toMatch(/no pull request was opened/);
   });
 
   it('fails the execution when nothing could be run', async () => {
@@ -635,5 +638,308 @@ describe('a credential the agent left in the checkout', () => {
     expect(ending).toBe('failed');
     expect(h.git.pushes).toHaveLength(0);
     expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/left uncommitted/);
+  });
+});
+
+describe('an execution that carries its own credentials', () => {
+  const GITHUB = 'ghs_issued_for_this_execution';
+  const MCP = { url: 'https://acme-mcp.feature1.ai/mcp/', token: 'f1r_read_only_for_this_run' };
+  const issued = () =>
+    standaloneStoryExecution({
+      credentials: { github: { token: GITHUB }, feature1_mcp: MCP },
+    });
+
+  it('hands the agent the read-only MCP server, and says so in the prompt', async () => {
+    const { checkpoint } = await start(issued());
+    agentChanges(h, ...checkpoint.execution.repositories.map((r) => r.id));
+
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+
+    expect(h.agent.runs[0].mcp).toEqual(MCP);
+    expect(h.agent.runs[0].prompt).toContain('`feature1` MCP tools');
+    // The frozen requirements stay the authority over anything read live.
+    expect(h.agent.runs[0].prompt).toContain('they\nwin wherever the two differ');
+  });
+
+  it('gives the agent no MCP server, and promises none, when none was issued', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, ...checkpoint.execution.repositories.map((r) => r.id));
+
+    await h.engine.run(checkpoint, never);
+
+    expect(h.agent.runs[0].mcp).toBeUndefined();
+    expect(h.agent.runs[0].prompt).not.toContain('MCP');
+  });
+
+  it('never gives the agent the GitHub token', async () => {
+    const { checkpoint } = await start(issued());
+    agentChanges(h, ...checkpoint.execution.repositories.map((r) => r.id));
+
+    await h.engine.run(checkpoint, never);
+
+    expect(JSON.stringify(h.agent.runs)).not.toContain(GITHUB);
+  });
+
+  it('keeps both out of everything it tells Feature1 and everything it writes down', async () => {
+    const { claimed, checkpoint } = await start(issued());
+    agentChanges(h, ...checkpoint.execution.repositories.map((r) => r.id));
+    // An agent that printed what it was given, in a failure the worker reports.
+    h.agent.outcomes = [{ code: 1, tail: `could not reach ${MCP.url} with ${MCP.token}` }];
+    h.git.failPush.add(claimed.repositories[0].id);
+
+    await h.engine.run(checkpoint, never);
+
+    const said = JSON.stringify(h.transport.progressCalls);
+    const written = fs.readFileSync(h.layout.checkpointFile(claimed.tenant_id, claimed.id), 'utf8');
+    for (const secret of [GITHUB, MCP.token]) {
+      expect(said).not.toContain(secret);
+      expect(written).not.toContain(secret);
+      expect(h.redactor.redact(`leaked ${secret}`)).not.toContain(secret);
+    }
+  });
+
+  it('holds the credentials only while the execution runs', async () => {
+    const { checkpoint } = await start(issued());
+    agentChanges(h, ...checkpoint.execution.repositories.map((r) => r.id));
+    let during: unknown;
+    h.agent.onRun = () => {
+      during = h.credentials.agentMcp();
+    };
+
+    await h.engine.run(checkpoint, never);
+
+    expect(during).toMatchObject(MCP);
+    expect(h.credentials.agentMcp()).toBeNull();
+    expect(h.credentials.git.apply({})).toEqual({});
+  });
+
+  it('lets them go when the execution ends badly, too', async () => {
+    const { claimed, checkpoint } = await start(issued());
+    h.transport.supersede(claimed.id);
+
+    await expect(h.engine.run(checkpoint, never)).rejects.toBeInstanceOf(StaleAttemptError);
+
+    expect(h.credentials.agentMcp()).toBeNull();
+  });
+
+  it('takes a fresher token from a progress response, for the story after', async () => {
+    const { claimed, checkpoint } = await start(
+      featureExecution({ credentials: { github: { token: GITHUB }, feature1_mcp: MCP } })
+    );
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    const next = { url: MCP.url, token: 'f1r_issued_an_hour_later' };
+    const original = h.transport.progress.bind(h.transport);
+    h.transport.progress = async (id, lease, body) => {
+      const run = await original(id, lease, body);
+      // As Feature1 would once the first set is close to expiring.
+      return h.agent.runs.length === 1 ? { ...run, credentials: { feature1_mcp: next } } : run;
+    };
+
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+
+    expect(h.agent.runs[0].mcp).toEqual(MCP);
+    expect(h.agent.runs[1].mcp).toEqual(next);
+    expect(h.redactor.redact(next.token)).not.toContain(next.token);
+    expect(h.transport.stateOf(claimed.id)).toBe('ready_for_testing');
+  });
+
+  it('carries on with what it holds when a refresh is malformed', async () => {
+    const { checkpoint } = await start(issued());
+    agentChanges(h, ...checkpoint.execution.repositories.map((r) => r.id));
+    const original = h.transport.progress.bind(h.transport);
+    h.transport.progress = async (id, lease, body) => ({
+      ...(await original(id, lease, body)),
+      credentials: { github: { token: '' } } as never,
+    });
+
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+    expect(h.agent.runs[0].mcp).toEqual(MCP);
+  });
+});
+
+describe('a story whose checks fail', () => {
+  const testRuns = () => h.runner.calls.filter((c) => /npm test/.test(c.command)).length;
+
+  it('is sent back to be fixed, and handed over once it passes', async () => {
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    // Red after the first build, green after the fix.
+    h.runner.when(/npm test/, { code: 1, stdout: 'expected 200, received 500' }, 1);
+    h.agent.onRun = (index) => {
+      if (index === 1) agentChanges(h, IDS.repoApi);
+    };
+
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+
+    expect(h.agent.runs).toHaveLength(2);
+    expect(h.transport.stateOf(claimed.id)).toBe('ready_for_testing');
+    expect(h.prs.creates).toHaveLength(1);
+  });
+
+  it('tells the fixing agent what failed, with the original brief beside it', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.runner.when(/npm test/, { code: 1, stdout: 'expected 200, received 500' }, 1);
+    h.agent.onRun = (index) => {
+      if (index === 1) agentChanges(h, IDS.repoApi);
+    };
+
+    await h.engine.run(checkpoint, never);
+
+    const [first, repair] = h.agent.runs.map((r) => r.prompt);
+    expect(first).not.toContain('This is attempt');
+    expect(repair).toContain('attempt 2 of 3');
+    expect(repair).toContain('`npm test --silent` exited with code 1');
+    expect(repair).toContain('expected 200, received 500');
+    // Without the requirement, "make it pass" is an instruction to delete the test.
+    expect(repair).toContain('Do not delete, skip, or loosen a test');
+    expect(repair).toContain(first);
+  });
+
+  it('says it is fixing, without moving the execution backwards', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.runner.when(/npm test/, { code: 1 }, 1);
+    h.agent.onRun = (index) => {
+      if (index === 1) agentChanges(h, IDS.repoApi);
+    };
+
+    // The fake refuses a stage that moves backwards, as Feature1 does.
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+
+    const said = h.transport.progressCalls.map((c) => c.body).filter((b) => b.state);
+    expect(said.map((b) => b.state)).toEqual([
+      'preparing',
+      'implementing',
+      'implementing',
+      'verifying',
+      'opening_prs',
+      'ready_for_testing',
+    ]);
+    expect(said[2].message).toMatch(/Fixing .* after its checks failed \(attempt 2 of 3\)/);
+  });
+
+  it('gives up after its attempts, names the story, and opens nothing', async () => {
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.runner.when(/npm test/, { code: 1, stdout: 'still failing' });
+
+    expect(await h.engine.run(checkpoint, never)).toBe('failed');
+
+    expect(h.agent.runs).toHaveLength(3);
+    expect(h.prs.creates).toHaveLength(0);
+    expect(h.git.pushes).toHaveLength(0);
+    expect(Object.keys(h.transport.resultsOf(claimed.id))).toHaveLength(0);
+    // Left open, so the attempt after a person retries builds it again.
+    expect(checkpoint.completedUnits).toEqual([]);
+  });
+
+  it('does not start the next story on top of one that is failing', async () => {
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    h.runner.when(/npm test/, { code: 1 });
+
+    expect(await h.engine.run(checkpoint, never)).toBe('failed');
+
+    expect(h.agent.runs.every((r) => r.prompt.includes('US-01'))).toBe(true);
+    expect(h.agent.runs.some((r) => r.prompt.includes('1 of 2'))).toBe(true);
+    expect(checkpoint.completedUnits).toEqual([]);
+  });
+
+  it('keeps the stories that passed when a later one cannot be fixed', async () => {
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    h.agent.onRun = (index) => {
+      if (index === 0) return;
+      // The second story changes the API again, and breaks it for good.
+      agentChanges(h, IDS.repoApi);
+      h.runner.when(/npm test/, { code: 1 });
+    };
+
+    expect(await h.engine.run(checkpoint, never)).toBe('failed');
+
+    expect(checkpoint.completedUnits).toHaveLength(1);
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/^US-02/);
+  });
+
+  it('is not repaired at all when the worker is told one attempt is all it gets', async () => {
+    const single = makeHarness({ unitAttempts: 1 });
+    try {
+      const claimed = await single.claim(standaloneStoryExecution());
+      withDiscoverableTests(single, claimed, IDS.repoApi);
+      agentChanges(single, IDS.repoApi);
+      single.runner.when(/npm test/, { code: 1 });
+
+      expect(await single.engine.run(single.checkpoint(claimed), never)).toBe('failed');
+
+      expect(single.agent.runs).toHaveLength(1);
+      expect(single.transport.progressCalls.at(-1)?.body.message).toMatch(/after 1 attempt\./);
+    } finally {
+      single.cleanup();
+    }
+  });
+
+  it('stops asking the agent when somebody cancels during a fix', async () => {
+    const { claimed, checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.runner.when(/npm test/, { code: 1 });
+    const controller = new AbortController();
+    h.agent.onRun = (index) => {
+      if (index === 1) {
+        h.transport.cancel(claimed.id);
+        controller.abort();
+      }
+    };
+
+    expect(await h.engine.run(checkpoint, controller.signal)).toBe('cancelled');
+    expect(h.agent.runs).toHaveLength(2);
+  });
+
+  it('does not treat a repository with nothing to run as something to fix', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.runner.when(/npm test/, { code: 127, stderr: 'not found' });
+
+    expect(await h.engine.run(checkpoint, never)).toBe('failed');
+
+    // Another agent run cannot conjure a test suite; it fails where it always did.
+    expect(h.agent.runs).toHaveLength(1);
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/No check passed/);
+  });
+
+  it('does not run a suite twice at a commit it already passed at', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+
+    // Once after the story; the verify stage finds the branch has not moved.
+    expect(testRuns()).toBe(1);
+  });
+
+  it('checks only the repository a later story moved', async () => {
+    const { checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi, IDS.repoWeb);
+    h.agent.onRun = (index) => {
+      if (index === 1) agentChanges(h, IDS.repoWeb);
+    };
+
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+
+    // Both after the first story, then only web after the second.
+    expect(testRuns()).toBe(3);
+  });
+
+  it('keeps the failing output on the worker, out of what Feature1 is told', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    const noisy = `assertion failed at src/secret-path.ts\n${'x'.repeat(5000)}`;
+    h.runner.when(/npm test/, { code: 1, stdout: noisy });
+
+    await h.engine.run(checkpoint, never);
+
+    const last = h.transport.progressCalls.at(-1)?.body.message ?? '';
+    expect(last.length).toBeLessThanOrEqual(2000);
+    expect(h.agent.runs[1].prompt).toContain('x'.repeat(100));
   });
 });

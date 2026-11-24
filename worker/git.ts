@@ -11,6 +11,7 @@ export interface CommitRecord {
 }
 import { CommandRunner } from './exec';
 import { Layout, executionBranch } from './layout';
+import { CommandAuth, noAuth } from './credentials';
 
 /**
  * Git, as an unattended worker has to do it.
@@ -60,7 +61,9 @@ export class Git {
   constructor(
     private readonly runner: CommandRunner,
     private readonly layout: Layout,
-    private readonly env: NodeJS.ProcessEnv = process.env
+    private readonly env: NodeJS.ProcessEnv = process.env,
+    /** Authorises each command as it runs, so a token can change mid-life. */
+    private readonly auth: CommandAuth = noAuth
   ) {}
 
   private async git(cwd: string, args: string, timeoutMs = 10 * 60_000): Promise<string> {
@@ -69,7 +72,7 @@ export class Git {
       cwd,
       // Git must never stop to ask. An unattended worker that is prompted for
       // a password hangs until its lease expires, which looks like a crash.
-      env: { ...this.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/true' },
+      env: this.auth.apply({ ...this.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/true' }),
       timeoutMs,
     });
     if (res.code !== 0) {

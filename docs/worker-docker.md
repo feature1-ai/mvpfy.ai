@@ -47,6 +47,7 @@ docker run -d --name mvpfy-worker \
 | `MVPFY_AGENT_MODEL`           | the agent's own          | Leave unset to use whatever the agent is configured with.                                                                                                                                           |
 | `MVPFY_CLAIM_INTERVAL_MS`     | `15000`                  | How often it asks for work when idle.                                                                                                                                                               |
 | `MVPFY_HEARTBEAT_INTERVAL_MS` | `45000`                  | How often it renews the lease while working. The lease is three minutes, so anything above 120000 is refused.                                                                                       |
+| `MVPFY_UNIT_ATTEMPTS`         | `3`                      | Tries each story gets before the execution fails: the first build, then repairs fed the failing check's output. `1` turns repair off. At most 5.                                                    |
 | `MVPFY_WORKER_NAME`           | `mvpfy worker`           | For this worker's own logs.                                                                                                                                                                         |
 | `MVPFY_FAKE_FEATURE1`         | —                        | `1` runs against the in-process fake. No server, no credential, nothing real.                                                                                                                       |
 
@@ -68,6 +69,11 @@ own credential. **Supported today:**
 - **GitHub** — `GH_TOKEN` with `repo` scope on the repositories the assignment
   authorises, for cloning, pushing and opening pull requests.
 
+If Feature1 issues credentials with the claim (see
+[`runner-contract-v1.md`](runner-contract-v1.md#credentials-in-the-claim)),
+`GH_TOKEN` is not needed: the execution brings a token scoped to its own
+repositories, and that one is used in preference to anything set here.
+
 All of them are passed as environment variables and none is baked into the
 image. All of them are registered with the redactor at start-up, so a value
 that appears in an agent's output or a test failure is replaced before it is
@@ -87,6 +93,21 @@ reported.
 - **Not the host Docker socket.** Mounting it would hand the agent control of
   the daemon, which is control of the host. If an execution needs containers,
   give the worker its own nested runtime; do not give it yours.
+
+## How a feature is built
+
+One story at a time, each checked before the next is started. After a story
+the worker runs the checks of every repository whose branch moved. If one
+fails, the same story goes back to the agent with the failing command and the
+end of its output, up to `MVPFY_UNIT_ATTEMPTS` tries in all.
+
+A story that still fails after that stops the execution, named in the message
+a person reads. Nothing is pushed and no pull request is opened: the stories
+after it were never built, and the commits stay in the checkout for a retry.
+
+A repository is not re-checked at a commit it already passed at, so the
+verify stage before publishing costs nothing when the last story left the
+branch where its checks ran.
 
 ## Isolation
 

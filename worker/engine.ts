@@ -9,6 +9,7 @@ import {
 } from '../shared/runner/contract';
 import {
   authorisedRepository,
+  parseCredentials,
   passingTests,
   repositoryResultProblem,
   unitsOf,
@@ -21,7 +22,10 @@ import { Verifier, VerificationResult, canReport } from './verify';
 import { PullRequests, pullRequestBody } from './prs';
 import { AgentKind, AgentRunner } from './agentRun';
 import { Redactor } from './redact';
-import { buildPrompt, commitMessageFor, criterionText } from './prompt';
+import { CredentialSession } from './credentials';
+import { buildPrompt, buildRepairPrompt, commitMessageFor, criterionText } from './prompt';
+import { RepositoryChecks, failureBrief } from './checks';
+import { UnitDriver, runUnits } from '../shared/unitRunner';
 
 /**
  * One execution, from a claimed run to a terminal state Feature1 accepted.
@@ -56,9 +60,31 @@ export interface EngineDeps {
   redactor: Redactor;
   agentKind: AgentKind;
   agentModel?: string;
+  /**
+   * Tries each story gets, the first included, before the execution fails.
+   * 1 turns repair off: a failing check then fails the execution at once.
+   */
+  unitAttempts?: number;
+  /**
+   * The credentials a claim carries, when Feature1 issues them. Without it
+   * the worker runs on whatever its operator configured, as it always has.
+   */
+  credentials?: CredentialSession;
   log?: (message: string) => void;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * A first try and two repairs. Enough to fix a failure the agent can see,
+ * and few enough that a story which cannot pass stops within the hour
+ * instead of spending the day.
+ */
+export const DEFAULT_UNIT_ATTEMPTS = 3;
+
+/** How a story is named to a person: its code and its title. */
+function unitLabel(unit: Snapshot): string {
+  return `${unit.code ?? unit.id} — ${unit.title ?? 'work'}`;
 }
 
 /** Why an execution stopped. What the worker tells Feature1 last. */
@@ -118,6 +144,7 @@ export class ExecutionEngine {
     );
     const until = Date.parse(response?.lease_until ?? '');
     if (!Number.isNaN(until)) this.leaseUntil = until;
+    this.renewCredentials(response?.credentials);
     // A cancelling run accepts nothing but the acknowledgement: the server
     // discards whatever was sent and answers this flag. Believing the call
     // landed is how a repository gets marked reported that the server never
@@ -128,6 +155,25 @@ export class ExecutionEngine {
     if (body.state) {
       checkpoint.state = body.state;
       this.deps.store.save(checkpoint, this.now());
+    }
+  }
+
+  /**
+   * Take newer credentials from a progress response.
+   *
+   * A GitHub app token lasts an hour and a feature can take longer, so the
+   * heartbeat is how a long execution keeps being able to push. A malformed
+   * set is dropped rather than fatal: the ones already held still work, and
+   * failing an execution over a refresh it may not need helps nobody.
+   */
+  private renewCredentials(raw: unknown): void {
+    if (!this.deps.credentials || raw === undefined || raw === null) return;
+    try {
+      this.deps.redactor.remember(...this.deps.credentials.refresh(parseCredentials(raw)));
+    } catch (error) {
+      this.log(
+        `ignoring credentials Feature1 sent with a progress response: ${(error as Error).message}`
+      );
     }
   }
 
@@ -171,6 +217,18 @@ export class ExecutionEngine {
     // The lease token is this attempt's credential: kept out of every log and
     // report from here on, as config.ts always said it was. Nothing did it.
     this.deps.redactor.remember(execution.lease_token);
+    // Same for whatever the claim issued — remembered before anything can
+    // print it, and forgotten by the session when this attempt ends.
+    this.deps.redactor.remember(...(this.deps.credentials?.begin(execution) ?? []));
+    try {
+      return await this.attempt(checkpoint, signal);
+    } finally {
+      this.deps.credentials?.end();
+    }
+  }
+
+  private async attempt(checkpoint: ExecutionCheckpoint, signal: AbortSignal): Promise<Ending> {
+    const { execution } = checkpoint;
     try {
       return await this.execute(checkpoint, signal);
     } catch (error) {
@@ -244,58 +302,36 @@ export class ExecutionEngine {
       this.deps.layout.agentDir(execution.tenant_id, execution.id),
       'mvpfy-questions.md'
     );
-    for (const [index, unit] of units.entries()) {
-      if (signal.aborted) return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
-      if (checkpoint.completedUnits.includes(unit.id)) continue;
-      const label = `${unit.code ?? unit.id} — ${unit.title ?? 'work'}`;
-      await this.stage(
+    // One story at a time, each checked before the next is started. See
+    // shared/unitRunner.ts for why: a failure found now is about one story,
+    // and a failure found after the fifth is about all of them.
+    const checks = new RepositoryChecks(this.deps.verifier, this.deps.git);
+    const built = await runUnits<Snapshot, Ending>(
+      units,
+      this.unitDriver({ checkpoint, worktrees, units, questionsFile, checks, signal }),
+      {
+        isDone: (unit) => checkpoint.completedUnits.includes(unit.id),
+        markDone: (unit) => {
+          checkpoint.completedUnits.push(unit.id);
+          this.deps.store.save(checkpoint, this.now());
+        },
+      },
+      { maxAttempts: this.deps.unitAttempts ?? DEFAULT_UNIT_ATTEMPTS }
+    );
+    if (built.kind === 'stopped') return built.stop;
+    if (built.kind === 'exhausted') {
+      // Nothing is published. The stories after this one were never built,
+      // and a pull request holding part of a feature whose checks fail is
+      // not something to hand a reviewer. The commits stay in the checkout
+      // for the attempt that comes next.
+      const tries = `${built.attempts} attempt${built.attempts === 1 ? '' : 's'}`;
+      return this.finish(
         checkpoint,
-        'implementing',
-        `Building ${label} (${index + 1} of ${units.length})`
+        'failed',
+        `${unitLabel(built.unit)}: its checks were still failing after ${tries}. ` +
+          `${this.deps.redactor.line(built.failure, 600)} ` +
+          'The work so far is kept for a retry; no pull request was opened.'
       );
-
-      const outcome = await this.deps.agent.run({
-        kind: this.deps.agentKind,
-        ...(this.deps.agentModel ? { model: this.deps.agentModel } : {}),
-        prompt: buildPrompt({ execution, worktrees, questionsFile, unit }),
-        cwd: this.deps.layout.executionDir(execution.tenant_id, execution.id),
-        agentDir: this.deps.layout.agentDir(execution.tenant_id, execution.id),
-        questionsFile,
-        signal,
-      });
-      if (outcome.cancelled || signal.aborted) {
-        return this.finish(checkpoint, 'cancelled', 'Cancelled part-way');
-      }
-      if (outcome.questions.length > 0) {
-        // Feature1 takes one message, and a person reads it. Numbered, so
-        // the answer can address them one at a time.
-        return this.blocked(
-          checkpoint,
-          outcome.questions.map((q, i) => `${i + 1}. ${q}`).join(' ')
-        );
-      }
-      if (outcome.code !== 0 || outcome.timedOut) {
-        // An agent that crashed or ran out of time did not finish the unit.
-        // It used to be logged and then counted as done anyway — verified,
-        // handed over half-built, and never attempted again on a reclaim.
-        // What it did write is committed, so the next attempt builds on it,
-        // and the unit stays open for that attempt. The tail stays on the
-        // worker for the operator; it is never reported.
-        this.log(`${execution.id}: agent exited ${outcome.code} on ${label}: ${outcome.tail}`);
-        await this.commitUnit(checkpoint, worktrees, unit);
-        this.deps.store.save(checkpoint, this.now());
-        const why = outcome.timedOut
-          ? 'ran out of time'
-          : `stopped with exit code ${outcome.code ?? 'unknown'}`;
-        return this.finish(
-          checkpoint,
-          'failed',
-          `The coding agent ${why} while building ${label}.`
-        );
-      }
-      await this.commitUnit(checkpoint, worktrees, unit);
-      checkpoint.completedUnits.push(unit.id);
-      this.deps.store.save(checkpoint, this.now());
     }
 
     // -- verify -------------------------------------------------------------
@@ -303,7 +339,9 @@ export class ExecutionEngine {
     await this.stage(checkpoint, 'verifying', 'Running the checks');
     const verification: Record<string, VerificationResult[]> = {};
     for (const repositoryId of Object.keys(worktrees)) {
-      const rows = await this.deps.verifier.verifyRepository(repositoryId, { worktrees, signal });
+      // Through the same cache the stories used, so a repository already
+      // checked at this commit is not run a second time just to be sure.
+      const rows = await checks.verify(repositoryId, worktrees, signal);
       verification[repositoryId] = rows;
       const row = this.deps.store.repository(checkpoint, repositoryId);
       row.checks = rows.map((r) => ({
@@ -345,6 +383,123 @@ export class ExecutionEngine {
       );
     }
     return this.finish(checkpoint, 'ready_for_testing', this.summaryFor(checkpoint));
+  }
+
+  /**
+   * How one story is built and judged.
+   *
+   * `work` is the agent; `check` is the repositories' own suites, run by the
+   * worker. They are separate so that the agent finishing is never what
+   * makes a story done.
+   */
+  private unitDriver(run: {
+    checkpoint: ExecutionCheckpoint;
+    worktrees: Record<string, string>;
+    units: Snapshot[];
+    questionsFile: string;
+    checks: RepositoryChecks;
+    signal: AbortSignal;
+  }): UnitDriver<Snapshot, Ending> {
+    const { checkpoint, worktrees, units, questionsFile, checks, signal } = run;
+    const { execution } = checkpoint;
+    const stop = async (ending: Promise<Ending>) => ({ kind: 'stop' as const, stop: await ending });
+    const cancelled = () => stop(this.finish(checkpoint, 'cancelled', 'Cancelled part-way'));
+
+    return {
+      work: async (unit, attempt) => {
+        if (signal.aborted) return cancelled();
+        const label = unitLabel(unit);
+        const position = `${units.indexOf(unit) + 1} of ${units.length}`;
+        // Both are the implementing stage as far as Feature1 is concerned: a
+        // stage may not move backwards, and fixing a story is still building it.
+        await this.stage(
+          checkpoint,
+          'implementing',
+          attempt.number === 1
+            ? `Building ${label} (${position})`
+            : `Fixing ${label} after its checks failed (attempt ${attempt.number} of ${attempt.of})`
+        );
+
+        // Asked for each run, not once: a long feature outlives a token, and
+        // the session holds whichever one the last heartbeat brought.
+        const planningMcp = this.deps.credentials?.agentMcp() ?? null;
+        const brief = {
+          execution,
+          worktrees,
+          questionsFile,
+          unit,
+          planningContext: Boolean(planningMcp),
+        };
+        const outcome = await this.deps.agent.run({
+          kind: this.deps.agentKind,
+          ...(this.deps.agentModel ? { model: this.deps.agentModel } : {}),
+          prompt:
+            attempt.failure === undefined
+              ? buildPrompt(brief)
+              : buildRepairPrompt(brief, {
+                  failure: attempt.failure,
+                  attempt: attempt.number,
+                  of: attempt.of,
+                }),
+          cwd: this.deps.layout.executionDir(execution.tenant_id, execution.id),
+          agentDir: this.deps.layout.agentDir(execution.tenant_id, execution.id),
+          questionsFile,
+          ...(planningMcp ? { mcp: { url: planningMcp.url, token: planningMcp.token } } : {}),
+          signal,
+        });
+        if (outcome.cancelled || signal.aborted) return cancelled();
+        if (outcome.questions.length > 0) {
+          // Feature1 takes one message, and a person reads it. Numbered, so
+          // the answer can address them one at a time.
+          return stop(
+            this.blocked(checkpoint, outcome.questions.map((q, i) => `${i + 1}. ${q}`).join(' '))
+          );
+        }
+        if (outcome.code !== 0 || outcome.timedOut) {
+          // An agent that crashed or ran out of time did not finish the unit.
+          // It used to be logged and then counted as done anyway — verified,
+          // handed over half-built, and never attempted again on a reclaim.
+          // What it did write is committed, so the next attempt builds on it,
+          // and the unit stays open for that attempt. The tail stays on the
+          // worker for the operator; it is never reported.
+          this.log(`${execution.id}: agent exited ${outcome.code} on ${label}: ${outcome.tail}`);
+          await this.commitUnit(checkpoint, worktrees, unit);
+          this.deps.store.save(checkpoint, this.now());
+          const why = outcome.timedOut
+            ? 'ran out of time'
+            : `stopped with exit code ${outcome.code ?? 'unknown'}`;
+          return stop(
+            this.finish(checkpoint, 'failed', `The coding agent ${why} while building ${label}.`)
+          );
+        }
+        await this.commitUnit(checkpoint, worktrees, unit);
+        return { kind: 'done' };
+      },
+
+      check: async (unit) => {
+        const failures: Array<{ repositoryName: string; result: VerificationResult }> = [];
+        for (const repositoryId of Object.keys(worktrees)) {
+          if (signal.aborted) return cancelled();
+          const results = await checks.verify(repositoryId, worktrees, signal);
+          const repositoryName = authorisedRepository(execution, repositoryId).name;
+          for (const result of results) {
+            // Only what ran and said no. A repository with nothing to run is
+            // not something another attempt can fix, and is dealt with where
+            // it always was: it cannot be handed over.
+            if (result.outcome === 'failed' && !result.optional) {
+              failures.push({ repositoryName, result });
+            }
+          }
+        }
+        if (signal.aborted) return cancelled();
+        if (failures.length === 0) return { kind: 'passed' };
+        this.log(
+          `${execution.id}: ${unitLabel(unit)} failed ${failures.length} check(s): ` +
+            failures.map((f) => `${f.repositoryName} ${f.result.name}`).join(', ')
+        );
+        return { kind: 'failed', failure: failureBrief(failures) };
+      },
+    };
   }
 
   /** Move to a stage. Throws CancellationRequested if somebody cancelled. */

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION, ProtocolMismatchError, RepositoryResult } from './contract';
 import {
   authorisedRepository,
+  parseCredentials,
   parseExecution,
   passingTests,
   repositoryResultProblem,
@@ -128,6 +129,49 @@ describe('parseExecution', () => {
     const raw = featureExecution() as unknown as Record<string, unknown>;
     delete raw.lease_token;
     expect(() => parseExecution(raw)).toThrow(/lease_token/);
+  });
+});
+
+describe('parseCredentials', () => {
+  const github = { token: 'ghs_abcdefghijklmnop', expires_at: '2026-11-23T10:00:00Z' };
+  const mcp = { url: 'https://acme-mcp.feature1.ai/mcp/', token: 'f1r_abcdefghijklmnop' };
+
+  it('is nothing when Feature1 issues nothing, which is every worker today', () => {
+    expect(parseCredentials(undefined)).toBeUndefined();
+    expect(parseCredentials(null)).toBeUndefined();
+    expect(parseCredentials({})).toBeUndefined();
+    expect(parseExecution(roundTrip(featureExecution())).credentials).toBeUndefined();
+  });
+
+  it('carries a GitHub token and read-only MCP access through a claim', () => {
+    const parsed = parseExecution(
+      roundTrip(featureExecution({ credentials: { github, feature1_mcp: mcp } }))
+    );
+    expect(parsed.credentials).toEqual({
+      github,
+      feature1_mcp: { ...mcp, expires_at: null },
+    });
+  });
+
+  it('refuses a malformed set rather than falling back to somebody else’s token', () => {
+    expect(() => parseCredentials({ github: {} })).toThrow(/credentials\.github\.token/);
+    expect(() => parseCredentials({ github: 'ghs_abc' })).toThrow(/must be an object/);
+    // A newline in a token is a second header.
+    expect(() => parseCredentials({ github: { token: 'ghs_abcdefgh\nX-Evil: 1' } })).toThrow(
+      /not a usable token/
+    );
+  });
+
+  it('sends the agent’s token only to an https address', () => {
+    expect(() =>
+      parseCredentials({ feature1_mcp: { ...mcp, url: 'http://acme-mcp.feature1.ai/mcp/' } })
+    ).toThrow(/must be https/);
+    expect(() =>
+      parseCredentials({ feature1_mcp: { ...mcp, url: 'https://user:pw@evil.example/mcp' } })
+    ).toThrow(/must be https/);
+    expect(
+      parseCredentials({ feature1_mcp: { ...mcp, url: 'http://localhost:8787/mcp' } })
+    ).toBeDefined();
   });
 });
 

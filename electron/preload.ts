@@ -11,6 +11,7 @@ import {
   RunOutputEvent,
   UpdateStatus,
 } from '../shared/types';
+import type { RunAgentUnitsRequest } from '../shared/agentUnits';
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   const listener = (_ev: IpcRendererEvent, payload: T) => cb(payload);
@@ -44,6 +45,7 @@ const api: MvpfyApi = {
   deleteProject: (workspacePath: string, projectKey?: string) =>
     ipcRenderer.invoke('delete-project', workspacePath, projectKey),
   runAgent: (req: RunAgentRequest) => ipcRenderer.invoke('run-agent', req),
+  runAgentUnits: (req: RunAgentUnitsRequest) => ipcRenderer.invoke('run-agent-units', req),
   stopRun: (runId: string) => ipcRenderer.invoke('stop-run', runId),
   dockerCompose: (runId: string, repoPath: string, action: ComposeAction) =>
     ipcRenderer.invoke('docker-compose', runId, repoPath, action),

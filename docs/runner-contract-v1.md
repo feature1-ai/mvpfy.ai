@@ -136,6 +136,44 @@ worktrees, opens no further pull requests, and acknowledges with `cancelled`. A
 pull request created in the moment before cancellation is not recalled; it is
 reconciled on the next authorised run.
 
+## Credentials in the claim
+
+**Implemented in the worker; not yet sent by Feature1.** It is additive to
+version 1, so a server that sends nothing leaves a worker exactly as it was.
+
+A hosted worker should start with one secret, its runner token, and be given
+the rest per execution. So a claimed execution may carry:
+
+```json
+"credentials": {
+  "github": { "token": "<installation token>", "expires_at": "<ISO>" },
+  "feature1_mcp": { "url": "https://<tenant>-mcp.feature1.ai/mcp/", "token": "<read token>", "expires_at": "<ISO>" }
+}
+```
+
+Both are optional, and each goes to exactly one place.
+
+- **`github`** authorises the worker's own `git` and `gh` — clone, push, open
+  the pull request. Feature1 mints it from its GitHub app, scoped to the
+  execution's repositories. The worker offers it only to the https hosts those
+  repositories are on, and the coding agent and the repository's scripts never
+  receive it. When it is absent the worker uses its operator's `GH_TOKEN`.
+- **`feature1_mcp`** is registered with the coding agent for the run, so it
+  can read related stories, the specification and capability notes. It is the
+  one credential meant to reach the agent, so Feature1 must make it worth
+  nothing beyond reading: read tools only, this execution's project only,
+  expired with the lease. The snapshot remains the requirements; what the
+  agent reads live is background, and the prompt says so.
+
+A progress response may carry `credentials` again with fresher values — an
+installation token lasts an hour and a feature can take longer. The worker
+takes whatever is present and keeps what is not.
+
+Neither is ever written to a checkpoint or sent back, and both are redacted
+from everything the worker logs or reports. A malformed set on a claim is
+refused outright rather than ignored: falling back quietly would mean pushing
+as somebody the server did not choose.
+
 ## What the worker will not do
 
 - It never pushes to a base branch. Its output is a branch and a pull request.

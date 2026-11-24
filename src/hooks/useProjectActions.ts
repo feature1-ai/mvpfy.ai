@@ -198,7 +198,7 @@ export function useProjectActions(
     return null;
   };
 
-  const bootstrapWork = () =>
+  const bootstrapWork = (resume = false) =>
     guarded(async () => {
       const authProblem = await preflightAuth(state.settings.defaultAgent, false);
       if (authProblem) throw new Error(authProblem);
@@ -218,7 +218,7 @@ export function useProjectActions(
       // compose file, so it must be genuinely free at bootstrap time.
       const freePort = await window.mvpfy.findFreePort(project.basePort);
       const target = { ...project, basePort: freePort };
-      const handle = await startBootstrapRun(target, state.settings, regenerating.current);
+      const handle = await startBootstrapRun(target, state.settings, regenerating.current, resume);
       runsApi.track(handle);
       updateState((prev) => ({
         ...prev,
@@ -256,7 +256,9 @@ export function useProjectActions(
     guarded(async () => {
       await window.mvpfy.writeRepoFile(project.localPath, pf(ANSWERS_FILE), answersDraft);
       setAnswersDraft('');
-      await bootstrapWork();
+      // The steps already finished stay finished: the answer is for the one
+      // that stopped to ask.
+      await bootstrapWork(true);
     });
 
   /**
@@ -461,7 +463,9 @@ export function useProjectActions(
         const handle = await startDockerRun(project, 'up');
         runsApi.track(handle);
       } else {
-        await bootstrapWork();
+        // Whatever the diagnosis fixed, the steps that passed their checks
+        // have not stopped passing them.
+        await bootstrapWork(true);
       }
     });
 

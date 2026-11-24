@@ -80,6 +80,8 @@ import {
   writeRepoFile,
 } from './services/projects';
 import { startRun, stopRun } from './services/runs';
+import { runAgentUnits } from './services/agentUnits';
+import { RunAgentUnitsRequest } from '../shared/agentUnits';
 import { openTerminalCommand, spawnShell } from './services/shell';
 import { keychainGet, keychainSet } from './services/secrets';
 import { readState, writeState } from './services/store';
@@ -161,6 +163,7 @@ export function registerIpc(ready: Promise<unknown> = Promise.resolve()): void {
     deleteProject(workspacePath, projectKey)
   );
   handle('run-agent', (_ev, req: RunAgentRequest) => runAgent(req));
+  handle('run-agent-units', (_ev, req: RunAgentUnitsRequest) => runAgentUnits(req));
   handle('stop-run', (_ev, runId: string) => stopRun(runId));
   handle('docker-compose', (_ev, runId: string, repoPath: string, action: ComposeAction) => {
     const resolved = allowedWorkspace(

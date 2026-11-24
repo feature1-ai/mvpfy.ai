@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Execution, ExecutionRepository } from '../shared/runner/contract';
 import { AgentOutcome, AgentRunner } from './agentRun';
+import { ExecutionCredentialSession } from './credentials';
 import { ExecutionEngine } from './engine';
 import { FakeFeature1 } from './fakeFeature1';
 import { Git } from './git';
@@ -162,13 +163,22 @@ export class FakePullRequests {
 }
 
 export class FakeAgent implements AgentRunner {
-  runs: Array<{ prompt: string; cwd: string }> = [];
+  runs: Array<{ prompt: string; cwd: string; mcp?: { url: string; token: string } }> = [];
   outcomes: Array<Partial<AgentOutcome>> = [{}];
   onRun?: (index: number) => void;
 
-  async run(input: { prompt: string; cwd: string; signal?: AbortSignal }): Promise<AgentOutcome> {
+  async run(input: {
+    prompt: string;
+    cwd: string;
+    mcp?: { url: string; token: string };
+    signal?: AbortSignal;
+  }): Promise<AgentOutcome> {
     const index = this.runs.length;
-    this.runs.push({ prompt: input.prompt, cwd: input.cwd });
+    this.runs.push({
+      prompt: input.prompt,
+      cwd: input.cwd,
+      ...(input.mcp ? { mcp: input.mcp } : {}),
+    });
     this.onRun?.(index);
     const chosen = this.outcomes[Math.min(index, this.outcomes.length - 1)] ?? {};
     return {
@@ -192,6 +202,7 @@ export interface Harness {
   prs: FakePullRequests;
   agent: FakeAgent;
   runner: ScriptedRunner;
+  credentials: ExecutionCredentialSession;
   engine: ExecutionEngine;
   checkpoint: (execution: Execution) => ReturnType<typeof freshCheckpoint>;
   prBelongsElsewhereOnFirstPr: () => void;
@@ -203,7 +214,7 @@ export interface Harness {
   cleanup: () => void;
 }
 
-export function makeHarness(opts: { nowIso?: string } = {}): Harness {
+export function makeHarness(opts: { nowIso?: string; unitAttempts?: number } = {}): Harness {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-harness-'));
   let clock = Date.parse(opts.nowIso ?? '2026-10-22T11:00:00.000Z');
   const now = () => clock;
@@ -219,6 +230,7 @@ export function makeHarness(opts: { nowIso?: string } = {}): Harness {
   // Feature1 refuses a result that is not green, so a passing check is the
   // ordinary case the fixtures have to produce.
   const runner = new ScriptedRunner();
+  const credentials = new ExecutionCredentialSession();
 
   const engine = new ExecutionEngine({
     transport,
@@ -230,6 +242,8 @@ export function makeHarness(opts: { nowIso?: string } = {}): Harness {
     agent,
     redactor,
     agentKind: 'claude',
+    ...(opts.unitAttempts === undefined ? {} : { unitAttempts: opts.unitAttempts }),
+    credentials,
     now: () => new Date(clock),
     sleep: async () => {},
   });
@@ -244,6 +258,7 @@ export function makeHarness(opts: { nowIso?: string } = {}): Harness {
     agent,
     runner,
     redactor,
+    credentials,
     engine,
     now,
     setNow: (iso: string) => {

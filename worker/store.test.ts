@@ -120,3 +120,24 @@ describe('ExecutionStore', () => {
     expect(new ExecutionStore(new Layout(root)).unfinished()).toEqual([]);
   });
 });
+
+describe('credentials and the checkpoint', () => {
+  it('never writes a claim’s credentials to disk', () => {
+    const layout = new Layout(root);
+    const store = new ExecutionStore(layout);
+    const execution = featureExecution({
+      credentials: {
+        github: { token: 'ghs_never_on_disk_1234' },
+        feature1_mcp: { url: 'https://acme-mcp.feature1.ai/mcp/', token: 'f1r_never_on_disk_1234' },
+      },
+    });
+    const checkpoint = freshCheckpoint(execution);
+    store.save(checkpoint);
+
+    const written = fs.readFileSync(layout.checkpointFile(IDS.tenant, execution.id), 'utf8');
+    expect(written).not.toContain('never_on_disk');
+    expect(store.load(IDS.tenant, execution.id)?.execution.credentials).toBeUndefined();
+    // The one in memory is untouched: the execution in flight still needs it.
+    expect(checkpoint.execution.credentials?.github?.token).toBe('ghs_never_on_disk_1234');
+  });
+});

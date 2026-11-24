@@ -9,6 +9,7 @@ import {
   claudeCommandFor as buildClaudeCommand,
   codexCommandFor as buildCodexCommand,
 } from '../../shared/agentCommands';
+import { claudeMcpConfig, codexMcpOverride } from '../../shared/agentMcp';
 
 /** The user's own shell: cmd.exe on Windows, their login shell elsewhere. */
 const desktopShell: CommandShell = { quote: shellQuote, cd: cdTo };
@@ -22,28 +23,16 @@ const desktopShell: CommandShell = { quote: shellQuote, cd: cdTo };
  */
 function writeClaudeMcpConfig(runId: string, mcp: RunAgentMcp): string {
   const file = path.join(TMP_DIR, `mcp-${runId}.json`);
-  const config = {
-    mcpServers: {
-      feature1: {
-        type: 'http',
-        url: mcp.url,
-        headers: { Authorization: `Bearer ${mcp.token}` },
-      },
-    },
-  };
-  fs.writeFileSync(file, JSON.stringify(config), { mode: 0o600 });
+  fs.writeFileSync(file, claudeMcpConfig({ url: mcp.url, token: mcp.token ?? '' }), {
+    mode: 0o600,
+  });
   return file;
 }
 
 /** Override just this server for a run, keeping the user's normal Codex home. */
 export function codexMcpConfig(mcp: RunAgentMcp): { flag: string; env?: NodeJS.ProcessEnv } {
   if (!mcp.token?.trim()) throw new Error('Feature1 requires a personal bearer token. Reconnect.');
-  const tokenSetting = mcp.token ? ', bearer_token_env_var = "MVPFY_FEATURE1_TOKEN"' : '';
-  const value = `mcp_servers.feature1={ url = ${JSON.stringify(mcp.url)}${tokenSetting} }`;
-  return {
-    flag: `-c ${shellQuote(value)} `,
-    ...(mcp.token ? { env: { MVPFY_FEATURE1_TOKEN: mcp.token } } : {}),
-  };
+  return codexMcpOverride({ url: mcp.url, token: mcp.token }, shellQuote);
 }
 
 /** Per-run scratch that must not outlive the run. */
@@ -135,10 +124,34 @@ export function runToolingAgent(req: RunAgentRequest): void {
 }
 
 function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
+  const { command, env, scratch } = prepareAgentCommand(req, repoPath, req.runId);
+  startRun(req.runId, command, repoPath, () => removeQuietly(scratch), env);
+}
+
+/** One agent invocation, ready to run: its command, and what to delete afterwards. */
+export interface PreparedAgentCommand {
+  command: string;
+  env?: NodeJS.ProcessEnv;
+  /** Written for this invocation only. Some of it holds credentials. */
+  scratch: string[];
+}
+
+/**
+ * Write what one agent invocation needs and build its command.
+ *
+ * `scratchId` names the files, so a run made of several invocations (see
+ * agentUnits.ts) can prepare each without one overwriting the prompt another
+ * is still reading.
+ */
+export function prepareAgentCommand(
+  req: RunAgentRequest,
+  repoPath: string,
+  scratchId: string
+): PreparedAgentCommand {
   if (req.mcp && !req.mcp.token?.trim())
     throw new Error('Feature1 requires a personal bearer token. Reconnect.');
   ensureDirs();
-  const promptFile = path.join(TMP_DIR, `prompt-${req.runId}.txt`);
+  const promptFile = path.join(TMP_DIR, `prompt-${scratchId}.txt`);
   fs.writeFileSync(promptFile, req.promptText, 'utf8');
   // Everything written for this run only, removed when it ends.
   const scratch: string[] = [promptFile];
@@ -154,7 +167,7 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
     // Feature1 runs always carry their own token; never rely on a global
     // agent registration or another client’s server-side login.
     const needsMcpConfig = Boolean(req.mcp?.token);
-    if (needsMcpConfig) scratch.push(writeClaudeMcpConfig(req.runId, req.mcp!));
+    if (needsMcpConfig) scratch.push(writeClaudeMcpConfig(scratchId, req.mcp!));
     command = claudeCommandFor(req, {
       repoPath,
       promptFile,
@@ -169,5 +182,5 @@ function spawnAgentRun(req: RunAgentRequest, repoPath: string): void {
       mcpFlag: mcpConfig?.flag,
     });
   }
-  startRun(req.runId, command, repoPath, () => removeQuietly(scratch), env);
+  return { command, ...(env ? { env } : {}), scratch };
 }

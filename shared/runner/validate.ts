@@ -1,6 +1,7 @@
 import {
   ArtifactType,
   Execution,
+  ExecutionCredentials,
   ExecutionRepository,
   ExecutionState,
   PROTOCOL_VERSION,
@@ -165,6 +166,67 @@ function parseRepository(raw: unknown, index: number): ExecutionRepository {
 }
 
 /**
+ * An address the agent's read token may be sent to: https, no credentials in
+ * it, and plain http only for a server on this machine.
+ */
+export function validMcpUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.username || url.password) return false;
+  if (url.protocol === 'https:') return true;
+  return url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+}
+
+/** A bearer token as it can safely sit in a header or an environment variable. */
+function token(row: Record<string, unknown>, where: string): string {
+  const value = str(row, 'token', where);
+  // Whitespace or a control character in a token is a header injection
+  // waiting to happen, and no real token contains one.
+  if (!/^[\x21-\x7e]{8,4096}$/.test(value)) {
+    throw new Error(`${where}.token is not a usable token`);
+  }
+  return value;
+}
+
+/**
+ * The credentials a claim or a progress response carries, if it carries any.
+ *
+ * Absent is ordinary and returns undefined. Present but malformed is refused
+ * rather than ignored: a worker that quietly fell back to its operator's
+ * token would push as somebody the server did not choose.
+ */
+export function parseCredentials(raw: unknown): ExecutionCredentials | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const where = 'execution.credentials';
+  const row = obj(raw, where);
+  const out: ExecutionCredentials = {};
+  if (row.github !== undefined && row.github !== null) {
+    const github = obj(row.github, `${where}.github`);
+    out.github = {
+      token: token(github, `${where}.github`),
+      expires_at: optionalStr(github, 'expires_at'),
+    };
+  }
+  if (row.feature1_mcp !== undefined && row.feature1_mcp !== null) {
+    const mcp = obj(row.feature1_mcp, `${where}.feature1_mcp`);
+    const url = str(mcp, 'url', `${where}.feature1_mcp`);
+    // The agent's token travels to this address on every tool call.
+    if (!validMcpUrl(url)) throw new Error(`${where}.feature1_mcp.url must be https`);
+    out.feature1_mcp = {
+      url,
+      token: token(mcp, `${where}.feature1_mcp`),
+      expires_at: optionalStr(mcp, 'expires_at'),
+    };
+  }
+  return out.github || out.feature1_mcp ? out : undefined;
+}
+
+/**
  * Parse a claimed execution, or refuse it with a reason naming the field.
  *
  * A refusal is reported back as `failed` rather than dropped: a worker that
@@ -211,6 +273,8 @@ export function parseExecution(raw: unknown): Execution {
     results[repositoryId] = value as Execution['results'][string];
   }
 
+  const credentials = parseCredentials(row.credentials);
+
   return {
     protocol_version: PROTOCOL_VERSION,
     id: row.id as string,
@@ -236,6 +300,7 @@ export function parseExecution(raw: unknown): Execution {
     message: optionalStr(row, 'message'),
     lease_token: str(row, 'lease_token', 'execution'),
     lease_until: optionalStr(row, 'lease_until'),
+    ...(credentials ? { credentials } : {}),
   };
 }
 

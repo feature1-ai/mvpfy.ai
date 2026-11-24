@@ -36,6 +36,11 @@ export interface VerificationResult {
   reason?: string;
   discovered?: boolean;
   /**
+   * The end of what a failing command printed, redacted. Kept on the worker
+   * and handed to the agent that has to fix it; never sent to Feature1.
+   */
+  output?: string;
+  /**
    * A step whose failure does not fail the repository — carried on the
    * result, because the engine judges results and never sees the steps that
    * discovery chose (it passed none, so a failing optional lint failed the
@@ -91,6 +96,19 @@ function summarise(text: string, redactor: Redactor): string {
     .filter(Boolean);
   return redactor.line(lines.slice(-3).join(' · ')) || '(no output)';
 }
+
+/**
+ * Enough of a failure to fix it from.
+ *
+ * Both streams, because test runners disagree about which one carries the
+ * assertion, and the end of each, because that is where the failure is.
+ */
+function failureOutput(stdout: string, stderr: string, redactor: Redactor): string {
+  const tail = (text: string) => text.trim().slice(-FAILURE_OUTPUT_CHARS);
+  return redactor.redact([tail(stdout), tail(stderr)].filter(Boolean).join('\n'));
+}
+
+const FAILURE_OUTPUT_CHARS = 3000;
 
 export class Verifier {
   constructor(
@@ -214,6 +232,7 @@ export class Verifier {
       exitCode: res.code,
       durationMs: res.durationMs,
       summary: summarise(res.code === 0 ? res.stdout : res.stderr || res.stdout, this.redactor),
+      ...(res.code === 0 ? {} : { output: failureOutput(res.stdout, res.stderr, this.redactor) }),
     };
   }
 

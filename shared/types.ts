@@ -1,5 +1,7 @@
 // Types shared between the Electron main process and the renderer.
 
+import type { RunAgentUnitsRequest } from './agentUnits';
+
 export type AgentKind = 'claude' | 'codex';
 
 /**
@@ -498,6 +500,8 @@ export const GENERATED_FILES = [
   'mvpfy-run.md',
 ] as const;
 
+/** Which steps of setup are finished and checked, so a retry starts at the one that is not. */
+export const SETUP_PROGRESS_FILE = 'mvpfy-setup.json';
 /** The bootstrap agent writes questions here when it is blocked on PM input. */
 export const QUESTIONS_FILE = 'mvpfy-questions.md';
 /** PM answers are saved here; the agent reads them on the next bootstrap run. */
@@ -662,6 +666,8 @@ export interface MvpfyApi {
     projectKey?: string
   ): Promise<{ ok: boolean; error?: string }>;
   runAgent(req: RunAgentRequest): Promise<void>;
+  /** Agent work done as checked steps, seen from the window as one run. */
+  runAgentUnits(req: RunAgentUnitsRequest): Promise<void>;
   stopRun(runId: string): Promise<void>;
   dockerCompose(runId: string, repoPath: string, action: ComposeAction): Promise<void>;
   ide(runId: string, workspacePath: string, action: 'up' | 'down', port?: number): Promise<void>;

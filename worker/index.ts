@@ -1,5 +1,6 @@
 import { CliAgentRunner } from './agentRun';
 import { configFromEnv, secretsIn } from './config';
+import { ExecutionCredentialSession, operatorGithubToken } from './credentials';
 import { ExecutionEngine } from './engine';
 import { ShellRunner } from './exec';
 import { FakeFeature1 } from './fakeFeature1';
@@ -49,16 +50,22 @@ export async function main(): Promise<void> {
     log('running against the in-process fake Feature1 — no real server is involved');
   }
 
+  // What the claim issues wins; the operator's GH_TOKEN is what a self-hosted
+  // worker falls back to when Feature1 issues nothing.
+  const credentials = new ExecutionCredentialSession(operatorGithubToken());
+
   const engine = new ExecutionEngine({
     transport,
     store,
     layout,
-    git: new Git(runner, layout),
+    git: new Git(runner, layout, process.env, credentials.git),
     verifier: new Verifier(runner, redactor),
-    pullRequests: new PullRequests(runner, redactor),
+    pullRequests: new PullRequests(runner, redactor, process.env, credentials.gh),
     agent: new CliAgentRunner(runner),
     redactor,
     agentKind: config.agent,
+    unitAttempts: config.unitAttempts,
+    credentials,
     ...(config.agentModel ? { agentModel: config.agentModel } : {}),
     log,
   });

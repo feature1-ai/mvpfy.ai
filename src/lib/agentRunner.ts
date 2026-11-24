@@ -35,7 +35,10 @@ import {
   notesFileFor,
   planFileFor,
   specFileFor,
+  QUESTIONS_FILE,
+  SETUP_PROGRESS_FILE,
 } from '../../shared/types';
+import { SETUP_UNIT_ATTEMPTS, buildSetupUnits } from './setupUnits';
 
 /**
  * Extra ground rules injected into prompts when the workspace is the user's
@@ -200,45 +203,7 @@ export type RunKind =
   | 'git-auth'
   | 'chat';
 
-/**
- * A resume that failed because the conversation was never there.
- *
- * mvpfy records a feature's conversation id when it mints it, not when the
- * conversation is proved to exist — so an opening run that failed early, or
- * was killed, leaves an id behind with nothing behind it. Every later run then
- * asks to resume something that was never started.
- *
- * Told apart from every other failure because it is the one that fixes itself:
- * forget the id, open a new conversation, and the work is unaffected. The plan
- * and the spec carry everything that mattered.
- */
-export function lostConversation(log: string | null | undefined): boolean {
-  const text = log ?? '';
-  // Claude names the id it could not find; codex calls the stored transcript
-  // a rollout. Same situation, and the same repair.
-  return (
-    /No conversation found with session ID/i.test(text) ||
-    /no rollout found for thread id/i.test(text)
-  );
-}
-
-/**
- * The conversation codex just opened, announced on the first line of its
- * output as `{"type":"thread.started","thread_id":"..."}`.
- *
- * Claude is handed an id before it starts; codex cannot be, so the id has to
- * be read back out. Catching it is the whole reason a codex feature can share
- * one conversation across its stories rather than opening a new one — and
- * reading the product again — for every story in it.
- *
- * Only the head of the log is searched: the line is the first thing codex
- * prints, and this runs on every chunk of a stream that grows to megabytes.
- */
-export function codexThreadId(log: string | null | undefined): string | null {
-  const head = (log ?? '').slice(0, 4000);
-  const match = /"type"\s*:\s*"thread\.started"[^}]*?"thread_id"\s*:\s*"([^"]+)"/.exec(head);
-  return match ? match[1] : null;
-}
+export { codexThreadId, lostConversation } from '../../shared/agentConversation';
 
 /**
  * Runs that are not activity.
@@ -441,16 +406,31 @@ export function buildShipFeaturePrompt(repoPath: string, storyId: string): strin
   });
 }
 
+/**
+ * Set the product up, as steps mvpfy checks one at a time (setupUnits.ts).
+ *
+ * Still one run as far as everything watching it is concerned. `resume`
+ * carries on from the steps a previous run finished — the product manager
+ * answered a question, or a diagnosis fixed something — rather than doing
+ * them all again.
+ */
 export async function startBootstrapRun(
   project: Project,
   settings: Settings,
-  regenerate = false
+  regenerate = false,
+  resume = false
 ): Promise<RunHandle> {
   const runId = makeRunId('bootstrap');
-  await window.mvpfy.runAgent({
+  const cfg = configDirFor(project.mode);
+  await window.mvpfy.runAgentUnits({
     runId,
     repoPath: project.localPath,
-    promptText: buildBootstrapPrompt(project, regenerate),
+    units: buildSetupUnits(project, buildBootstrapPrompt(project, regenerate)),
+    maxAttempts: SETUP_UNIT_ATTEMPTS,
+    questionsFile: cfg + QUESTIONS_FILE,
+    progressFile: cfg + SETUP_PROGRESS_FILE,
+    resume,
+    shareConversation: true,
     ...agentFor(settings),
   });
   return { runId, kind: 'bootstrap', projectId: project.id };

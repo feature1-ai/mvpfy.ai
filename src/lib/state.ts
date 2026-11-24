@@ -21,12 +21,36 @@ export function withProject(
 }
 
 /**
+ * How many host ports each project owns, starting at its base port. A stack
+ * publishes more than its app — an API, a database, a mail inbox, a dev
+ * server — and the setup agent is told to keep all of them inside this block.
+ */
+export const PORT_BLOCK = 10;
+
+/**
+ * Where the next project's block starts: the first multiple of PORT_BLOCK
+ * clear of every existing project's whole block. Older projects' bases are
+ * not round (4101, 4112), so their blocks end mid-decade and the next round
+ * number after the base is not enough.
+ *
+ * It used to be the highest base plus one. A project only records its base,
+ * so the ports its other services use were invisible: a project on 4101 also
+ * published its API on 4102, the next project was handed 4102 because
+ * the first happened to be stopped at that moment, and the two could never
+ * run together after that.
+ */
+export function nextPortBlock(bases: number[]): number {
+  if (bases.length === 0) return 4100;
+  const highest = Math.max(...bases);
+  return Math.ceil((highest + PORT_BLOCK) / PORT_BLOCK) * PORT_BLOCK;
+}
+
+/**
  * Pick a host port for a new project: ask the OS for a genuinely free one,
- * starting above ports already promised to other projects.
+ * starting at the first block no other project owns.
  */
 export async function allocateBasePort(state: MvpfyState): Promise<number> {
-  const maxUsed = Math.max(4099, ...state.projects.map((p) => p.basePort));
-  return window.mvpfy.findFreePort(maxUsed + 1);
+  return window.mvpfy.findFreePort(nextPortBlock(state.projects.map((p) => p.basePort)));
 }
 
 export function newProjectId(): string {

@@ -769,3 +769,16 @@ describe('what a story is told about the interface', () => {
     expect(codex).toContain('Ant Design');
   });
 });
+
+describe('the ports a new stack may publish', () => {
+  it('names the project its own block and leaves no placeholder behind', () => {
+    const prompt = buildBootstrapPrompt(
+      { id: 'p', localPath: '/w/shop', repos: [], basePort: 4120 } as unknown as Project,
+      false,
+      false
+    );
+    expect(prompt).toContain('localhost:4120');
+    expect(prompt).toContain('4120–4129');
+    expect(prompt).not.toMatch(/\{portRangeEnd\}|\{basePort\}/);
+  });
+});

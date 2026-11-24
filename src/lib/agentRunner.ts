@@ -5,6 +5,7 @@ import { componentLibrariesFor } from './componentLibraries';
 import { componentLibrariesBlock } from '../../shared/componentLibraries';
 import { designLinksBlock } from '../../shared/designLinks';
 import { watcherNote } from './watchers';
+import { PORT_BLOCK } from './state';
 import bootstrapPlanTemplate from '../prompts/bootstrap-plan.txt?raw';
 import readinessTemplate from '../prompts/launch-readiness.txt?raw';
 import readinessFixTemplate from '../prompts/readiness-fix.txt?raw';
@@ -286,6 +287,7 @@ export function buildBootstrapPrompt(
   return fillTemplate(bootstrapTemplate, {
     repoPath: project.localPath,
     basePort: String(project.basePort),
+    portRangeEnd: String(project.basePort + PORT_BLOCK - 1),
     workspaceNote: workspaceNoteFor(project),
     // Extending wins over regenerating: a project with a repository waiting
     // to be added is asking for that, not for its stack to be rewritten.

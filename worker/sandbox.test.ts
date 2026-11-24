@@ -9,8 +9,11 @@ import { RemoteRunner, crossingEnv, sandboxClientFrom } from './remoteRunner';
 import { SandboxServer, parseRunRequest, sandboxServerConfigFrom } from './sandbox';
 
 const TOKEN = 'sandbox-token-'.padEnd(40, 'x');
+// The worker runs on Linux and macOS and says so at start-up. What these check
+// is about directories under a root, which on Windows are not spelt this way.
+const POSIX = process.platform !== 'win32';
 
-describe('what the sandbox will run', () => {
+describe.runIf(POSIX)('what the sandbox will run', () => {
   const root = '/var/lib/mvpfy';
   const ok = { id: 'abcdef123456', command: 'npm test', cwd: `${root}/executions/a`, env: {} };
 
@@ -113,7 +116,7 @@ class HeldRunner implements CommandRunner {
   }
 }
 
-describe('a worker and its sandbox, over a real connection', () => {
+describe.runIf(POSIX)('a worker and its sandbox, over a real connection', () => {
   const open: SandboxServer[] = [];
   afterEach(async () => {
     await Promise.all(open.splice(0).map((server) => server.close()));
@@ -225,22 +228,19 @@ describe('a worker and its sandbox, over a real connection', () => {
     );
   });
 
-  it.runIf(process.platform !== 'win32')(
-    'runs a real command, with only the environment it was sent',
-    async () => {
-      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-sandbox-')));
-      process.env.MVPFY_SANDBOX_TEST_MARKER = 'from-the-sandbox-process';
-      try {
-        const { remote } = await pair(new ShellRunner(), root);
-        const result = await remote.run(
-          'echo "$GREETING:${MVPFY_SANDBOX_TEST_MARKER:-absent}:${GH_TOKEN:-absent}" && pwd',
-          { cwd: root, env: { PATH: process.env.PATH ?? '', GREETING: 'hello', GH_TOKEN: 'gho_x' } }
-        );
-        expect(result.code).toBe(0);
-        expect(result.stdout.trim().split('\n')).toEqual(['hello:absent:absent', root]);
-      } finally {
-        delete process.env.MVPFY_SANDBOX_TEST_MARKER;
-      }
+  it('runs a real command, with only the environment it was sent', async () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-sandbox-')));
+    process.env.MVPFY_SANDBOX_TEST_MARKER = 'from-the-sandbox-process';
+    try {
+      const { remote } = await pair(new ShellRunner(), root);
+      const result = await remote.run(
+        'echo "$GREETING:${MVPFY_SANDBOX_TEST_MARKER:-absent}:${GH_TOKEN:-absent}" && pwd',
+        { cwd: root, env: { PATH: process.env.PATH ?? '', GREETING: 'hello', GH_TOKEN: 'gho_x' } }
+      );
+      expect(result.code).toBe(0);
+      expect(result.stdout.trim().split('\n')).toEqual(['hello:absent:absent', root]);
+    } finally {
+      delete process.env.MVPFY_SANDBOX_TEST_MARKER;
     }
-  );
+  });
 });

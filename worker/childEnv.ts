@@ -32,6 +32,14 @@ const AGENT_ONLY = [
   /^CLAUDE_CODE_OAUTH_TOKEN$/,
   /^OPENAI_API_KEY$/,
   /^CODEX_API_KEY$/,
+  // Where the agents keep the sign-ins setup made. The agent needs these; a
+  // repository's own test scripts do not, and for the same reason
+  // GH_CONFIG_DIR is in the list above — handing a postinstall hook the path
+  // to a credential folder is not something to do by omission. It stays a
+  // narrowing, not a boundary: HOME is passed through either way, and the
+  // header says why.
+  /^CLAUDE_CONFIG_DIR$/,
+  /^CODEX_HOME$/,
 ];
 
 function without(env: NodeJS.ProcessEnv, patterns: RegExp[]): NodeJS.ProcessEnv {

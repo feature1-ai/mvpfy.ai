@@ -5,9 +5,9 @@ import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { TerminalIo } from './setupIo';
 import { ensureSignInFolders } from './signInFolders';
-import { configFromEnv } from './config';
+import { commandFrom, configFromEnv, workerNameFrom } from './config';
 import { ghLoginToken } from './credentials';
-import { agentEnv } from './childEnv';
+import { agentEnv, checkEnv } from './childEnv';
 import { Feature1Login, Feature1LoginError, workspaceBaseUrl } from './feature1Login';
 import { RunnerCredentialStore, SavedRunner, isExpired, timeLeft } from './runnerCredential';
 import {
@@ -277,14 +277,22 @@ describe('the saved runner credential', () => {
     name: 'runner-1',
   };
 
-  it('is written for this user only, and read back as it was written', () => {
+  it('is read back as it was written, leaving no temporary file behind', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-runner-'));
     const store = new RunnerCredentialStore(root);
     expect(store.load()).toBeNull();
     store.save(saved);
     expect(store.load()).toEqual(saved);
-    expect(fs.statSync(store.file).mode & 0o777).toBe(0o600);
     expect(fs.readdirSync(root)).toEqual(['runner.json']);
+  });
+
+  // The worker runs on Linux and macOS and says so (index.ts). Windows keeps
+  // only a read-only bit, so it reports 0o666 however the file was made.
+  it.runIf(process.platform !== 'win32')('is written for this user only', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-runner-'));
+    const store = new RunnerCredentialStore(root);
+    store.save(saved);
+    expect(fs.statSync(store.file).mode & 0o777).toBe(0o600);
   });
 
   it('is nothing at all when the file is damaged', () => {
@@ -339,6 +347,52 @@ describe('the GitHub login setup made', () => {
   });
 });
 
+describe('the folders the sign-ins live in', () => {
+  const pointers = {
+    CLAUDE_CONFIG_DIR: '/var/lib/mvpfy/auth/claude',
+    CODEX_HOME: '/var/lib/mvpfy/auth/codex',
+    PATH: '/usr/bin',
+  };
+
+  it('are told to the agent, which signs in with them', () => {
+    expect(agentEnv(pointers)).toEqual(pointers);
+  });
+
+  it("are not told to a repository's own checks, which never need them", () => {
+    // checkEnv runs `npm test` and whatever a postinstall hook reaches.
+    expect(checkEnv(pointers)).toEqual({ PATH: '/usr/bin' });
+  });
+});
+
+describe('what the arguments ask for', () => {
+  it('claims work with none, and signs in with setup', () => {
+    expect(commandFrom(['node', 'index.js'])).toBe('run');
+    expect(commandFrom(['node', 'index.js', 'setup'])).toBe('setup');
+  });
+
+  it('refuses anything else rather than quietly starting to claim work', () => {
+    // `setup --renew` once started a second worker on the same volume.
+    expect(() => commandFrom(['node', 'index.js', 'setup', '--renew'])).toThrow(/Unrecognised/);
+    expect(() => commandFrom(['node', 'index.js', 'setuo'])).toThrow(/either no arguments/);
+  });
+});
+
+describe('what this worker calls itself', () => {
+  it('is what the operator named it', () => {
+    expect(workerNameFrom({ MVPFY_WORKER_NAME: 'eu-runner-3' })).toBe('eu-runner-3');
+  });
+
+  it('otherwise says which machine it is, so an admin can tell runners apart', () => {
+    // The name Feature1 registers the runner under; a fixed string gave every
+    // runner in a workspace the same one.
+    const name = workerNameFrom({});
+    expect(name).toMatch(/^mvpfy worker/);
+    if (os.hostname() && os.hostname() !== 'localhost') {
+      expect(name).toBe(`mvpfy worker ${os.hostname()}`);
+    }
+  });
+});
+
 describe('the terminal setup talks through', () => {
   const streams = () => {
     const input = new PassThrough() as unknown as NodeJS.ReadStream;
@@ -373,15 +427,22 @@ describe('the terminal setup talks through', () => {
 });
 
 describe('the folders sign-ins are kept in', () => {
-  it('are made before anything looks there, private to this user', () => {
+  it('are made before anything looks there', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-signin-'));
     const codex = path.join(root, 'auth', 'codex');
     const gh = path.join(root, 'auth', 'gh');
     expect(ensureSignInFolders({ CODEX_HOME: codex, GH_CONFIG_DIR: gh })).toEqual([gh, codex]);
     expect(fs.statSync(codex).isDirectory()).toBe(true);
-    expect(fs.statSync(codex).mode & 0o777).toBe(0o700);
     // Again, with them there already, is not an error.
     expect(() => ensureSignInFolders({ CODEX_HOME: codex })).not.toThrow();
+  });
+
+  // POSIX only, as above: Windows ignores a directory's mode and reports 0o777.
+  it.runIf(process.platform !== 'win32')('are private to this user', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-signin-'));
+    const codex = path.join(root, 'auth', 'codex');
+    ensureSignInFolders({ CODEX_HOME: codex });
+    expect(fs.statSync(codex).mode & 0o777).toBe(0o700);
   });
 
   it('leaves a tool to its own default when nothing points it elsewhere', () => {

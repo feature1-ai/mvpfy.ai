@@ -1,3 +1,4 @@
+import * as os from 'node:os';
 import { AgentKind } from './agentRun';
 import { SavedRunner, isExpired } from './runnerCredential';
 
@@ -15,7 +16,7 @@ import { SavedRunner, isExpired } from './runnerCredential';
  */
 
 export interface WorkerConfig {
-  /** For this worker's own logs. Feature1 names the credential, not us. */
+  /** This worker's own logs, and what Feature1 calls the runner setup adds. */
   name: string;
   feature1BaseUrl: string;
   /**
@@ -45,11 +46,51 @@ function intFrom(value: string | undefined, fallback: number, name: string): num
   return parsed;
 }
 
+/**
+ * What the arguments ask for: claim work, or sign in once.
+ *
+ * Anything unrecognised is refused rather than taken as "just run". Somebody
+ * who typed `setup --renew`, or mistyped `setup`, would otherwise start a
+ * second worker claiming executions against the same volume as the one
+ * already running, believing they were signing in.
+ */
+export function commandFrom(argv: string[]): 'run' | 'setup' {
+  const args = argv.slice(2);
+  if (args.length === 0) return 'run';
+  if (args.length === 1 && args[0] === 'setup') return 'setup';
+  throw new Error(
+    `Unrecognised argument ${JSON.stringify(args.join(' '))}. The worker takes either ` +
+      'no arguments, to claim work, or `setup`, to sign in once.'
+  );
+}
+
 /** Where the worker keeps everything, which is also where setup leaves its credential. */
 export function workerRootFrom(env: NodeJS.ProcessEnv = process.env): string {
   const root = (env.MVPFY_WORKER_ROOT ?? '/var/lib/mvpfy').trim();
   if (!root.startsWith('/')) throw new Error('MVPFY_WORKER_ROOT must be an absolute path');
   return root;
+}
+
+/**
+ * What this worker calls itself, in its logs and to Feature1.
+ *
+ * The default carries the host name because this is also the name the runner
+ * is registered under, and it is what an organisation admin reads when
+ * deciding which runner to revoke. A fixed string gave every runner in a
+ * workspace the same one, which is no help at all; in a container the host
+ * name is the container's id, which is exactly the thing to go and look at.
+ */
+export function workerNameFrom(env: NodeJS.ProcessEnv = process.env): string {
+  const set = (env.MVPFY_WORKER_NAME ?? '').trim();
+  if (set) return set;
+  const host = (() => {
+    try {
+      return os.hostname().trim();
+    } catch {
+      return '';
+    }
+  })();
+  return host && host !== 'localhost' ? `mvpfy worker ${host}` : 'mvpfy worker';
 }
 
 /**
@@ -115,7 +156,7 @@ export function configFromEnv(
   // is not being repaired, it is being paid for.
   if (unitAttempts > 5) throw new Error('MVPFY_UNIT_ATTEMPTS must be between 1 and 5');
   return {
-    name: (env.MVPFY_WORKER_NAME ?? 'mvpfy worker').trim(),
+    name: workerNameFrom(env),
     feature1BaseUrl: baseUrl,
     runnerToken,
     root,

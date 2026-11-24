@@ -1,5 +1,5 @@
 import { CliAgentRunner } from './agentRun';
-import { configFromEnv, secretsIn, workerRootFrom } from './config';
+import { commandFrom, configFromEnv, secretsIn, workerNameFrom, workerRootFrom } from './config';
 import { ExecutionCredentialSession, ghLoginToken, operatorGithubToken } from './credentials';
 import { ExecutionEngine } from './engine';
 import { ShellRunner } from './exec';
@@ -153,7 +153,7 @@ export async function setup(): Promise<number> {
         io,
         login: new Feature1Login(),
         store: new RunnerCredentialStore(workerRootFrom()),
-        name: (process.env.MVPFY_WORKER_NAME ?? 'mvpfy worker').trim(),
+        name: workerNameFrom(),
       }),
     ],
     io
@@ -162,7 +162,8 @@ export async function setup(): Promise<number> {
 }
 
 if (require.main === module) {
-  const start = process.argv[2] === 'setup' ? setup().then((code) => process.exit(code)) : main();
+  const start = (async () =>
+    commandFrom(process.argv) === 'setup' ? process.exit(await setup()) : main())();
   start.catch((error: Error) => {
     log(`worker stopped: ${error.message}`);
     process.exit(1);

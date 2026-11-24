@@ -1,6 +1,9 @@
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import type { RunsApi } from './useRuns';
 import { implementGrounding, specGrounding } from './grounding';
+import { componentLibrariesFor } from './componentLibraries';
+import { componentLibrariesBlock } from '../../shared/componentLibraries';
+import { designLinksBlock } from '../../shared/designLinks';
 import { watcherNote } from './watchers';
 import bootstrapPlanTemplate from '../prompts/bootstrap-plan.txt?raw';
 import readinessTemplate from '../prompts/launch-readiness.txt?raw';
@@ -722,11 +725,16 @@ export async function startSyncFeatureRun(
 export async function designFor(
   project: Project,
   planSlug: string,
-  design: { images: string[]; links: string[] } | undefined
+  design: { images: string[]; links: string[] } | undefined,
+  /** Decides what is said about a design made in Claude: only Claude Code can open one. */
+  agent: AgentKind = 'claude'
 ): Promise<{ block: string; imagePaths: string[] }> {
   const images = design?.images ?? [];
   const links = design?.links ?? [];
-  if (images.length === 0 && links.length === 0) return { block: '', imagePaths: [] };
+  // Asked whether or not there is a design: with none, what the product is
+  // already built from is the only thing keeping the interface consistent.
+  const libraries = componentLibrariesBlock(await componentLibrariesFor(project));
+  if (images.length === 0 && links.length === 0) return { block: libraries, imagePaths: [] };
   let paths: string[] = [];
   if (images.length > 0) {
     paths = await window.mvpfy
@@ -748,10 +756,8 @@ export async function designFor(
       'the criterion says and note the difference in your summary.'
     );
   }
-  if (links.length > 0) {
-    lines.push('', 'The design also lives here, for reference you may not be able to open:');
-    for (const l of links) lines.push(`   • ${l}`);
-  }
+  if (links.length > 0) lines.push('', designLinksBlock(links, agent));
+  if (libraries) lines.push('', libraries);
   return { block: lines.join('\n'), imagePaths: paths };
 }
 
@@ -860,7 +866,7 @@ export async function startPlanStoryRun(
 ): Promise<RunHandle> {
   const runId = makeRunId('planstory');
   const trunk = isTrunkBased(project);
-  const art = await designFor(project, planSlug, design);
+  const art = await designFor(project, planSlug, design, settings.defaultAgent);
   const notesFile = await notesFileFound(project, planSlug);
   await window.mvpfy.runAgent({
     runId,
@@ -954,7 +960,7 @@ export async function startFeatureChangeRun(
 ): Promise<RunHandle> {
   const runId = makeRunId('featurechange');
   const cfg = configDirFor(project.mode);
-  const art = await designFor(project, planSlug, design);
+  const art = await designFor(project, planSlug, design, settings.defaultAgent);
   await window.mvpfy.runAgent({
     runId,
     repoPath: project.localPath,

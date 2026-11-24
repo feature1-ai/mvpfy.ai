@@ -4,6 +4,9 @@ import type { ReactNode } from 'react';
 import { FeaturePlan, ProjectController } from '../hooks/useProjectController';
 import { needsFeature1SignIn } from '../lib/feature1Auth';
 import type { PullRequestState } from '../../shared/types';
+import { ComponentLibrary } from '../../shared/componentLibraries';
+import { isClaudeDesignLink } from '../../shared/designLinks';
+import { componentLibrariesFor } from '../lib/componentLibraries';
 import {
   LANES,
   LANE_LABELS,
@@ -1102,6 +1105,22 @@ function FeatureDesign({
     };
   }, [key, slug, c]);
 
+  // Read from the product's own manifests, and shown so the product manager
+  // can see what the agent is being held to rather than taking it on trust.
+  const [libraries, setLibraries] = useState<ComponentLibrary[]>([]);
+  const workspace = c.project.localPath;
+  useEffect(() => {
+    let cancelled = false;
+    void componentLibrariesFor(c.project).then((found) => {
+      if (!cancelled) setLibraries(found);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // The workspace is what decides the answer; the project object is new on every save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace]);
+
   const empty = design.images.length === 0 && design.links.length === 0;
   return (
     <section className="card mb-5 overflow-hidden">
@@ -1174,7 +1193,8 @@ function FeatureDesign({
               Save
             </button>
             <span className="text-[11px] text-muted">
-              The agent cannot open a Figma link — it is here so a person can.
+              The agent cannot open a Figma link — it is here so a person can. A design made in
+              Claude (a claude.ai link) is different: Claude Code is asked to open it.
             </span>
           </div>
         </div>
@@ -1189,8 +1209,31 @@ function FeatureDesign({
               className="max-w-full truncate font-mono text-[11.5px] link"
             >
               {l.replace(/^https?:\/\//, '')}
+              {isClaudeDesignLink(l) && (
+                <span className="ml-2 font-sans text-[11px] text-muted no-underline">
+                  Claude design — Claude Code is asked to open it
+                </span>
+              )}
             </button>
           ))}
+        </div>
+      )}
+
+      {libraries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-line-subtle px-5 py-2.5">
+          <span className="mr-1 text-[11.5px] text-muted">Built with</span>
+          {libraries.map((library) => (
+            <span
+              key={library.name}
+              className="chip"
+              title={`${library.kind}${library.version ? ` · ${library.version}` : ''} · read from ${library.source}`}
+            >
+              {library.name}
+            </span>
+          ))}
+          <span className="ml-1 text-[11px] text-muted">
+            The agent is told to build with these and not to add another.
+          </span>
         </div>
       )}
     </section>

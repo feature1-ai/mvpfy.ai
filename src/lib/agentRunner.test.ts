@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  designFor,
   buildBootstrapPrompt,
   buildShipFeaturePrompt,
   isAmbientRun,
@@ -726,5 +727,45 @@ describe('the watcher rule in the bootstrap prompt', () => {
     // for the agent to write. The two only coexist because no template key is
     // ever named the same as a variable the prompt mentions.
     expect(buildBootstrapPrompt(macProject(), false, false)).not.toMatch(/(?<!\$)\{\w+\}/);
+  });
+});
+
+describe('what a story is told about the interface', () => {
+  async function blockFor(agent: 'claude' | 'codex', links: string[]) {
+    vi.stubGlobal('window', {
+      mvpfy: {
+        readRepoFiles: async (_repo: string, paths: string[]) =>
+          paths.map((relativePath) =>
+            relativePath === 'web/package.json'
+              ? { relativePath, exists: true, content: '{"dependencies":{"antd":"5.2.0"}}' }
+              : { relativePath, exists: false, content: null }
+          ),
+      },
+    });
+    try {
+      const project = {
+        id: 'p',
+        localPath: '/ws',
+        repos: [{ url: '', dir: '/ws/web' }],
+      } as unknown as Project;
+      return (await designFor(project, 'paging', { images: [], links }, agent)).block;
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it('names the component libraries even when the feature has no design', async () => {
+    const block = await blockFor('claude', []);
+    expect(block).toContain('Ant Design 5.2.0 — components (web/package.json)');
+    expect(block).not.toContain('This feature has a design');
+  });
+
+  it('asks Claude Code, and only Claude Code, to open a design made in Claude', async () => {
+    const link = 'https://claude.ai/design/p/0f3a';
+    expect(await blockFor('claude', [link])).toContain('Artifact tool');
+    const codex = await blockFor('codex', [link]);
+    expect(codex).not.toContain('Artifact tool');
+    expect(codex).toContain(link);
+    expect(codex).toContain('Ant Design');
   });
 });

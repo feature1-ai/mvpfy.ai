@@ -40,8 +40,17 @@ export type WorkResult<Stop> = { kind: 'done' } | { kind: 'stop'; stop: Stop };
 /** What checking it came to. */
 export type CheckResult<Stop> =
   | { kind: 'passed' }
-  /** Not accepted. `failure` is written for whoever has to fix it. */
-  | { kind: 'failed'; failure: string }
+  /**
+   * Not accepted. `failure` is written for whoever has to fix it, and may
+   * quote what a command printed; it stays wherever the driver runs.
+   *
+   * `reportable` is the same verdict with nothing quoted from the work —
+   * which command, in which repository, and that it failed. A driver that
+   * tells anyone outside the machine why a unit failed must send this and
+   * never `failure`: a test prints whatever the product it is testing prints,
+   * and that can be a key, a customer record or an internal hostname.
+   */
+  | { kind: 'failed'; failure: string; reportable?: string }
   | { kind: 'stop'; stop: Stop };
 
 /** Does a unit and judges it. The two are separate so neither can vouch for itself. */
@@ -68,7 +77,14 @@ export type UnitRunOutcome<Unit, Stop> =
   /** The driver ended the run: cancelled, blocked on a person, crashed. */
   | { kind: 'stopped'; unit: Unit; stop: Stop }
   /** One unit used every attempt and its check still fails. */
-  | { kind: 'exhausted'; unit: Unit; attempts: number; failure: string };
+  | {
+      kind: 'exhausted';
+      unit: Unit;
+      attempts: number;
+      failure: string;
+      /** The last check's `reportable`, when it gave one. See CheckResult. */
+      reportable?: string;
+    };
 
 export interface UnitRunOptions {
   /** Tries per unit, the first included. 1 means no repair at all. */
@@ -96,6 +112,7 @@ export async function runUnits<Unit, Stop>(
   for (const unit of units) {
     if (ledger.isDone(unit)) continue;
     let failure: string | undefined;
+    let reportable: string | undefined;
     let finished = false;
     for (let number = 1; number <= of && !finished; number++) {
       const attempt: UnitAttempt = { number, of, ...(failure === undefined ? {} : { failure }) };
@@ -104,9 +121,20 @@ export async function runUnits<Unit, Stop>(
       const checked = await driver.check(unit, attempt);
       if (checked.kind === 'stop') return { kind: 'stopped', unit, stop: checked.stop };
       if (checked.kind === 'passed') finished = true;
-      else failure = checked.failure;
+      else {
+        failure = checked.failure;
+        reportable = checked.reportable;
+      }
     }
-    if (!finished) return { kind: 'exhausted', unit, attempts: of, failure: failure ?? '' };
+    if (!finished) {
+      return {
+        kind: 'exhausted',
+        unit,
+        attempts: of,
+        failure: failure ?? '',
+        ...(reportable === undefined ? {} : { reportable }),
+      };
+    }
     await ledger.markDone(unit);
   }
   return { kind: 'completed' };

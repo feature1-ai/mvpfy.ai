@@ -17,6 +17,16 @@ export type UnitCheckSpec =
   | { kind: 'files'; paths: string[] }
   /** The file exists and contains every one of these strings. */
   | { kind: 'contains'; path: string; needles: string[] }
+  /**
+   * The file imports another file, in the `@path` form Claude reads.
+   *
+   * Separate from `contains` because the same import can be written more than
+   * one way — `@AGENTS.md` and `@./AGENTS.md` mean the same thing — and a
+   * literal needle passes for one spelling and fails the other. A step whose
+   * instruction is "leave an existing import alone" cannot be checked by a
+   * substring, because it is the existing file that chose the spelling.
+   */
+  | { kind: 'imports'; path: string; target: string }
   /** `docker compose config` accepts the generated stack as written. */
   | { kind: 'compose-config'; linked: boolean }
   /** mvpfy.yml names the app's port, and names the same one in both places. */

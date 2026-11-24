@@ -63,6 +63,30 @@ describe('runUnits', () => {
     expect(s.worked.some((w) => w.unit === 'c')).toBe(false);
   });
 
+  it('carries the last reportable verdict out with the exhausted unit', async () => {
+    // `failure` may quote what a command printed and stays on the machine that
+    // ran it; `reportable` is the version safe to tell a server. The outcome
+    // has to carry both, or the caller is left redacting the wrong one.
+    const s = scripted({
+      a: [
+        { kind: 'failed', failure: 'first, with output', reportable: 'first, without' },
+        { kind: 'failed', failure: 'second, with output', reportable: 'second, without' },
+      ],
+    });
+    const outcome = await runUnits(['a'], s.driver, s.ledger, { maxAttempts: 2 });
+    expect(outcome).toMatchObject({
+      kind: 'exhausted',
+      failure: 'second, with output',
+      reportable: 'second, without',
+    });
+  });
+
+  it('leaves reportable off when the check never gave one', async () => {
+    const s = scripted({ a: [failed('no reportable here')] });
+    const outcome = await runUnits(['a'], s.driver, s.ledger, { maxAttempts: 1 });
+    expect(outcome).not.toHaveProperty('reportable');
+  });
+
   it('does not repair at all when one attempt is all a unit gets', async () => {
     const s = scripted({ a: [failed('red')] });
     const outcome = await runUnits(['a'], s.driver, s.ledger, { maxAttempts: 1 });

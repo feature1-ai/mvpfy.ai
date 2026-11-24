@@ -73,12 +73,26 @@ describe('a stepped run', () => {
   }
   const cwd = process.cwd();
 
+  /**
+   * A step that behaves identically in cmd.exe and in a POSIX shell.
+   *
+   * These tests drive the real shell, which is the point of them — and the
+   * reason they cannot be written in it. `a; b` is two commands to sh and one
+   * literal string to cmd.exe, `sleep` and `/dev/zero` do not exist there, and
+   * `echo one` prints `one\r\n` rather than `one\n`. Writing the steps in
+   * JavaScript keeps the coverage on the platform whose shell is the risk,
+   * instead of skipping it there. Single quotes only inside `js`: a double
+   * quote would have to survive cmd.exe as well as node's own argument
+   * parsing.
+   */
+  const step = (js: string) => `node -e ${JSON.stringify(js)}`;
+
   it('runs several commands under one id and exits once, at the end', async () => {
     const w = watch('stepped-1');
     const run = beginSteppedRun('stepped-1');
-    expect((await run.step('echo one', cwd)).code).toBe(0);
+    expect((await run.step(step("console.log('one')"), cwd)).code).toBe(0);
     expect(w.exits).toEqual([]);
-    expect((await run.step('echo two; exit 3', cwd)).code).toBe(3);
+    expect((await run.step(step("console.log('two'); process.exit(3)"), cwd)).code).toBe(3);
     expect(w.exits).toEqual([]);
     run.end(0);
     await w.exited;
@@ -125,20 +139,23 @@ describe('a stepped run', () => {
   it('remembers being stopped between two commands, and starts nothing more', async () => {
     watch('stepped-6');
     const run = beginSteppedRun('stepped-6');
-    await run.step('echo one', cwd);
+    await run.step(step("console.log('one')"), cwd);
     stopRun('stepped-6');
     expect(run.stopped()).toBe(true);
-    expect((await run.step('echo should-not-run', cwd)).code).toBeNull();
+    expect((await run.step(step("console.log('should-not-run')"), cwd)).code).toBeNull();
     run.end(null);
   });
 
   it('stops the command in flight', async () => {
     watch('stepped-7');
     const run = beginSteppedRun('stepped-7');
-    const step = run.step('sleep 30', cwd);
+    // A process that is genuinely alive for 30s. `sleep 30` was not one on
+    // Windows — there is no such command, so the step failed to start and the
+    // assertion below passed without anything having been stopped.
+    const inFlight = run.step(step('setTimeout(function () {}, 30000)'), cwd);
     await new Promise((r) => setTimeout(r, 300));
     stopRun('stepped-7');
-    expect((await step).code).not.toBe(0);
+    expect((await inFlight).code).not.toBe(0);
     expect(run.stopped()).toBe(true);
     run.end(null);
   }, 15_000);
@@ -146,9 +163,15 @@ describe('a stepped run', () => {
   it('hands back the start and the end of what a step printed, not the middle', async () => {
     watch('stepped-8');
     const run = beginSteppedRun('stepped-8');
+    // JSON.stringify rather than a quoted literal: the first line has to come
+    // out as {"type":…}, and a double quote inside the command would have to
+    // survive cmd.exe too.
     const { output } = await run.step(
-      `echo '{"type":"thread.started","thread_id":"t-1"}'; ` +
-        `head -c 200000 /dev/zero | tr '\\0' 'x'; echo; echo 'No conversation found'`,
+      step(
+        "console.log(JSON.stringify({ type: 'thread.started', thread_id: 't-1' })); " +
+          "console.log('x'.repeat(200000)); " +
+          "console.log('No conversation found')"
+      ),
       cwd
     );
     expect(output.startsWith('{"type":"thread.started"')).toBe(true);

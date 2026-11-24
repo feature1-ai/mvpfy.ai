@@ -24,7 +24,7 @@ import { AgentKind, AgentRunner } from './agentRun';
 import { Redactor } from './redact';
 import { CredentialSession } from './credentials';
 import { buildPrompt, buildRepairPrompt, commitMessageFor, criterionText } from './prompt';
-import { RepositoryChecks, failureBrief } from './checks';
+import { RepositoryChecks, failureBrief, failureSummary } from './checks';
 import { UnitDriver, runUnits } from '../shared/unitRunner';
 
 /**
@@ -325,11 +325,16 @@ export class ExecutionEngine {
       // not something to hand a reviewer. The commits stay in the checkout
       // for the attempt that comes next.
       const tries = `${built.attempts} attempt${built.attempts === 1 ? '' : 's'}`;
+      // `reportable`, never `failure`: the brief the agent was given quotes the
+      // end of what the failing command printed, and verify.ts says in as many
+      // words that output is kept on the worker. Redacting a 600-character
+      // slice of it is not the same promise — the redactor removes values it
+      // was told about, and a test prints whatever its product prints.
+      const why = built.reportable ? `${this.deps.redactor.line(built.reportable, 600)} ` : '';
       return this.finish(
         checkpoint,
         'failed',
-        `${unitLabel(built.unit)}: its checks were still failing after ${tries}. ` +
-          `${this.deps.redactor.line(built.failure, 600)} ` +
+        `${unitLabel(built.unit)}: its checks were still failing after ${tries}. ${why}` +
           'The work so far is kept for a retry; no pull request was opened.'
       );
     }
@@ -404,6 +409,15 @@ export class ExecutionEngine {
     const { execution } = checkpoint;
     const stop = async (ending: Promise<Ending>) => ({ kind: 'stop' as const, stop: await ending });
     const cancelled = () => stop(this.finish(checkpoint, 'cancelled', 'Cancelled part-way'));
+    // Which repositories each unit has changed, accumulated across its
+    // attempts: a repair may touch a repository the first attempt did not, and
+    // the check has to cover everything this story has now altered.
+    const touchedByUnit = new Map<string, Set<string>>();
+    const noteTouched = (unit: Snapshot, repositoryIds: string[]) => {
+      const seen = touchedByUnit.get(unit.id) ?? new Set<string>();
+      for (const id of repositoryIds) seen.add(id);
+      touchedByUnit.set(unit.id, seen);
+    };
 
     return {
       work: async (unit, attempt) => {
@@ -463,7 +477,7 @@ export class ExecutionEngine {
           // and the unit stays open for that attempt. The tail stays on the
           // worker for the operator; it is never reported.
           this.log(`${execution.id}: agent exited ${outcome.code} on ${label}: ${outcome.tail}`);
-          await this.commitUnit(checkpoint, worktrees, unit);
+          noteTouched(unit, await this.commitUnit(checkpoint, worktrees, unit));
           this.deps.store.save(checkpoint, this.now());
           const why = outcome.timedOut
             ? 'ran out of time'
@@ -472,13 +486,24 @@ export class ExecutionEngine {
             this.finish(checkpoint, 'failed', `The coding agent ${why} while building ${label}.`)
           );
         }
-        await this.commitUnit(checkpoint, worktrees, unit);
+        noteTouched(unit, await this.commitUnit(checkpoint, worktrees, unit));
         return { kind: 'done' };
       },
 
       check: async (unit) => {
         const failures: Array<{ repositoryName: string; result: VerificationResult }> = [];
+        // Only the repositories this story changed. Checking all of them made
+        // the first story answer for the state of the whole product: a
+        // repository already red at its base commit — a flake, a missing
+        // fixture, a suite that was broken before any of this started — failed
+        // US-01, and every repair attempt was spent telling the agent to fix
+        // something buildRepairPrompt also tells it is not its to fix. The
+        // execution then ended naming the wrong cause, with the later stories
+        // never built. A whole-repository failure is still caught, in the
+        // verify stage, where it is reported against the repository.
+        const touched = touchedByUnit.get(unit.id) ?? new Set<string>();
         for (const repositoryId of Object.keys(worktrees)) {
+          if (!touched.has(repositoryId)) continue;
           if (signal.aborted) return cancelled();
           const results = await checks.verify(repositoryId, worktrees, signal);
           const repositoryName = authorisedRepository(execution, repositoryId).name;
@@ -497,7 +522,11 @@ export class ExecutionEngine {
           `${execution.id}: ${unitLabel(unit)} failed ${failures.length} check(s): ` +
             failures.map((f) => `${f.repositoryName} ${f.result.name}`).join(', ')
         );
-        return { kind: 'failed', failure: failureBrief(failures) };
+        return {
+          kind: 'failed',
+          failure: failureBrief(failures),
+          reportable: failureSummary(failures),
+        };
       },
     };
   }
@@ -533,8 +562,12 @@ export class ExecutionEngine {
     checkpoint: ExecutionCheckpoint,
     worktrees: Record<string, string>,
     unit: Snapshot
-  ): Promise<void> {
+  ): Promise<string[]> {
     this.assertLive('committing');
+    // Which repositories this unit actually changed. Returned because the
+    // per-unit check uses it to decide what to run: a repository the story
+    // never opened cannot have been broken by it.
+    const touched: string[] = [];
     for (const [repositoryId, tree] of Object.entries(worktrees)) {
       const row = this.deps.store.repository(checkpoint, repositoryId);
       try {
@@ -550,6 +583,11 @@ export class ExecutionEngine {
           );
         }
         if (paths.length === 0) continue;
+        // Before the commit, not after: the files are in the worktree either
+        // way, so the checks see this story's work whether committing it
+        // succeeded or not, and a failed commit is exactly when the checks
+        // should still run.
+        touched.push(repositoryId);
         const sha = await this.deps.git.commit(
           tree,
           commitMessageFor(checkpoint.execution, unit),
@@ -564,6 +602,7 @@ export class ExecutionEngine {
       }
     }
     this.deps.store.save(checkpoint, this.now());
+    return touched;
   }
 
   /**

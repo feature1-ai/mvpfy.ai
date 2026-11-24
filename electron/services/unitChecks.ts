@@ -73,6 +73,26 @@ const EVALUATORS: { [K in UnitCheckSpec['kind']]: Evaluator<K> } = {
     return `${spec.path} does not contain ${absent.map((n) => `"${n}"`).join(' or ')}.`;
   },
 
+  imports: (spec, access) => {
+    const text = access.read(spec.path);
+    if (text === null) return `${spec.path} does not exist.`;
+    // Each @reference on its own terms rather than a substring of the file:
+    // a line that merely mentions the name in prose is not an import, and
+    // `./AGENTS.md` is the same import as `AGENTS.md`.
+    const imported = text.split('\n').some((line) => {
+      const at = line.indexOf('@');
+      if (at === -1) return false;
+      const reference =
+        line
+          .slice(at + 1)
+          .trim()
+          .split(/\s/)[0] ?? '';
+      return reference.replace(/^\.?\//, '') === spec.target;
+    });
+    if (imported) return null;
+    return `${spec.path} does not import ${spec.target} (expected a line with @${spec.target}).`;
+  },
+
   'compose-config': async (spec, access) => {
     const command = `${composeBase(spec.linked)} config -q`;
     const result = await access.run(command);

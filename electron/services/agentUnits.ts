@@ -224,7 +224,14 @@ export async function drive(
         ({ result } = await invoke(unit, brief, true));
       }
       const { code } = result;
-      if (run.stopped()) return { kind: 'stop', stop: code };
+      // null, not `code`: a step that finished cleanly leaves code 0, and
+      // returning that here would report a run the PM stopped as one that
+      // succeeded. The setup chain in useProjectActions starts the stack on
+      // exit code 0, so a Stop pressed in the moment between two steps would
+      // bring the product up with no manifest, no database and no demo login.
+      // Every other stopped() branch in this driver returns null for the same
+      // reason; this one used to be the exception.
+      if (run.stopped()) return { kind: 'stop', stop: null };
       if (code !== 0) {
         run.say(
           `Setup stopped during ${position(unit)} (${unit.title}): the agent ended with ` +

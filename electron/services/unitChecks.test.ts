@@ -57,6 +57,40 @@ describe('contains', () => {
   });
 });
 
+describe('imports', () => {
+  const spec: UnitCheckSpec = { kind: 'imports', path: 'CLAUDE.md', target: 'AGENTS.md' };
+  const claude = (text: string) => workspace({ 'CLAUDE.md': text });
+
+  it('accepts the import however the repository spelled the path', async () => {
+    // The whole reason this is not a `contains`: the prompt tells the agent to
+    // leave an existing import alone, so whichever of these the repository
+    // already had is the one that has to pass. A needle of "@AGENTS.md" failed
+    // the second and third, three attempts in a row, on a file that was right.
+    for (const line of ['@AGENTS.md', '@./AGENTS.md', '@/AGENTS.md']) {
+      expect(await check(spec, claude(line))).toEqual([]);
+    }
+  });
+
+  it('finds it on any line, beside other content', async () => {
+    expect(await check(spec, claude('# Our rules\n\n@AGENTS.md\n\nmore prose\n'))).toEqual([]);
+  });
+
+  it('does not accept a mention that is not an import', async () => {
+    // Prose about the file is not the import that makes Claude read it.
+    const [failure] = await check(spec, claude('See AGENTS.md for the setup notes.'));
+    expect(failure).toContain('does not import AGENTS.md');
+  });
+
+  it('does not accept an import of something else', async () => {
+    expect((await check(spec, claude('@AGENTS.md.bak')))[0]).toContain('does not import');
+    expect((await check(spec, claude('@docs/AGENTS.md')))[0]).toContain('does not import');
+  });
+
+  it('says so when the file is not there at all', async () => {
+    expect((await check(spec, workspace({})))[0]).toContain('does not exist');
+  });
+});
+
 describe('compose-config', () => {
   it('asks Docker about the file where this kind of project keeps it', async () => {
     const managed = workspace({});

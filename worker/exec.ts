@@ -166,12 +166,32 @@ export class ScriptedRunner implements CommandRunner {
       result: Partial<CommandResult>;
       /** Answer at most this many times, then fall through to the next rule. */
       times?: number;
+      /**
+       * Matched against the directory the command runs in, when given.
+       *
+       * Every repository in an execution is checked with the same discovered
+       * command, so the command alone cannot say "this suite is red and that
+       * one is green" — and a worker whose whole job is several repositories
+       * at once has to be testable in that state.
+       */
+      cwd?: RegExp;
     }> = []
   ) {}
 
   /** Add a rule at the front, so a later test can override an earlier setup. */
-  when(match: RegExp, result: Partial<CommandResult>, times?: number): this {
-    this.script.unshift({ match, result, ...(times === undefined ? {} : { times }) });
+  when(
+    match: RegExp,
+    result: Partial<CommandResult>,
+    opts?: number | { times?: number; cwd?: RegExp }
+  ): this {
+    const { times, cwd } =
+      typeof opts === 'number' ? { times: opts, cwd: undefined } : (opts ?? {});
+    this.script.unshift({
+      match,
+      result,
+      ...(times === undefined ? {} : { times }),
+      ...(cwd === undefined ? {} : { cwd }),
+    });
     return this;
   }
 
@@ -179,6 +199,7 @@ export class ScriptedRunner implements CommandRunner {
     this.calls.push({ command, cwd: opts.cwd, ...(opts.env ? { env: opts.env } : {}) });
     for (const rule of this.script) {
       if (!rule.match.test(command)) continue;
+      if (rule.cwd && !rule.cwd.test(opts.cwd)) continue;
       if (rule.times !== undefined) {
         if (rule.times <= 0) continue;
         rule.times -= 1;

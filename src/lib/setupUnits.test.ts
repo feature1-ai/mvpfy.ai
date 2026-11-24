@@ -128,7 +128,9 @@ describe('what mvpfy looks for after each step', () => {
     expect(checksOf('handover')).toEqual([
       { kind: 'files', paths: ['mvpfy-summary.md', 'mvpfy-run.md'] },
       { kind: 'contains', path: 'AGENTS.md', needles: ['<!-- mvpfy:start', '<!-- mvpfy:end -->'] },
-      { kind: 'contains', path: 'CLAUDE.md', needles: ['@AGENTS.md'] },
+      // `imports`, not a needle: the prompt leaves an existing import alone,
+      // and the repository may have written it as @./AGENTS.md.
+      { kind: 'imports', path: 'CLAUDE.md', target: 'AGENTS.md' },
     ]);
   });
 
@@ -144,9 +146,9 @@ describe('what mvpfy looks for after each step', () => {
     });
     // AGENTS.md and CLAUDE.md belong to the repository, not to mvpfy's folder.
     expect(checksOf('handover', 'linked')).toContainEqual({
-      kind: 'contains',
+      kind: 'imports',
       path: 'CLAUDE.md',
-      needles: ['@AGENTS.md'],
+      target: 'AGENTS.md',
     });
     expect(units('linked')[0].promptText).toContain('.mvpfy/docker-compose.mvpfy.yml');
   });

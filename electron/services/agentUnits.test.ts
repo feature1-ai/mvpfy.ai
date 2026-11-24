@@ -211,6 +211,19 @@ describe('an agent that does not finish', () => {
     expect(s.invocations()).toBe(1);
     expect(s.done()).toEqual([]);
   });
+
+  it('does not report a stop as a success, even when the step it stopped after passed', async () => {
+    // The window Stop is most likely to land in: a step's process has exited
+    // cleanly and the next has not started. The step's own code is 0, and
+    // returning it made a stopped setup indistinguishable from a finished
+    // one — useProjectActions chains on exit code 0 and would bring the stack
+    // up with no manifest, no database and no demo login. The other stop
+    // branches in this driver always returned null; this one did not.
+    const s = setup([{ writes: { 'compose.yml': 'x' }, code: 0, stop: true }]);
+    expect(await s.go()).not.toBe(0);
+    expect(s.invocations()).toBe(1);
+    expect(s.done()).toEqual([]);
+  });
 });
 
 describe('carrying on', () => {

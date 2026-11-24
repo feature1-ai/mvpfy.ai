@@ -158,6 +158,31 @@ describe('verification', () => {
     expect(last?.message).toMatch(/no pull request was opened/);
   });
 
+  it('does not fail a story for a repository that story never touched', async () => {
+    // A repository red before any of this started — a flake, a missing
+    // fixture, a suite that was already broken. Checking every repository
+    // after every story made US-01 answer for it: three repair attempts spent
+    // on work buildRepairPrompt also tells the agent is not its to fix, then
+    // an execution that stopped at the first story naming the wrong cause,
+    // with the later stories never built. It is still caught — in the verify
+    // stage, reported against the repository, which is where it belongs.
+    const { claimed, checkpoint } = await start(featureExecution());
+    agentChanges(h, IDS.repoApi);
+    h.runner.when(/npm test/, { code: 1, stderr: '3 failing' }, { cwd: new RegExp(IDS.repoWeb) });
+
+    const ending = await h.engine.run(checkpoint, never);
+
+    expect(ending).toBe('failed');
+    const message = h.transport.progressCalls.at(-1)?.body.message ?? '';
+    expect(message).not.toMatch(/US-01/);
+    expect(message).not.toMatch(/still failing after/);
+    // And the agent was asked for the story once, not once per repair attempt.
+    expect(h.agent.runs.filter((r) => /US-01/.test(r.prompt))).toHaveLength(1);
+    // The red repository is never handed over: the server takes only passing
+    // commands, which is why a failing suite has to fail the execution.
+    expect(h.transport.resultsOf(claimed.id)[IDS.repoWeb]).toBeUndefined();
+  });
+
   it('fails the execution when nothing could be run', async () => {
     // "Ready for testing" with nothing tested was always a weak claim, and
     // Feature1 now refuses to accept it at all.

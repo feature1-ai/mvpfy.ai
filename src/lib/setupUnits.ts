@@ -185,7 +185,12 @@ function plan(project: Project): StepPlan[] {
           path: 'AGENTS.md',
           needles: ['<!-- mvpfy:start', '<!-- mvpfy:end -->'],
         },
-        { kind: 'contains', path: 'CLAUDE.md', needles: ['@AGENTS.md'] },
+        // Not a `contains` of "@AGENTS.md": the prompt tells the agent to
+        // leave an existing import entirely alone, so a repository that
+        // already wrote it as @./AGENTS.md would fail a step it had satisfied
+        // — three attempts, then "Setup stopped at step 6 of 6" over a
+        // CLAUDE.md that was correct before mvpfy arrived.
+        { kind: 'imports', path: 'CLAUDE.md', target: 'AGENTS.md' },
       ],
     },
   ];

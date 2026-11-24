@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RepositoryChecks, failureBrief } from './checks';
+import { RepositoryChecks, failureBrief, failureSummary } from './checks';
 import { VerificationResult } from './verify';
 
 const result = (over: Partial<VerificationResult> = {}): VerificationResult => ({
@@ -65,15 +65,28 @@ describe('RepositoryChecks', () => {
     expect(c.runs()).toBe(2);
   });
 
-  it('does not remember a run that was interrupted or ran nothing', async () => {
+  it('does not remember a run that was interrupted', async () => {
     const c = setup([
       [result({ outcome: 'skipped', exitCode: null })],
-      [result({ outcome: 'unavailable', exitCode: null })],
+      [result({ outcome: 'skipped', exitCode: null })],
     ]);
     await c.verify();
     await c.verify();
     await c.verify();
     expect(c.runs()).toBe(3);
+  });
+
+  it('asks only once when nothing could be run at all', async () => {
+    // A command that timed out or does not exist is a fact about the command,
+    // not about the code, so asking again costs the same and learns nothing.
+    // A timeout is twenty minutes, and this used to be paid once per story and
+    // once per repair attempt — over an hour for a five-story feature, which
+    // then failed at publish for the reason the first run already knew.
+    const c = setup([[result({ outcome: 'unavailable', exitCode: null })]]);
+    expect((await c.verify())[0].outcome).toBe('unavailable');
+    expect((await c.verify())[0].outcome).toBe('unavailable');
+    await c.verify();
+    expect(c.runs()).toBe(1);
   });
 
   it('remembers a pass beside a failing optional check', async () => {
@@ -114,5 +127,62 @@ describe('failureBrief', () => {
       },
     ]);
     expect(brief).toContain('3 failing');
+  });
+});
+
+describe('failureSummary', () => {
+  const secret = 'sk-live-0000000000000000';
+
+  it('says which command failed where, without quoting what it printed', () => {
+    const failures = [
+      {
+        repositoryName: 'api',
+        result: result({
+          outcome: 'failed',
+          exitCode: 1,
+          output: `AuthError using ${secret} against db-prod-7.internal`,
+          summary: '3 failing',
+        }),
+      },
+    ];
+    const summary = failureSummary(failures);
+    expect(summary).toContain('api: `npm test --silent` exited with code 1');
+    // The point of the function. verify.ts promises output stays on the
+    // worker, and this is the value the engine reports to Feature1, so
+    // anything a test printed has to be absent — not shortened, not redacted.
+    expect(summary).not.toContain(secret);
+    expect(summary).not.toContain('db-prod-7.internal');
+    expect(summary).not.toContain(failureBrief(failures));
+  });
+
+  it('counts them when more than one repository failed', () => {
+    const summary = failureSummary([
+      { repositoryName: 'api', result: result({ outcome: 'failed', exitCode: 1 }) },
+      { repositoryName: 'web', result: result({ outcome: 'failed', exitCode: 2 }) },
+    ]);
+    expect(summary).toContain('2 checks failed');
+    expect(summary).toContain('api:');
+    expect(summary).toContain('web:');
+  });
+
+  it('never contains an output field, whatever is in it', () => {
+    // A property-ish guard: the only inputs are structured, so no value from
+    // `output` should reach the string by any route.
+    // Each probe is a distinctive multi-character string: a single letter
+    // would collide with the command name and fail for a reason that is not
+    // the one being tested.
+    const probes = [
+      secret,
+      'db-prod-7.internal',
+      JSON.stringify({ secret }),
+      'Error: ENOTFOUND redis-cache-eu',
+      'a'.repeat(5000),
+    ];
+    for (const output of probes) {
+      const summary = failureSummary([
+        { repositoryName: 'api', result: result({ outcome: 'failed', exitCode: 1, output }) },
+      ]);
+      expect(summary).not.toContain(output);
+    }
   });
 });

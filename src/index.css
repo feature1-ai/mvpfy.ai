@@ -261,10 +261,13 @@ body {
 .spin {
   animation: spin-slow 1.1s linear infinite;
 }
+/* These two say that something is still working, so they stay on when the
+   system asks for less motion (on Windows, "Animation effects" off). Stopping
+   them made a live run look stuck. The spinner turns slower; the dot only
+   fades, which is not movement. */
 @media (prefers-reduced-motion: reduce) {
-  .dot-pulse,
   .spin {
-    animation: none;
+    animation-duration: 2.4s;
   }
 }
 

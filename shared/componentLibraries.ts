@@ -87,7 +87,11 @@ export const MANIFEST_FOLDERS = [
 export interface ComponentLibrary {
   name: string;
   kind: LibraryKind;
-  /** As the manifest states it, range and all. Absent for a library found by its file. */
+  /**
+   * As the manifest states it, range and all — once it has been checked for
+   * shape (`readableVersion`). Absent for a library found by its file, and for
+   * a specifier mvpfy will not repeat.
+   */
   version?: string;
   /** The file that says so, relative to the workspace. */
   source: string;
@@ -142,6 +146,42 @@ function matchIn(deps: Record<string, string>, library: KnownLibrary): string | 
   return null;
 }
 
+/** What a version specifier starts with. Anything else is not one. */
+const VERSION_SHAPE = /^[0-9v^~><=*]/;
+
+/** The longest specifier worth repeating. Real ones are far shorter. */
+const VERSION_MAX = 40;
+
+/**
+ * A version as read from a manifest, if it is safe to repeat.
+ *
+ * This is the only field here that a repository writes: the name comes from
+ * `KNOWN` and the path from `manifestCandidates`. It ends up in the prompt an
+ * agent is given, so a repository that puts a paragraph of its own
+ * instructions in a version string would be writing into that prompt — the
+ * same crossing designLinks.ts tells the agent to treat as material and never
+ * as instructions.
+ *
+ * So it is held to the shape of a version: one line, no control characters,
+ * short, and starting the way a specifier starts. Anything else is dropped,
+ * and the library is named without a version — which is how a library found
+ * by its file already reads. `workspace:*`, `latest` and a git URL go the same
+ * way; none of them tells a product manager anything a version would.
+ */
+export function readableVersion(raw: string): string | undefined {
+  // Bounded before any of the work below, so a megabyte in a manifest costs
+  // nothing to reject. Control characters are turned to spaces one at a time
+  // rather than by a pattern: a newline is how a version string would start a
+  // line of its own in the prompt, and it has to go before the rest is judged.
+  const cleaned = [...raw.slice(0, VERSION_MAX * 4)]
+    .map((character) => (character < ' ' || character === '\u007f' ? ' ' : character))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned || cleaned.length > VERSION_MAX || !VERSION_SHAPE.test(cleaned)) return undefined;
+  return cleaned;
+}
+
 /** Looks like a shadcn/ui config rather than some other tool's `components.json`. */
 function isShadcnConfig(content: string): boolean {
   try {
@@ -170,12 +210,15 @@ export function detectComponentLibraries(files: ManifestFile[]): ComponentLibrar
     const deps = dependenciesOf(file.content);
     for (const library of KNOWN) {
       if (found.has(library.name)) continue;
-      const version = matchIn(deps, library);
-      if (version === null) continue;
+      const stated = matchIn(deps, library);
+      if (stated === null) continue;
+      const version = readableVersion(stated);
       found.set(library.name, {
         name: library.name,
         kind: library.kind,
-        version,
+        // Found by its dependency either way: a specifier mvpfy will not
+        // repeat is a reason to say less, not to miss the library.
+        ...(version ? { version } : {}),
         source: file.path,
       });
     }

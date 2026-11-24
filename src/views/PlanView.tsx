@@ -1108,7 +1108,11 @@ function FeatureDesign({
   // Read from the product's own manifests, and shown so the product manager
   // can see what the agent is being held to rather than taking it on trust.
   const [libraries, setLibraries] = useState<ComponentLibrary[]>([]);
-  const workspace = c.project.localPath;
+  // The manifests that get read, named: the workspace and the repositories in
+  // it. Adding a repository changes the answer — `addRepos` keeps localPath and
+  // appends to `repos` — so the workspace alone would leave this row showing
+  // the old libraries until the view remounted.
+  const manifestKey = [c.project.localPath, ...c.project.repos.map((repo) => repo.dir)].join('|');
   useEffect(() => {
     let cancelled = false;
     void componentLibrariesFor(c.project).then((found) => {
@@ -1117,9 +1121,10 @@ function FeatureDesign({
     return () => {
       cancelled = true;
     };
-    // The workspace is what decides the answer; the project object is new on every save.
+    // Keyed on those paths rather than the project, which is a new object on
+    // every save and would re-read the manifests each time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace]);
+  }, [manifestKey]);
 
   const empty = design.images.length === 0 && design.links.length === 0;
   return (

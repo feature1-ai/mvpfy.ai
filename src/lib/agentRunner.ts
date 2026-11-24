@@ -726,8 +726,13 @@ export async function designFor(
   project: Project,
   planSlug: string,
   design: { images: string[]; links: string[] } | undefined,
-  /** Decides what is said about a design made in Claude: only Claude Code can open one. */
-  agent: AgentKind = 'claude'
+  /**
+   * Decides what is said about a design made in Claude: only Claude Code can
+   * open one. Required, with no default, because the whole point of
+   * designLinks.ts is telling each agent the truth about what it can read —
+   * a caller that forgot would tell Codex to use a tool it does not have.
+   */
+  agent: AgentKind
 ): Promise<{ block: string; imagePaths: string[] }> {
   const images = design?.images ?? [];
   const links = design?.links ?? [];

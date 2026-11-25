@@ -55,7 +55,8 @@ export type WorkerCommand =
   | { name: 'implement'; feature: string }
   | { name: 'prepare' }
   | { name: 'preview'; branch: string; preview: string }
-  | { name: 'preview-stop'; preview: string };
+  | { name: 'preview-stop'; preview: string }
+  | { name: 'comment'; pullRequest: string; preview: string; link: string };
 
 /**
  * What the arguments ask for.
@@ -77,6 +78,9 @@ export function commandFrom(argv: string[]): WorkerCommand {
   }
   if (name === 'preview-stop' && plain && rest.length === 1)
     return { name, preview: rest[0] ?? '' };
+  if (name === 'comment' && plain && rest.length === 3) {
+    return { name, pullRequest: rest[0] ?? '', preview: rest[1] ?? '', link: rest[2] ?? '' };
+  }
   if (name === 'project' && plain) return { name, repositories: rest };
   if (name === 'implement' && plain && rest.length === 1) return { name, feature: rest[0] ?? '' };
   throw new Error(

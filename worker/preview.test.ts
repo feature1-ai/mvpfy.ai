@@ -10,6 +10,7 @@ import { applyRecipe, keepRecipe, prepareCheckout } from './prepare';
 import {
   PreviewError,
   demoLoginOf,
+  previewComment,
   entryOf,
   seedCommandOf,
   startPreview,
@@ -306,5 +307,38 @@ describe('starting and stopping a test link', () => {
       preview: 'pabcdefghijkl',
     });
     expect(() => commandFrom(['n', 'i', 'preview', 'mvpfy/x'])).toThrow(/Unrecognised/);
+  });
+});
+
+describe('the comment on the pull request', () => {
+  it("gives the link at the product's own path, the login, and when it goes away", () => {
+    const body = previewComment(
+      {
+        name: 'pabcdefghijkl',
+        branch: 'mvpfy/x',
+        commit: 'abcdef1234567890',
+        port: 4000,
+        path: '/en',
+        demoLogin: { email: 'demo@t.test', password: 'pw' },
+        startedAt: '2026-11-25T00:00:00.000Z',
+      },
+      'https://pabcdefghijkl.mvpfy.ai/'
+    );
+    expect(body).toContain('https://pabcdefghijkl.mvpfy.ai/en');
+    expect(body).toContain('`demo@t.test` / `pw`');
+    expect(body).toContain('after 24 hours');
+  });
+
+  it('is asked for with a pull request, a preview and its link', () => {
+    expect(
+      commandFrom([
+        'n',
+        'i',
+        'comment',
+        'https://github.com/a/b/pull/3',
+        'pabcdefghijkl',
+        'https://pabcdefghijkl.mvpfy.ai',
+      ])
+    ).toMatchObject({ name: 'comment', pullRequest: 'https://github.com/a/b/pull/3' });
   });
 });

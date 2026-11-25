@@ -196,3 +196,20 @@ export async function stopPreview(
     10 * 60_000
   );
 }
+
+/** What the pull request is told: where to try it, how to sign in, and for how long. */
+export function previewComment(record: PreviewRecord, link: string, hours = 24): string {
+  const login = record.demoLogin;
+  return [
+    `**Try this change:** ${link.replace(/\/$/, '')}${record.path === '/' ? '' : record.path}`,
+    '',
+    login
+      ? `Sign in with the demo login: \`${login.email ?? ''}\` / \`${login.password ?? ''}\``
+      : 'This product has no demo login.',
+    '',
+    `Started from \`${record.commit.slice(0, 12)}\` on \`${record.branch}\`. The link is taken down ` +
+      `after ${hours} hours, data and all. It runs sample data only.`,
+    '',
+    '_Started by mvpfy._',
+  ].join('\n');
+}

@@ -4,7 +4,15 @@ import { CliAgentRunner } from './agentRun';
 import { agentEnv, checkEnv } from './childEnv';
 import { EngineHost, engineHostFrom, withEngine } from './engineHost';
 import { applyRecipe, keepRecipe, prepareCheckout } from './prepare';
-import { PREVIEW_NAME, PreviewError, startPreview, stopPreview } from './preview';
+import {
+  PREVIEW_NAME,
+  PreviewError,
+  PreviewRecord,
+  previewComment,
+  startPreview,
+  stopPreview,
+} from './preview';
+import { validPullRequestUrl } from '../shared/runner/validate';
 import { uuidFor } from './project';
 import {
   WorkerConfig,
@@ -20,9 +28,9 @@ import { ExecutionCredentialSession, ghLoginToken, operatorGithubToken } from '.
 import { ExecutionEngine } from './engine';
 import { CommandRunner, ShellRunner } from './exec';
 import { FakeFeature1 } from './fakeFeature1';
-import { Git } from './git';
+import { Git, posixQuote } from './git';
 import { HttpFeature1Transport } from './httpTransport';
-import { Layout } from './layout';
+import { Layout, executionBranch } from './layout';
 import { PullRequests } from './prs';
 import { Redactor } from './redact';
 import { RemoteRunner, sandboxClientFrom } from './remoteRunner';
@@ -266,6 +274,9 @@ export function project(repositories: string[]): number {
  * passing results for every repository before anything is called ready — as
  * when the real server is the one asking.
  */
+/** Written by `implement` when a build is ready, on the worker's volume. */
+export const LAST_BUILD_FILE = 'last-build.json';
+
 export async function implement(reference: string): Promise<number> {
   if (process.platform === 'win32') {
     throw new Error('The mvpfy worker runs on Linux or macOS, not Windows');
@@ -334,6 +345,20 @@ export async function implement(reference: string): Promise<number> {
   if (message) log(message);
   for (const url of pullRequests) log(`pull request: ${url}`);
   if (state === 'ready_for_testing') {
+    // What mvpfy-cloud starts a test link from: the branch this build pushed.
+    fs.writeFileSync(
+      path.join(workerRootFrom(), LAST_BUILD_FILE),
+      JSON.stringify(
+        {
+          feature: feature.code ?? feature.id,
+          branch: executionBranch(execution.id),
+          pullRequests,
+          finishedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
     log(
       pullRequests.length > 0
         ? 'done: built, checked and ready to review'
@@ -494,6 +519,44 @@ export async function previewStop(name: string): Promise<number> {
 }
 
 /**
+ * `comment <pull request> <preview name> <link>`: say on the pull request
+ * where it can be tried, with the worker's own GitHub sign-in.
+ */
+export async function comment(pullRequest: string, name: string, link: string): Promise<number> {
+  if (!validPullRequestUrl(pullRequest)) throw new Error(`Not a pull request: ${pullRequest}`);
+  if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
+  if (!/^https?:\/\/p[a-z0-9]{12}\.[a-z0-9.-]+(:\d{2,5})?\/?$/.test(link)) {
+    throw new Error(`Not a test link: ${link}`);
+  }
+  const { repo } = projectContext();
+  const root = workerRootFrom();
+  const record = JSON.parse(
+    fs.readFileSync(path.join(root, 'previews', `${name}.json`), 'utf8')
+  ) as PreviewRecord;
+  const redactor = new Redactor();
+  const probe = new ShellSetupCommands();
+  const github = operatorGithubToken() ?? (await ghLoginToken((c) => probe.probe(c)));
+  if (!github) throw new Error('No GitHub sign-in to comment with. Run `setup`.');
+  redactor.remember(github);
+  const credentials = new ExecutionCredentialSession(github);
+  credentials.begin({ repositories: [repo] } as never);
+  const bodyFile = path.join(root, 'previews', `${name}.comment.md`);
+  fs.writeFileSync(bodyFile, previewComment(record, link));
+  try {
+    const result = await new ShellRunner(redactor).run(
+      `gh pr comment ${posixQuote(pullRequest)} --body-file ${posixQuote(bodyFile)}`,
+      { cwd: root, env: credentials.gh.apply({ ...process.env, GH_PROMPT_DISABLED: '1' }) }
+    );
+    if (result.code !== 0) throw new Error(`Could not comment: ${result.stderr.trim()}`);
+  } finally {
+    credentials.end();
+    fs.rmSync(bodyFile, { force: true });
+  }
+  log(`said on ${pullRequest} where to try it`);
+  return 0;
+}
+
+/**
  * `sandbox`: run what a worker sends, and hold nothing of the worker's.
  * See sandbox.ts for why this is a separate container.
  */
@@ -523,6 +586,9 @@ if (require.main === module) {
     if (command.name === 'prepare') process.exit(await prepare());
     if (command.name === 'preview') process.exit(await preview(command.branch, command.preview));
     if (command.name === 'preview-stop') process.exit(await previewStop(command.preview));
+    if (command.name === 'comment') {
+      process.exit(await comment(command.pullRequest, command.preview, command.link));
+    }
     if (command.name === 'sandbox') return sandbox();
     return main();
   })();

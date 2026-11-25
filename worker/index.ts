@@ -10,6 +10,7 @@ import { DoctorCheck, doctorLines, fileCheck, recipeFile, runDoctor } from './do
 import { agentStep } from './setup';
 import {
   PREVIEW_NAME,
+  LinkAddresses,
   PreviewError,
   PreviewRecord,
   clearEngine,
@@ -507,7 +508,11 @@ export async function prepare(): Promise<number> {
  * `preview <branch> <name>`: start the product from a branch for a test link.
  * Prints one line of JSON — where it answers and the login — for mvpfy-cloud.
  */
-export async function preview(branch: string, name: string): Promise<number> {
+export async function preview(
+  branch: string,
+  name: string,
+  addresses?: LinkAddresses
+): Promise<number> {
   if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
   ensureSignInFolders();
   const { repos, tenantId, root, recipeDir } = projectContext();
@@ -553,7 +558,8 @@ export async function preview(branch: string, name: string): Promise<number> {
   const record = await startPreview(
     checkout,
     { name, branch, commit },
-    { runner: untrusted, env: checkEnvironment, engineHostname: engine.hostname, log }
+    { runner: untrusted, env: checkEnvironment, engineHostname: engine.hostname, log },
+    addresses
   );
   fs.writeFileSync(path.join(root, 'previews', `${name}.json`), JSON.stringify(record, null, 2));
   process.stdout.write(`PREVIEW ${JSON.stringify(record)}\n`);
@@ -751,7 +757,15 @@ if (require.main === module) {
     if (command.name === 'project') process.exit(project(command.repositories));
     if (command.name === 'implement') process.exit(await implement(command.feature));
     if (command.name === 'prepare') process.exit(await prepare());
-    if (command.name === 'preview') process.exit(await preview(command.branch, command.preview));
+    if (command.name === 'preview') {
+      process.exit(
+        await preview(
+          command.branch,
+          command.preview,
+          command.web && command.expo ? { web: command.web, expo: command.expo } : undefined
+        )
+      );
+    }
     if (command.name === 'preview-stop') process.exit(await previewStop(command.preview));
     if (command.name === 'comment') {
       process.exit(await comment(command.pullRequest, command.preview, command.link));

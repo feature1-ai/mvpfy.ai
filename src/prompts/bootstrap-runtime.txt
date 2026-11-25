@@ -62,12 +62,16 @@ Follow these steps:
          expo_url: exp://<LAN-IP-of-this-machine>:8081
          note: <one line telling the PM what to expect>
      (detect the machine's LAN IP; the app shows this as a QR code the PM scans with the
-     free Expo Go app to see the real native app on their phone).
+     free Expo Go app to see the real native app on their phone). Publish the Expo port
+     from that compose service, as "8081:8081", so the port says which service it is.
    • Bare React Native / Flutter with no web support: run Metro and every backend service
      anyway, add the `mobile:` block with a note explaining that the native UI needs a
      simulator and which command to use — never fake a preview.
    • Mobile apps must point their API base URL at the machine's LAN IP (not localhost or a
-     Docker hostname) so a real phone can reach the local backend.
+     Docker hostname) so a real phone can reach the local backend. When the app is served
+     from a hosted test link, docker compose runs with MVPFY_LINK_URL set to the public
+     address of the main app on {basePort}: build the API base from it when it is set, e.g.
+     EXPO_PUBLIC_API_URL: ${MVPFY_LINK_URL:-http://<LAN-IP>:<backend port>}.
 
 5. Only if you are genuinely blocked — for example you need the URL of the real backend repo,
    or a credential that cannot be defaulted — write a short numbered list of questions to

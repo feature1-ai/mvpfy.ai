@@ -55,7 +55,7 @@ export type WorkerCommand =
   | { name: 'implement'; feature: string }
   | { name: 'prepare' }
   | { name: 'doctor' }
-  | { name: 'preview'; branch: string; preview: string }
+  | { name: 'preview'; branch: string; preview: string; web?: string; expo?: string }
   | { name: 'preview-stop'; preview: string }
   | { name: 'comment'; pullRequest: string; preview: string; link: string };
 
@@ -79,6 +79,14 @@ export function commandFrom(argv: string[]): WorkerCommand {
   }
   if (name === 'preview' && plain && rest.length === 2) {
     return { name, branch: rest[0] ?? '', preview: rest[1] ?? '' };
+  }
+  // With the addresses the link is reached at, for a phone app that must know them.
+  if (name === 'preview' && plain && rest.length === 4) {
+    const [branch = '', preview = '', web = '', expo = ''] = rest;
+    if (!/^https?:\/\/[^\s/]+$/.test(web) || !/^https?:\/\/[^\s/]+$/.test(expo)) {
+      throw new Error('preview takes the link addresses as http(s)://host');
+    }
+    return { name, branch, preview, web, expo };
   }
   if (name === 'preview-stop' && plain && rest.length === 1)
     return { name, preview: rest[0] ?? '' };

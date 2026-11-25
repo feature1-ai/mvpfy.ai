@@ -34,13 +34,44 @@ export interface PreviewRecord {
   /** The path the product is opened at. */
   path: string;
   demoLogin: DemoLogin | null;
+  /** The phone app's development server, when the product is a mobile app. */
+  mobile?: MobileApp;
   startedAt: string;
+}
+
+/**
+ * A mobile app's development server, as setup recorded it in mvpfy.yml's
+ * `mobile:` block: what kind, the port it listens on, and the one line the
+ * person trying it is told.
+ */
+export interface MobileApp {
+  kind: string;
+  port: number | null;
+  note: string | null;
+}
+
+/**
+ * Where a test link is reached from outside, given by mvpfy-cloud: the web
+ * address, and the address a phone's Expo Go opens the app at.
+ */
+export interface LinkAddresses {
+  web: string;
+  expo: string;
 }
 
 export class PreviewError extends Error {}
 
 /** `docker compose` for a prepared checkout. */
 export const COMPOSE = `docker compose -f ${RECIPE_DIR}/docker-compose.mvpfy.yml --project-directory .`;
+
+/** What a test link adds over the recipe: written per link, never kept in the recipe. */
+export const LINK_OVERRIDE = `${RECIPE_DIR}/docker-compose.link.yml`;
+
+function composeFor(checkout: string): string {
+  return fs.existsSync(path.join(checkout, LINK_OVERRIDE))
+    ? COMPOSE.replace(' --project-directory', ` -f ${LINK_OVERRIDE} --project-directory`)
+    : COMPOSE;
+}
 
 export function recipeManifest(checkout: string): string {
   const file = path.join(checkout, RECIPE_DIR, 'mvpfy.yml');
@@ -54,7 +85,8 @@ export function recipeManifest(checkout: string): string {
 /** Where the product answers, from what setup recorded. */
 export function entryOf(manifest: string): { port: number; path: string } {
   const { hostPort, urlPort } = manifestPorts(manifest);
-  const port = hostPort ?? urlPort;
+  // A phone app with no web build is reached through its development server.
+  const port = hostPort ?? urlPort ?? mobileOf(manifest)?.port;
   if (!port) throw new PreviewError("The recipe's mvpfy.yml does not say which port the app is on");
   const url = manifest.match(
     /^\s*url:\s*["']?https?:\/\/(?:localhost|127\.0\.0\.1):\d{2,5}(\/[^\s"']*)?/m
@@ -67,6 +99,93 @@ export function seedCommandOf(manifest: string): string | null {
   const match = manifest.match(/^\s*seed_command:\s*(?:["']([^"']+)["']|([^\n#]+))/m);
   const command = (match?.[1] ?? match?.[2] ?? '').trim();
   return command && !command.includes('\n') ? command : null;
+}
+
+/** The recipe's `mobile:` block, read without a YAML library (the worker ships none). */
+export function mobileOf(manifest: string): MobileApp | null {
+  const lines = manifest.split('\n');
+  const start = lines.findIndex((line) => /^mobile:\s*$/.test(line));
+  if (start === -1) return null;
+  const fields: Record<string, string> = {};
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break;
+    const field = line.match(/^\s+(kind|expo_url|expoUrl|note|port):\s*["']?(.*?)["']?\s*$/);
+    if (field?.[1] && field[2] !== undefined) fields[field[1]] = field[2];
+  }
+  const kind = (fields.kind ?? '').trim().toLowerCase();
+  const address = fields.expo_url ?? fields.expoUrl ?? '';
+  const stated = Number(fields.port ?? address.match(/:(\d{2,5})(?:\/|$)/)?.[1]);
+  const isExpo = kind === 'expo' || /^exps?:\/\//.test(address);
+  const port =
+    Number.isInteger(stated) && stated > 0 && stated < 65536 ? stated : isExpo ? 8081 : null;
+  if (!kind && !address && !fields.note) return null;
+  return { kind: kind || (isExpo ? 'expo' : 'mobile'), port, note: fields.note?.trim() || null };
+}
+
+/**
+ * The compose service that publishes this port, read without a YAML
+ * library: the service whose `ports:` maps to it. Null when none does.
+ */
+export function serviceOnPort(composeFile: string, port: number): string | null {
+  let inServices = false;
+  let current: string | null = null;
+  const published = new RegExp(
+    `(?:^\\s*-\\s*["']?|:)(?:\\$\\{[^}]*\\}:)?${port}(?:/tcp)?["']?\\s*$|^\\s*(?:target|published):\\s*["']?${port}["']?\\s*$`
+  );
+  for (const line of composeFile.split('\n')) {
+    if (/^services:\s*$/.test(line)) {
+      inServices = true;
+      continue;
+    }
+    if (/^\S/.test(line)) inServices = false;
+    if (!inServices) continue;
+    const service = line.match(/^ {2}([A-Za-z0-9._-]+):\s*$/);
+    if (service?.[1]) current = service[1];
+    else if (current && published.test(line)) return current;
+  }
+  return null;
+}
+
+/**
+ * Point an Expo development server at the link's own address.
+ *
+ * Expo Go opens the app from the manifest the server hands it, and every
+ * address in that manifest is where the server thinks it is: a container's,
+ * which no phone can reach. EXPO_PACKAGER_PROXY_URL makes them the link's.
+ * MVPFY_LINK_URL is the web link, for an app built to call its own backend
+ * there. Written as an override beside the recipe, so the recipe itself
+ * stays as setup left it.
+ */
+export function writeExpoOverride(
+  checkout: string,
+  mobile: MobileApp,
+  addresses: LinkAddresses
+): string | null {
+  if (mobile.kind !== 'expo' || !mobile.port) return null;
+  let composeFile: string;
+  try {
+    composeFile = fs.readFileSync(
+      path.join(checkout, RECIPE_DIR, 'docker-compose.mvpfy.yml'),
+      'utf8'
+    );
+  } catch {
+    return null;
+  }
+  const service = serviceOnPort(composeFile, mobile.port);
+  if (!service) return null;
+  const quoted = (value: string) => JSON.stringify(value);
+  fs.writeFileSync(
+    path.join(checkout, LINK_OVERRIDE),
+    [
+      'services:',
+      `  ${service}:`,
+      '    environment:',
+      `      EXPO_PACKAGER_PROXY_URL: ${quoted(addresses.expo)}`,
+      `      MVPFY_LINK_URL: ${quoted(addresses.web)}`,
+      '',
+    ].join('\n')
+  );
+  return service;
 }
 
 /** The demo login from the recipe's `demo_login:` block, read without a YAML library. */
@@ -97,6 +216,8 @@ export interface StartDeps {
   /** How long the product gets to answer once its containers are up. */
   readyWithinMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  /** The link's public web address, given to compose as MVPFY_LINK_URL. */
+  linkUrl?: string;
 }
 
 async function compose(
@@ -106,9 +227,13 @@ async function compose(
   args: string,
   timeoutMs: number
 ): Promise<void> {
-  const result = await deps.runner.run(`${COMPOSE} ${args}`, {
+  const result = await deps.runner.run(`${composeFor(checkout)} ${args}`, {
     cwd: checkout,
-    env: { ...deps.env, COMPOSE_PROJECT_NAME: name },
+    env: {
+      ...deps.env,
+      COMPOSE_PROJECT_NAME: name,
+      ...(deps.linkUrl ? { MVPFY_LINK_URL: deps.linkUrl } : {}),
+    },
     timeoutMs,
   });
   if (result.code !== 0) {
@@ -141,11 +266,22 @@ async function answers(deps: StartDeps, url: string): Promise<boolean> {
 export async function startPreview(
   checkout: string,
   meta: { name: string; branch: string; commit: string },
-  deps: StartDeps
+  deps: StartDeps,
+  addresses?: LinkAddresses
 ): Promise<PreviewRecord> {
   if (!PREVIEW_NAME.test(meta.name)) throw new PreviewError(`Not a preview name: ${meta.name}`);
+  if (addresses) deps = { ...deps, linkUrl: addresses.web };
   const manifest = recipeManifest(checkout);
   const entry = entryOf(manifest);
+  const mobile = mobileOf(manifest);
+  if (mobile?.kind === 'expo' && addresses) {
+    const service = writeExpoOverride(checkout, mobile, addresses);
+    deps.log(
+      service
+        ? `the phone app is served by ${service} at ${addresses.expo}`
+        : `no service publishes the phone app's port ${mobile.port}, so Expo Go cannot open it`
+    );
+  }
 
   deps.log(`starting ${meta.branch} at ${meta.commit.slice(0, 12)}`);
   await clearEngine(deps, checkout);
@@ -177,6 +313,7 @@ export async function startPreview(
     port: entry.port,
     path: entry.path,
     demoLogin: demoLoginOf(manifest),
+    ...(mobile ? { mobile } : {}),
     startedAt: new Date().toISOString(),
   };
 }

@@ -10,7 +10,9 @@ import { applyRecipe, keepRecipe, prepareCheckout } from './prepare';
 import {
   PreviewError,
   demoLoginOf,
+  mobileOf,
   previewComment,
+  serviceOnPort,
   entryOf,
   seedCommandOf,
   startPreview,
@@ -346,5 +348,123 @@ describe('the comment on the pull request', () => {
         'https://pabcdefghijkl.mvpfy.ai',
       ])
     ).toMatchObject({ name: 'comment', pullRequest: 'https://github.com/a/b/pull/3' });
+  });
+});
+
+describe('a phone app on a test link', () => {
+  const EXPO_MANIFEST = `name: Pocket
+host_port: 19006
+url: http://localhost:19006
+mobile:
+  kind: expo
+  expo_url: exp://192.168.1.20:8081
+  note: Scan with Expo Go
+`;
+  const COMPOSE_FILE = `services:
+  web:
+    image: node:22
+    ports:
+      - "19006:19006"
+  metro:
+    image: node:22
+    command: npx expo start --port 8081
+    ports:
+      - "\${EXPO_PORT:-8081}:8081"
+volumes:
+  data: {}
+`;
+
+  it("reads the recipe's mobile block, and the port from its Expo address", () => {
+    expect(mobileOf(EXPO_MANIFEST)).toEqual({
+      kind: 'expo',
+      port: 8081,
+      note: 'Scan with Expo Go',
+    });
+    expect(mobileOf('mobile:\n  kind: flutter-web\n  note: A web build\n')).toEqual({
+      kind: 'flutter-web',
+      port: null,
+      note: 'A web build',
+    });
+    expect(mobileOf(MANIFEST)).toBeNull();
+  });
+
+  it('finds the service that publishes a port', () => {
+    expect(serviceOnPort(COMPOSE_FILE, 8081)).toBe('metro');
+    expect(serviceOnPort(COMPOSE_FILE, 19006)).toBe('web');
+    expect(serviceOnPort(COMPOSE_FILE, 5432)).toBeNull();
+  });
+
+  it("opens through a phone app's development server when it has no web build", () => {
+    expect(entryOf('mobile:\n  kind: expo\n  expo_url: exp://10.0.0.2:8082\n')).toEqual({
+      port: 8082,
+      path: '/',
+    });
+  });
+
+  it("points the Expo server at the link's own address, and says where it is", async () => {
+    const checkout = path.join(root, 'previews', 'pabcdefghijkl', 'repo');
+    write(checkout, {
+      '.mvpfy/mvpfy.yml': EXPO_MANIFEST,
+      '.mvpfy/docker-compose.mvpfy.yml': COMPOSE_FILE,
+    });
+    const runner = new ScriptedRunner()
+      .when(/up -d/, { code: 0 })
+      .when(/docker ps -aq/, { code: 0 });
+    const said: string[] = [];
+    const record = await startPreview(
+      checkout,
+      { name: 'pabcdefghijkl', branch: 'mvpfy/x', commit: 'a'.repeat(40) },
+      {
+        runner,
+        env: {},
+        engineHostname: 'e',
+        fetchImpl: (async () => new Response('', { status: 200 })) as unknown as typeof fetch,
+        log: (m) => said.push(m),
+        sleep: async () => {},
+      },
+      { web: 'https://pabcdefghijkl.mvpfy.ai', expo: 'https://pabcdefghijkl-expo.mvpfy.ai' }
+    );
+    expect(record.mobile).toEqual({ kind: 'expo', port: 8081, note: 'Scan with Expo Go' });
+    const override = fs.readFileSync(
+      path.join(checkout, '.mvpfy', 'docker-compose.link.yml'),
+      'utf8'
+    );
+    expect(override).toContain('  metro:');
+    expect(override).toContain('EXPO_PACKAGER_PROXY_URL: "https://pabcdefghijkl-expo.mvpfy.ai"');
+    const up = runner.calls.find((c) => /up -d/.test(c.command));
+    expect(up?.command).toContain('-f .mvpfy/docker-compose.link.yml');
+    expect(up?.env?.MVPFY_LINK_URL).toBe('https://pabcdefghijkl.mvpfy.ai');
+    expect(said.join('\n')).toContain('served by metro');
+  });
+
+  it('takes the link addresses on the command line, and nothing else in their place', () => {
+    expect(
+      commandFrom([
+        'node',
+        'worker',
+        'preview',
+        'mvpfy/x',
+        'pabcdefghijkl',
+        'https://a.mvpfy.ai',
+        'https://b.mvpfy.ai',
+      ])
+    ).toEqual({
+      name: 'preview',
+      branch: 'mvpfy/x',
+      preview: 'pabcdefghijkl',
+      web: 'https://a.mvpfy.ai',
+      expo: 'https://b.mvpfy.ai',
+    });
+    expect(() =>
+      commandFrom([
+        'node',
+        'worker',
+        'preview',
+        'mvpfy/x',
+        'pabcdefghijkl',
+        'https://a.mvpfy.ai/x;rm',
+        'https://b',
+      ])
+    ).toThrow(/http\(s\):\/\/host/);
   });
 });

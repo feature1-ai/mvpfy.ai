@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { checkEnv } from './childEnv';
+import { discoverChecks } from './discovery';
 import { CommandRunner } from './exec';
 import { Redactor } from './redact';
 
@@ -19,6 +20,8 @@ export interface VerificationStep {
   repositoryId: string;
   optional?: boolean;
   timeoutMs?: number;
+  /** Runs in an ecosystem's image on the workspace's Docker engine (discovery.ts). */
+  needsEngine?: boolean;
 }
 
 export type VerificationOutcome = 'passed' | 'failed' | 'skipped' | 'unavailable';
@@ -128,39 +131,15 @@ export class Verifier {
    * should not blur the two.
    */
   discoverSteps(repositoryId: string, worktree: string): VerificationStep[] {
-    const steps: VerificationStep[] = [];
-    const packageJson = path.join(worktree, 'package.json');
-    if (fs.existsSync(packageJson)) {
-      try {
-        const scripts = (JSON.parse(fs.readFileSync(packageJson, 'utf8'))?.scripts ?? {}) as Record<
-          string,
-          string
-        >;
-        if (scripts.test) {
-          steps.push({
-            id: `discovered-test-${repositoryId}`,
-            kind: 'test',
-            name: 'npm test',
-            command: 'npm test --silent',
-            repositoryId,
-          });
-        }
-        if (scripts.lint) {
-          steps.push({
-            id: `discovered-lint-${repositoryId}`,
-            kind: 'lint',
-            name: 'npm run lint',
-            command: 'npm run lint --silent',
-            repositoryId,
-            optional: true,
-          });
-        }
-      } catch {
-        // An unreadable package.json discovers nothing, which is reported as
-        // "no verification could be discovered" rather than as a failure.
-      }
-    }
-    return steps;
+    return discoverChecks(worktree).map((check) => ({
+      id: `${check.id}-${repositoryId}`,
+      kind: check.kind,
+      name: check.name,
+      command: check.command,
+      repositoryId,
+      ...(check.optional ? { optional: true } : {}),
+      ...(check.needsEngine ? { needsEngine: true } : {}),
+    }));
   }
 
   /** Run one step and say exactly what happened. */
@@ -178,6 +157,17 @@ export class Verifier {
       ...(opts.discovered ? { discovered: true } : {}),
       ...(step.optional ? { optional: true } : {}),
     };
+    if (step.needsEngine && !this.env.DOCKER_HOST) {
+      return {
+        ...base,
+        outcome: 'unavailable',
+        exitCode: null,
+        durationMs: 0,
+        summary: 'Not run',
+        reason:
+          "This check runs in its language's own image, on the workspace's Docker engine, and this runner has none",
+      };
+    }
     if (!worktree) {
       return {
         ...base,

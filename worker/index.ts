@@ -372,6 +372,16 @@ export async function implement(reference: string): Promise<number> {
     return 0;
   }
   log(`not finished: the run ended ${state ?? 'before it started'}`);
+  // Pulled work is never picked up again — the next pull is a new execution —
+  // so a build that did not finish leaves nothing behind: its checkouts, with
+  // their installed dependencies, were hundreds of megabytes each and filled
+  // a disk. The branch stays in the clone; the checkpoint stays for reading.
+  const repos = path.join(
+    new Layout(config.root).executionDir(execution.tenant_id, execution.id),
+    'repos'
+  );
+  fs.rmSync(repos, { recursive: true, force: true });
+  log("removed this build's checkouts");
   return 1;
 }
 

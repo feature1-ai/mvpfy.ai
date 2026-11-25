@@ -51,6 +51,11 @@ function feature1(overrides: Record<string, unknown> = {}) {
         { session_id: 'story-a', workflow_status: 'in_progress', title: 'Page the API' },
         { session_id: 'story-b', workflow_status: 'completed', title: 'Already shipped' },
         { sessionId: 'story-c', workflowStatus: 'ready', title: 'Page the screen' },
+        {
+          sessionId: 'story-d',
+          workflowStatus: 'ready_for_testing',
+          title: 'Built, awaiting test',
+        },
       ],
     },
     '/api/workflows/story-a': {
@@ -97,7 +102,10 @@ describe('pulling a feature', () => {
       title: 'Paged product list',
       projectId: '22222222-2222-4222-8222-222222222222',
       requirements: { summary: 'Paging across the catalogue' },
-      finished: [{ title: 'Already shipped', status: 'completed' }],
+      finished: [
+        { title: 'Already shipped', status: 'completed' },
+        { title: 'Built, awaiting test', status: 'ready_for_testing' },
+      ],
     });
     expect(feature.stories).toEqual([
       {
@@ -127,6 +135,7 @@ describe('pulling a feature', () => {
     // With the person's token on every request, and no read of a finished story.
     expect(asked.every((line) => line.endsWith(' Bearer personal'))).toBe(true);
     expect(asked.some((line) => line.includes('story-b'))).toBe(false);
+    expect(asked.some((line) => line.includes('story-d'))).toBe(false);
   });
 
   it('takes a feature id as readily as its code, without searching', async () => {

@@ -25,6 +25,7 @@ import { Redactor } from './redact';
 import { CredentialSession } from './credentials';
 import { buildPrompt, buildRepairPrompt, commitMessageFor, criterionText } from './prompt';
 import { readGuidance } from './guidance';
+import { requestedLinkSettings } from './linkSettings';
 import { RepositoryChecks, failureBrief, failureSummary } from './checks';
 import { UnitDriver, runUnits } from '../shared/unitRunner';
 
@@ -488,6 +489,9 @@ export class ExecutionEngine {
           return stop(
             this.finish(checkpoint, 'failed', `The coding agent ${why} while building ${label}.`)
           );
+        }
+        for (const setting of requestedLinkSettings(outcome.tail)) {
+          this.log(`link setting: ${setting.key}=${setting.value}`);
         }
         noteTouched(unit, await this.commitUnit(checkpoint, worktrees, unit));
         return { kind: 'done' };

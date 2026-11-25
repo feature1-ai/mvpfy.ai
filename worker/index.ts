@@ -5,6 +5,7 @@ import { agentEnv, checkEnv } from './childEnv';
 import { EngineHost, engineHostFrom, withEngine } from './engineHost';
 import { applyRecipe, keepRecipe, prepareCheckout } from './prepare';
 import { readGuidance } from './guidance';
+import { applyLinkSettings, readLinkSettings } from './linkSettings';
 import { DoctorCheck, doctorLines, fileCheck, recipeFile, runDoctor } from './doctor';
 import { agentStep } from './setup';
 import {
@@ -498,6 +499,9 @@ export async function preview(branch: string, name: string): Promise<number> {
   const commit = await git.detachedCheckout(tenantId, repo, branch, checkout);
   credentials.end();
   applyRecipe(recipeDir, checkout);
+  const settings = readLinkSettings(root);
+  applyLinkSettings(path.join(checkout, '.mvpfy', '.env'), settings);
+  for (const s of settings) log(`with ${s.key}=${s.value} for this link`);
   const record = await startPreview(
     checkout,
     { name, branch, commit },

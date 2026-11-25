@@ -52,6 +52,14 @@ export function snapshotOf(feature: PulledFeature, instructions = ''): Snapshot 
   return { ...snapshot, digest: digestOf(snapshot) };
 }
 
+/**
+ * The lease pulled work is held under: longer than any build. Nobody else is
+ * handed pulled work, so its lease has nothing to fence off; with Feature1's
+ * three minutes, a laptop that slept woke to a lapsed lease and the finished
+ * work was thrown away before it was committed.
+ */
+export const PULLED_LEASE_MS = 30 * 24 * 60 * 60_000;
+
 export class NothingToBuildError extends Error {}
 
 export function executionFor(

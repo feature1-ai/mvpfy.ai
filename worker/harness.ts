@@ -214,14 +214,19 @@ export interface Harness {
   cleanup: () => void;
 }
 
-export function makeHarness(opts: { nowIso?: string; unitAttempts?: number } = {}): Harness {
+export function makeHarness(
+  opts: { nowIso?: string; unitAttempts?: number; leaseMs?: number } = {}
+): Harness {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-harness-'));
   let clock = Date.parse(opts.nowIso ?? '2026-10-22T11:00:00.000Z');
   const now = () => clock;
 
   const layout = new Layout(root);
   const store = new ExecutionStore(layout);
-  const transport = new FakeFeature1({ now });
+  const transport = new FakeFeature1({
+    now,
+    ...(opts.leaseMs === undefined ? {} : { leaseMs: opts.leaseMs }),
+  });
   const git = new FakeGit(layout);
   const prs = new FakePullRequests();
   const agent = new FakeAgent();

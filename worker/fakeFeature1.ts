@@ -46,8 +46,12 @@ export class FakeFeature1 implements Feature1Transport {
   /** Reject the next attach as the server does when a PR is the wrong repo. */
   prBelongsElsewhere = new Set<string>();
 
-  constructor(opts: { now?: () => number } = {}) {
+  /** How long a claim or a progress call holds the lease. Feature1's is three minutes. */
+  private readonly leaseMs: number;
+
+  constructor(opts: { now?: () => number; leaseMs?: number } = {}) {
     this.clock = opts.now ?? Date.now;
+    this.leaseMs = opts.leaseMs ?? 3 * 60_000;
   }
 
   /** Queue work for a worker to claim. */
@@ -117,7 +121,7 @@ export class FakeFeature1 implements Feature1Transport {
       // Results a previous attempt reported survive a reclaim.
       results: { ...(this.runs.get(next.id)?.results ?? next.results ?? {}) },
       lease_token: leaseToken,
-      lease_until: new Date(this.clock() + 3 * 60_000).toISOString(),
+      lease_until: new Date(this.clock() + this.leaseMs).toISOString(),
     };
     this.runs.set(claimed.id, claimed);
     this.leases.set(claimed.id, leaseToken);
@@ -207,7 +211,7 @@ export class FakeFeature1 implements Feature1Transport {
     run.state = state;
     if (body.message) run.message = body.message;
     const terminal = !STAGES.includes(state);
-    run.lease_until = terminal ? null : new Date(this.clock() + 3 * 60_000).toISOString();
+    run.lease_until = terminal ? null : new Date(this.clock() + this.leaseMs).toISOString();
     return { ...run };
   }
 }

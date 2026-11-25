@@ -25,7 +25,7 @@ import { Feature1ConnectionStore } from './feature1Connection';
 import { Feature1Login } from './feature1Login';
 import { Feature1Reader } from './feature1Reader';
 import { ProjectStore, describeProject, projectFrom } from './project';
-import { executionFor } from './pull';
+import { PULLED_LEASE_MS, executionFor } from './pull';
 import { RunnerCredentialStore, timeLeft } from './runnerCredential';
 import { agentStep, feature1Step, githubStep, runSetup } from './setup';
 import { ShellSetupCommands, TerminalIo } from './setupIo';
@@ -273,12 +273,13 @@ export async function implement(reference: string): Promise<number> {
   log(`in:\n${describeProject(target)}`);
 
   // The lease fences one worker off from another that Feature1 has handed
-  // the same work. Pulled work is handed to nobody else, so here it only
-  // ever expires by accident: a laptop asleep for longer than three minutes
-  // woke to a lapsed lease and threw the agent's work away. Its clock stands
-  // still, so the lease cannot run out.
-  const pulledAt = Date.now();
-  const feature1 = new FakeFeature1({ now: () => pulledAt });
+  // the same work. Pulled work is handed to nobody else, so here a lease only
+  // ever runs out by accident — a laptop asleep for longer than three
+  // minutes woke to a lapsed one and threw the agent's work away. So it is
+  // given one longer than any build, on the real clock: the engine compares
+  // the lease's end against the time itself before it publishes, which is
+  // why a frozen clock was not enough.
+  const feature1 = new FakeFeature1({ leaseMs: PULLED_LEASE_MS });
   feature1.offer(execution);
   const { worker } = await assemble(config, feature1, redactor);
 

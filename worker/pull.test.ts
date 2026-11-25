@@ -16,7 +16,7 @@ import {
   repositoryFrom,
   uuidFor,
 } from './project';
-import { NothingToBuildError, executionFor, snapshotOf } from './pull';
+import { NothingToBuildError, PULLED_LEASE_MS, executionFor, snapshotOf } from './pull';
 
 const BASE = 'https://acme.feature1.ai';
 const FEATURE_ID = '11111111-1111-4111-8111-111111111111';
@@ -354,19 +354,38 @@ describe('a pulled feature, as work', () => {
 });
 
 describe('the lease on pulled work', () => {
-  it('outlasts a machine that slept for an hour', async () => {
-    const { FakeFeature1 } = await import('./fakeFeature1');
-    const pulledAt = Date.now();
-    const local = new FakeFeature1({ now: () => pulledAt });
-    const execution = executionFor(
-      await feature1().reader.pullFeature(BASE, 'personal', 'FEA-7'),
-      projectFrom(['https://github.com/acme/api.git']),
-      { tenantId: 't', userId: 'u' }
-    );
-    local.offer(execution);
-    const claimed = await local.claim();
-    expect(claimed).not.toBeNull();
-    // Nothing for an hour, then a heartbeat: still ours.
-    await expect(local.progress(claimed!.id, claimed!.lease_token, {})).resolves.toBeTruthy();
+  const project = projectFrom(['https://github.com/acme/api.git']);
+  const who = { tenantId: 't', userId: 'u' };
+
+  async function buildAfterSleeping(leaseMs?: number) {
+    const local = makeHarness(leaseMs === undefined ? {} : { leaseMs });
+    try {
+      const pulled = await feature1().reader.pullFeature(BASE, 'personal', 'FEA-7');
+      const claimed = await local.claim(executionFor(pulled, project, who));
+      const repositoryId = project.repositories[0]!.id;
+      withDiscoverableTests(local, claimed, repositoryId);
+      agentChanges(local, repositoryId);
+      // The machine sleeps for two hours between the pull and the publish.
+      local.setNow('2026-10-22T13:00:00.000Z');
+      const ending = await local.engine
+        .run(local.checkpoint(claimed), new AbortController().signal)
+        .catch((error: Error) => error.message);
+      return { ending, pullRequests: local.prs.creates.length };
+    } finally {
+      local.cleanup();
+    }
+  }
+
+  it('outlasts a machine that slept, through to the pull request', async () => {
+    expect(await buildAfterSleeping(PULLED_LEASE_MS)).toEqual({
+      ending: 'ready_for_testing',
+      pullRequests: 1,
+    });
+  });
+
+  it("is what makes the difference: Feature1's three minutes would not have", async () => {
+    const { ending, pullRequests } = await buildAfterSleeping();
+    expect(String(ending)).toMatch(/lease expired/i);
+    expect(pullRequests).toBe(0);
   });
 });

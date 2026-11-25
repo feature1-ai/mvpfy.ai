@@ -224,7 +224,10 @@ describe('starting and stopping a test link', () => {
 
   it('brings the stack up as its own project on the engine, waits for it, then seeds', async () => {
     const checkout = prepared();
-    const runner = new ScriptedRunner().when(/up -d/, { code: 0 }).when(/seed\.mjs/, { code: 0 });
+    const runner = new ScriptedRunner()
+      .when(/up -d/, { code: 0 })
+      .when(/seed\.mjs/, { code: 0 })
+      .when(/docker ps -aq/, { code: 0 });
     const asked: string[] = [];
     let tries = 0;
     const fetchImpl = (async (url: string) => {
@@ -246,7 +249,10 @@ describe('starting and stopping a test link', () => {
       demoLogin: { email: 'demo@thankyou.test', password: 'demo-pass-1' },
     });
     expect(asked.at(-1)).toBe('http://mvpfy-engine-acme:4000/en');
-    const [up, seed] = runner.calls;
+    const [clear, up, seed] = runner.calls;
+    // Whatever setup or an earlier link left on the engine goes first.
+    expect(clear?.command).toBe('docker ps -aq | xargs -r docker rm -f');
+    expect(clear?.env?.DOCKER_HOST).toBe('tcp://mvpfy-engine-acme:2375');
     expect(up?.command).toBe(
       'docker compose -f .mvpfy/docker-compose.mvpfy.yml --project-directory . up -d --build --remove-orphans'
     );

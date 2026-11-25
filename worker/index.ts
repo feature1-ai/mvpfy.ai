@@ -8,6 +8,7 @@ import {
   PREVIEW_NAME,
   PreviewError,
   PreviewRecord,
+  clearEngine,
   previewComment,
   startPreview,
   stopPreview,
@@ -460,6 +461,10 @@ export async function prepare(): Promise<number> {
     return 1;
   }
   keepRecipe(checkout, recipeDir);
+  // What setup started to check its work is not a test link, and would hold its ports.
+  if (engine) {
+    await clearEngine({ runner: untrusted, env: checkEnvironment, log }, checkout);
+  }
   fs.rmSync(recipeDir + '.progress.json', { force: true });
   log(`set up: ${repo.name} can now be started for a test link`);
   return 0;

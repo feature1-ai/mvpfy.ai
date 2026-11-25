@@ -148,6 +148,7 @@ export async function startPreview(
   const entry = entryOf(manifest);
 
   deps.log(`starting ${meta.branch} at ${meta.commit.slice(0, 12)}`);
+  await clearEngine(deps, checkout);
   await compose(deps, checkout, meta.name, 'up -d --build --remove-orphans', 45 * 60_000);
 
   const url = `http://${deps.engineHostname}:${entry.port}${entry.path}`;
@@ -212,4 +213,26 @@ export function previewComment(record: PreviewRecord, link: string, hours = 24):
     '',
     '_Started by mvpfy._',
   ].join('\n');
+}
+
+/**
+ * Every container on the tenant's engine, gone; images and volumes kept.
+ *
+ * Setting a product up starts its stack to check it, and an agent may leave
+ * it running under any project name it chose. A link started after that met
+ * a port the leftover stack still held. A tenant has one link at a time, so
+ * before one starts, and after setup, nothing else on its engine is wanted.
+ */
+export async function clearEngine(
+  deps: Pick<StartDeps, 'runner' | 'env' | 'log'>,
+  cwd: string
+): Promise<void> {
+  const result = await deps.runner.run('docker ps -aq | xargs -r docker rm -f', {
+    cwd,
+    env: deps.env,
+    timeoutMs: 5 * 60_000,
+  });
+  if (result.code !== 0) {
+    throw new PreviewError(`Could not clear the tenant's engine: ${result.stderr.trim()}`);
+  }
 }

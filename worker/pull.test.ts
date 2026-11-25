@@ -352,3 +352,21 @@ describe('a pulled feature, as work', () => {
     expect(h.transport.resultsOf(claimed.id)[repositoryId]?.pr_urls).toHaveLength(1);
   });
 });
+
+describe('the lease on pulled work', () => {
+  it('outlasts a machine that slept for an hour', async () => {
+    const { FakeFeature1 } = await import('./fakeFeature1');
+    const pulledAt = Date.now();
+    const local = new FakeFeature1({ now: () => pulledAt });
+    const execution = executionFor(
+      await feature1().reader.pullFeature(BASE, 'personal', 'FEA-7'),
+      projectFrom(['https://github.com/acme/api.git']),
+      { tenantId: 't', userId: 'u' }
+    );
+    local.offer(execution);
+    const claimed = await local.claim();
+    expect(claimed).not.toBeNull();
+    // Nothing for an hour, then a heartbeat: still ours.
+    await expect(local.progress(claimed!.id, claimed!.lease_token, {})).resolves.toBeTruthy();
+  });
+});

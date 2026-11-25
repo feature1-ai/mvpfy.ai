@@ -272,7 +272,13 @@ export async function implement(reference: string): Promise<number> {
   }
   log(`in:\n${describeProject(target)}`);
 
-  const feature1 = new FakeFeature1();
+  // The lease fences one worker off from another that Feature1 has handed
+  // the same work. Pulled work is handed to nobody else, so here it only
+  // ever expires by accident: a laptop asleep for longer than three minutes
+  // woke to a lapsed lease and threw the agent's work away. Its clock stands
+  // still, so the lease cannot run out.
+  const pulledAt = Date.now();
+  const feature1 = new FakeFeature1({ now: () => pulledAt });
   feature1.offer(execution);
   const { worker } = await assemble(config, feature1, redactor);
 

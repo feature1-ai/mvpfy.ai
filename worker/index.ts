@@ -594,10 +594,25 @@ export async function doctor(): Promise<number> {
     {
       name: agentName,
       run: async () => {
-        if (!(await agentStep(config.agent, commands).done())) {
+        // The agent's sign-in is where the agent runs: in the sandbox when
+        // there is one, which is the only place it is kept.
+        const where = sandbox
+          ? {
+              probe: async (command: string) => {
+                const result = await new RemoteRunner(sandbox, redactor).run(command, {
+                  cwd: root,
+                  env: agentEnv(),
+                  timeoutMs: 15_000,
+                });
+                return { code: result.code, stdout: result.stdout };
+              },
+              interactive: async () => null,
+            }
+          : commands;
+        if (!(await agentStep(config.agent, where).done())) {
           throw new Error('Not signed in. Run setup.');
         }
-        return 'Signed in';
+        return sandbox ? 'Signed in, in the sandbox' : 'Signed in';
       },
     },
     {

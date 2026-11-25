@@ -28,7 +28,9 @@ FROM ${NODE_IMAGE}
 # it reach GitHub at all. openssh-client only for ssh clone URLs. The Docker
 # client and compose are for the sandbox, which sets a product up and starts
 # it on the tenant's own engine (worker/engineHost.ts); there is no daemon
-# here, and nothing points the worker itself at one.
+# here, and nothing points the worker itself at one. buildx because without it
+# compose falls back to the old builder, which cannot build a Dockerfile that
+# uses BuildKit features — and setup's instructions ask for cache mounts.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates curl git openssh-client tini \
@@ -41,7 +43,7 @@ RUN apt-get update \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.asc] https://download.docker.com/linux/debian bookworm stable" \
       > /etc/apt/sources.list.d/docker.list \
  && apt-get update \
- && apt-get install -y --no-install-recommends gh docker-ce-cli docker-compose-plugin \
+ && apt-get install -y --no-install-recommends gh docker-ce-cli docker-buildx-plugin docker-compose-plugin \
  && apt-get purge -y curl \
  && rm -rf /var/lib/apt/lists/*
 

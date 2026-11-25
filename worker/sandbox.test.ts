@@ -84,7 +84,7 @@ describe('how a worker is told about its sandbox', () => {
   });
 
   it('has its own command, and keeps the runner credential where it is told to', () => {
-    expect(commandFrom(['node', 'index.js', 'sandbox'])).toBe('sandbox');
+    expect(commandFrom(['node', 'index.js', 'sandbox'])).toEqual({ name: 'sandbox' });
     expect(() => commandFrom(['node', 'index.js', 'sandbox', '--port'])).toThrow(/Unrecognised/);
     expect(secretsDirFrom({ MVPFY_WORKER_ROOT: '/w' })).toBe('/w');
     expect(secretsDirFrom({ MVPFY_WORKER_ROOT: '/w', MVPFY_SECRETS_DIR: '/s' })).toBe('/s');

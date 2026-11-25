@@ -1,5 +1,11 @@
 import { AgentKind } from './agentRun';
-import { Feature1Identity, MintedRunner, workspaceBaseUrl } from './feature1Login';
+import { SavedConnection } from './feature1Connection';
+import {
+  Feature1Identity,
+  Feature1LoginError,
+  MintedRunner,
+  workspaceBaseUrl,
+} from './feature1Login';
 import { SavedRunner, isExpired, timeLeft } from './runnerCredential';
 
 /**
@@ -79,7 +85,7 @@ export async function runSetup(steps: SetupStep[], io: SetupIo): Promise<SetupRe
   }
   io.say(
     failed.length === 0
-      ? '\nThis runner is set up. Start it without `setup` and it will begin claiming work.'
+      ? '\nThis runner is set up.'
       : `\nNot finished: ${failed.join(', ')}. Run setup again; what is done is kept.`
   );
   return { ok: failed.length === 0, failed };
@@ -156,6 +162,8 @@ export interface Feature1StepDeps {
     mintRunner(baseUrl: string, token: string, name: string): Promise<MintedRunner>;
   };
   store: { load(): SavedRunner | null; save(saved: SavedRunner): void };
+  /** The sign-in itself, kept so the runner can pull features as the desktop app does. */
+  connections: { load(): SavedConnection | null; save(saved: SavedConnection): void };
   /** What Feature1 will call this runner. */
   name: string;
   /** Answers supplied ahead of time, so setup can be scripted. */
@@ -167,8 +175,14 @@ export interface Feature1StepDeps {
 const RENEW_WITHIN_MS = 60 * 60_000;
 
 /**
- * Feature1: the workspace and a personal token, checked against each other,
- * then exchanged for the runner credential the worker actually runs on.
+ * Feature1: the workspace and a personal token, checked against each other
+ * and kept, as the desktop app keeps them. With that the runner can pull a
+ * feature and build it.
+ *
+ * The same sign-in is then used to ask for a runner credential, which is what
+ * lets Feature1 hand this runner work of its own accord. A workspace that does
+ * not do that yet, or a person who is not an organisation admin, is told so
+ * and is still signed in: pulling needs only the sign-in.
  */
 export function feature1Step(deps: Feature1StepDeps): SetupStep {
   const env = deps.env ?? process.env;
@@ -177,49 +191,87 @@ export function feature1Step(deps: Feature1StepDeps): SetupStep {
     id: 'feature1',
     title: 'Sign in to Feature1',
     done: async () => {
-      const saved = deps.store.load();
-      if (!saved || isExpired(saved, now())) return false;
-      return Date.parse(saved.expiresAt) - now().getTime() > RENEW_WITHIN_MS;
+      if (!deps.connections.load()) return false;
+      // No runner credential is not unfinished: this workspace may not hand
+      // out work. One that exists is kept from lapsing.
+      const runner = deps.store.load();
+      if (!runner) return true;
+      return (
+        !isExpired(runner, now()) &&
+        Date.parse(runner.expiresAt) - now().getTime() > RENEW_WITHIN_MS
+      );
     },
     perform: async () => {
-      const previous = deps.store.load();
-      const address =
-        (env.MVPFY_FEATURE1_URL ?? '').trim() ||
-        (await deps.io.ask(
-          previous
-            ? `Feature1 workspace address [${previous.feature1BaseUrl}]: `
-            : 'Feature1 workspace address (for example https://acme.feature1.ai): '
-        )) ||
-        previous?.feature1BaseUrl ||
-        '';
-      if (!address.trim()) throw new Error('A Feature1 workspace address is needed');
-      const baseUrl = workspaceBaseUrl(address);
+      const previous = deps.connections.load();
+      const scripted = (env.MVPFY_FEATURE1_TOKEN ?? '').trim();
+      let identity: Feature1Identity | null = null;
+      let baseUrl = '';
+      let token = '';
 
-      deps.io.say(
-        'Use a personal token from Feature1 → Settings, signed in as an organisation admin.\n' +
-          'It is used once, to add this runner, and is not kept.'
-      );
-      const token =
-        (env.MVPFY_FEATURE1_TOKEN ?? '').trim() ||
-        (await deps.io.ask('Personal token: ', { secret: true })).trim();
-      if (!token) throw new Error('A personal token is needed');
+      // Already signed in and only here to renew: use what is kept, and ask
+      // only if Feature1 no longer accepts it.
+      if (previous && !scripted) {
+        try {
+          identity = await deps.login.verify(previous.feature1BaseUrl, previous.token);
+          baseUrl = previous.feature1BaseUrl;
+          token = previous.token;
+        } catch {
+          deps.io.say('The saved Feature1 sign-in is no longer accepted. Sign in again.');
+        }
+      }
 
-      const identity = await deps.login.verify(baseUrl, token);
+      if (!identity) {
+        const address =
+          (env.MVPFY_FEATURE1_URL ?? '').trim() ||
+          (await deps.io.ask(
+            previous
+              ? `Feature1 workspace address [${previous.feature1BaseUrl}]: `
+              : 'Feature1 workspace address (for example https://acme.feature1.ai): '
+          )) ||
+          previous?.feature1BaseUrl ||
+          '';
+        if (!address.trim()) throw new Error('A Feature1 workspace address is needed');
+        baseUrl = workspaceBaseUrl(address);
+
+        deps.io.say(
+          'Use a personal token from Feature1 → Settings.\n' +
+            "It is kept with this runner's other sign-ins, as the desktop app keeps it, so the\n" +
+            'runner can read your features. It is never given to the coding agent.'
+        );
+        token = scripted || (await deps.io.ask('Personal token: ', { secret: true })).trim();
+        if (!token) throw new Error('A personal token is needed');
+        identity = await deps.login.verify(baseUrl, token);
+      }
+
+      deps.connections.save({
+        feature1BaseUrl: baseUrl,
+        token,
+        tenant: identity.tenant,
+        user: identity.user,
+      });
       const who = identity.user.email ?? identity.user.id;
       deps.io.say(`Signed in to ${identity.tenant.slug || identity.tenant.id} as ${who}`);
 
-      const minted = await deps.login.mintRunner(baseUrl, token, deps.name);
-      const saved: SavedRunner = {
-        feature1BaseUrl: baseUrl,
-        token: minted.token,
-        expiresAt: minted.expiresAt,
-        name: deps.name,
-      };
-      deps.store.save(saved);
-      deps.io.say(
-        `Runner "${deps.name}" added. Its credential lasts ${timeLeft(saved, now())}; ` +
-          'run setup again before then to renew it.'
-      );
+      try {
+        const minted = await deps.login.mintRunner(baseUrl, token, deps.name);
+        const saved: SavedRunner = {
+          feature1BaseUrl: baseUrl,
+          token: minted.token,
+          expiresAt: minted.expiresAt,
+          name: deps.name,
+        };
+        deps.store.save(saved);
+        deps.io.say(
+          `Runner "${deps.name}" added, so Feature1 can hand it work. That credential lasts ` +
+            `${timeLeft(saved, now())}; run setup again before then to renew it.`
+        );
+      } catch (error) {
+        if (!(error instanceof Feature1LoginError)) throw error;
+        deps.io.say(
+          `Feature1 will not hand this runner work of its own accord: ${error.message}\n` +
+            'It can still pull a feature and build it: `implement <feature code>`.'
+        );
+      }
     },
   };
 }

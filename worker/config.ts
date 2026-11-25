@@ -46,23 +46,34 @@ function intFrom(value: string | undefined, fallback: number, name: string): num
   return parsed;
 }
 
+export type WorkerCommand =
+  | { name: 'run' }
+  | { name: 'setup' }
+  | { name: 'sandbox' }
+  /** With none, show the project; with some, set it. */
+  | { name: 'project'; repositories: string[] }
+  | { name: 'implement'; feature: string };
+
 /**
- * What the arguments ask for: claim work, or sign in once.
+ * What the arguments ask for.
  *
  * Anything unrecognised is refused rather than taken as "just run". Somebody
  * who typed `setup --renew`, or mistyped `setup`, would otherwise start a
  * second worker claiming executions against the same volume as the one
  * already running, believing they were signing in.
  */
-export function commandFrom(argv: string[]): 'run' | 'setup' | 'sandbox' {
-  const args = argv.slice(2);
-  if (args.length === 0) return 'run';
-  if (args.length === 1 && args[0] === 'setup') return 'setup';
-  if (args.length === 1 && args[0] === 'sandbox') return 'sandbox';
+export function commandFrom(argv: string[]): WorkerCommand {
+  const [name, ...rest] = argv.slice(2);
+  const plain = rest.every((arg) => arg.trim() && !arg.startsWith('-'));
+  if (name === undefined) return { name: 'run' };
+  if ((name === 'setup' || name === 'sandbox') && rest.length === 0) return { name };
+  if (name === 'project' && plain) return { name, repositories: rest };
+  if (name === 'implement' && plain && rest.length === 1) return { name, feature: rest[0] ?? '' };
   throw new Error(
-    `Unrecognised argument ${JSON.stringify(args.join(' '))}. The worker takes either ` +
-      'no arguments, to claim work, `setup`, to sign in once, or `sandbox`, to run what ' +
-      'another worker sends it.'
+    `Unrecognised argument ${JSON.stringify([name, ...rest].join(' '))}. The worker takes either ` +
+      'no arguments, to claim work; `setup`, to sign in once; `project <repository>…`, to say ' +
+      'what it builds; `implement <feature code>`, to pull one feature and build it; or ' +
+      '`sandbox`, to run what another worker sends it.'
   );
 }
 
@@ -195,4 +206,13 @@ export function secretsIn(config: WorkerConfig, env: NodeJS.ProcessEnv = process
     env.OPENAI_API_KEY,
     env.MVPFY_RUNNER_TOKEN,
   ].filter((value): value is string => Boolean(value && value.trim()));
+}
+
+/**
+ * For a worker that pulls its work instead of claiming it: everything above
+ * but the runner credential and the address it is presented to, neither of
+ * which pulling uses.
+ */
+export function configWithoutRunner(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
+  return { ...configFromEnv({ ...env, MVPFY_FAKE_FEATURE1: '1' }), fake: false };
 }

@@ -53,9 +53,12 @@ prints a code and an address to open on any other device:
 2. **The coding agent** — Claude Code's sign-in, or Codex's device sign-in when
    `MVPFY_AGENT=codex`. Skipped when an API key is already in the environment.
 3. **Feature1** — the workspace address and a personal token from Feature1 →
-   Settings, belonging to an organisation admin. The token is checked against
-   the workspace, used once to add this runner, and not kept. What is kept is
-   the runner credential it obtained, in `runner.json` on the volume.
+   Settings. The token is checked against the workspace and kept in
+   `feature1.json`, as the desktop app keeps it, so the worker can pull
+   features. It is then used to ask for a runner credential (`runner.json`),
+   which is what lets Feature1 hand this worker work of its own accord. That
+   needs an organisation admin and a workspace with it turned on; without
+   either, setup says so and the worker can still [pull](#pulling-a-feature).
 
 After each step setup checks that the sign-in actually took, and it reports
 that check rather than the command's exit. Steps already in place are left
@@ -96,7 +99,7 @@ Three things to know:
 | `MVPFY_HEARTBEAT_INTERVAL_MS` | `45000`                  | How often it renews the lease while working. The lease is three minutes, so anything above 120000 is refused.                                                                                       |
 | `MVPFY_UNIT_ATTEMPTS`         | `3`                      | Tries each story gets before the execution fails: the first build, then repairs fed the failing check's output. `1` turns repair off. At most 5.                                                    |
 | `MVPFY_WORKER_NAME`           | `mvpfy worker <host>`    | This worker's own logs, **and the name `setup` registers the runner under** — what an organisation admin reads when deciding which runner to revoke. The default carries the host name, which in a container is its id; set it per runner to something you will recognise. |
-| `MVPFY_FEATURE1_TOKEN`        | —                        | Read by `setup` only, to script the Feature1 step. An organisation admin's personal token from Feature1 → Settings. Used for two requests and never written to the volume — the runner credential it obtains is what is kept. |
+| `MVPFY_FEATURE1_TOKEN`        | —                        | Read by `setup` only, to script the Feature1 step: a personal token from Feature1 → Settings. Kept afterwards in `feature1.json` under `MVPFY_SECRETS_DIR`, readable by the worker's user only, and never given to the agent. |
 | `MVPFY_SECRETS_DIR`           | `MVPFY_WORKER_ROOT`      | Where `setup` leaves the runner credential and the worker reads it. Set it, with `GH_CONFIG_DIR`, to somewhere the sandbox does not mount. |
 | `MVPFY_SANDBOX_URL`           | —                        | `http://host:port` of a sandbox. When set, the agent and the checks run there instead of here. Needs `MVPFY_SANDBOX_TOKEN`. |
 | `MVPFY_SANDBOX_TOKEN`         | —                        | At least 32 random characters, the same for a worker and its sandbox. |
@@ -145,6 +148,43 @@ reported.
 - **Not the host Docker socket.** Mounting it would hand the agent control of
   the daemon, which is control of the host. If an execution needs containers,
   give the worker its own nested runtime; do not give it yours.
+
+## Pulling a feature
+
+The worker can also be asked for one feature, the way the desktop app is: it
+reads the feature from Feature1 with the signed-in person's token and builds
+it. Nothing has to be switched on in Feature1 and no runner credential is
+involved.
+
+Say once which repositories it builds, each from a branch (`main` if not
+given):
+
+```sh
+docker run --rm -v mvpfy-worker:/var/lib/mvpfy mvpfy-worker \
+  project https://github.com/acme/api.git https://github.com/acme/web.git#develop
+```
+
+Then, for a feature by its code or id:
+
+```sh
+docker run --rm -v mvpfy-worker:/var/lib/mvpfy mvpfy-worker implement FEA-142
+```
+
+It pulls the feature's approved requirements and the stories not yet finished,
+builds them [exactly as below](#how-a-feature-is-built), opens a pull request
+per repository, prints their addresses, and exits: zero when every repository
+has a pull request or needed no change.
+
+What differs from work Feature1 hands over:
+
+- **Feature1 is only read.** The pull requests are not attached to the feature
+  and its status is not moved; do that in Feature1 for now.
+- **The repositories are the ones `project` named**, not the ones a product
+  manager picked when queueing.
+- **A draft feature, or one already done, is refused**, as Feature1 itself
+  refuses to queue them.
+- **If the agent stops to ask a question**, the run ends and prints it. There
+  is not yet a way to answer and continue.
 
 ## How a feature is built
 

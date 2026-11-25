@@ -8,6 +8,7 @@ import { ensureSignInFolders } from './signInFolders';
 import { commandFrom, configFromEnv, workerNameFrom } from './config';
 import { ghLoginToken } from './credentials';
 import { agentEnv, checkEnv } from './childEnv';
+import { SavedConnection } from './feature1Connection';
 import { Feature1Login, Feature1LoginError, workspaceBaseUrl } from './feature1Login';
 import { RunnerCredentialStore, SavedRunner, isExpired, timeLeft } from './runnerCredential';
 import {
@@ -144,9 +145,16 @@ describe('the agent step', () => {
 });
 
 describe('the Feature1 step', () => {
-  function fixture(saved: SavedRunner | null = null) {
+  const CONNECTION: SavedConnection = {
+    feature1BaseUrl: 'https://a.test',
+    token: 'saved-personal-token',
+    tenant: { id: 't1', slug: 'acme' },
+    user: { id: 'u1' },
+  };
+
+  function fixture(saved: SavedRunner | null = null, connection: SavedConnection | null = null) {
     const calls: string[] = [];
-    const state = { saved };
+    const state = { saved, connection };
     const deps = {
       login: {
         verify: async (baseUrl: string, token: string) => {
@@ -162,6 +170,10 @@ describe('the Feature1 step', () => {
         load: () => state.saved,
         save: (next: SavedRunner) => void (state.saved = next),
       },
+      connections: {
+        load: () => state.connection,
+        save: (next: SavedConnection) => void (state.connection = next),
+      },
       name: 'runner-1',
       env: {},
       now: () => NOW,
@@ -169,7 +181,7 @@ describe('the Feature1 step', () => {
     return { calls, state, deps };
   }
 
-  it('checks the token against the workspace, then keeps only the runner credential', async () => {
+  it('checks the token against the workspace, keeps the sign-in, and adds a runner', async () => {
     const { calls, state, deps } = fixture();
     const out = io(['acme.feature1.ai', 'personal-token']);
     expect(await runSetup([feature1Step({ ...deps, io: out })], out)).toMatchObject({ ok: true });
@@ -177,13 +189,19 @@ describe('the Feature1 step', () => {
       'verify https://acme.feature1.ai personal-token',
       'mint https://acme.feature1.ai runner-1',
     ]);
+    expect(state.connection).toEqual({
+      feature1BaseUrl: 'https://acme.feature1.ai',
+      token: 'personal-token',
+      tenant: { id: 't1', slug: 'acme' },
+      user: { id: 'u1', email: 'pm@acme.test' },
+    });
     expect(state.saved).toEqual({
       feature1BaseUrl: 'https://acme.feature1.ai',
       token: TOKEN,
       expiresAt: inHours(24),
       name: 'runner-1',
     });
-    expect(JSON.stringify(state.saved)).not.toContain('personal-token');
+    // Kept, but never shown.
     expect(out.said.join('\n')).not.toContain('personal-token');
   });
 
@@ -197,39 +215,79 @@ describe('the Feature1 step', () => {
     expect(out.asked).toEqual([]);
   });
 
-  it('leaves a credential with hours left alone, and renews one about to lapse', async () => {
-    const fresh = fixture({
-      feature1BaseUrl: 'https://a.test',
-      token: TOKEN,
-      expiresAt: inHours(20),
-      name: 'r',
-    });
-    await runSetup([feature1Step({ ...fresh.deps, io: io() })], io());
-    expect(fresh.calls).toEqual([]);
-
-    const lapsing = fixture({
-      feature1BaseUrl: 'https://a.test',
-      token: TOKEN,
-      expiresAt: inHours(0.5),
-      name: 'r',
-    });
-    // Enter accepts the workspace it was set up with last time.
-    const out = io(['', 'tok']);
-    await runSetup([feature1Step({ ...lapsing.deps, io: out })], out);
-    expect(lapsing.calls[0]).toBe('verify https://a.test tok');
-  });
-
-  it('stops, having saved nothing, when Feature1 refuses', async () => {
+  it('is signed in, and can pull, where Feature1 hands out no work', async () => {
     const { state, deps } = fixture();
     deps.login.mintRunner = async () => {
       throw new Feature1LoginError('Only an organisation admin can add a runner.');
     };
     const out = io(['acme.feature1.ai', 'tok']);
+    expect(await runSetup([feature1Step({ ...deps, io: out })], out)).toMatchObject({ ok: true });
+    expect(state.connection?.token).toBe('tok');
+    expect(state.saved).toBeNull();
+    expect(out.said.join('\n')).toContain('organisation admin');
+    expect(out.said.join('\n')).toContain('implement <feature code>');
+    // And is left alone next time: no runner credential is not unfinished.
+    const again = io();
+    await runSetup([feature1Step({ ...deps, io: again })], again);
+    expect(again.said.join('\n')).toContain('Already in place');
+  });
+
+  it('stops, having saved nothing, when Feature1 rejects the token', async () => {
+    const { state, deps } = fixture();
+    deps.login.verify = async () => {
+      throw new Feature1LoginError('Feature1 rejected that token.');
+    };
+    const out = io(['acme.feature1.ai', 'tok']);
     expect(await runSetup([feature1Step({ ...deps, io: out })], out)).toMatchObject({
       failed: ['feature1'],
     });
+    expect(state.connection).toBeNull();
     expect(state.saved).toBeNull();
-    expect(out.said.join('\n')).toContain('organisation admin');
+  });
+
+  it('leaves a credential with hours left alone', async () => {
+    const fresh = fixture(
+      { feature1BaseUrl: 'https://a.test', token: TOKEN, expiresAt: inHours(20), name: 'r' },
+      CONNECTION
+    );
+    await runSetup([feature1Step({ ...fresh.deps, io: io() })], io());
+    expect(fresh.calls).toEqual([]);
+  });
+
+  it('renews one about to lapse with the saved sign-in, asking nothing', async () => {
+    const lapsing = fixture(
+      { feature1BaseUrl: 'https://a.test', token: TOKEN, expiresAt: inHours(0.5), name: 'r' },
+      CONNECTION
+    );
+    const out = io();
+    expect(await runSetup([feature1Step({ ...lapsing.deps, io: out })], out)).toMatchObject({
+      ok: true,
+    });
+    expect(lapsing.calls).toEqual([
+      'verify https://a.test saved-personal-token',
+      'mint https://a.test runner-1',
+    ]);
+    expect(out.asked).toEqual([]);
+    expect(lapsing.state.saved?.expiresAt).toBe(inHours(24));
+  });
+
+  it('asks again when the saved sign-in is no longer accepted', async () => {
+    const stale = fixture(
+      { feature1BaseUrl: 'https://a.test', token: TOKEN, expiresAt: inHours(0.5), name: 'r' },
+      CONNECTION
+    );
+    const verify = stale.deps.login.verify;
+    stale.deps.login.verify = async (baseUrl, token) => {
+      if (token === CONNECTION.token) throw new Feature1LoginError('rejected');
+      return verify(baseUrl, token);
+    };
+    // Enter accepts the workspace it was set up with last time.
+    const out = io(['', 'new-token']);
+    expect(await runSetup([feature1Step({ ...stale.deps, io: out })], out)).toMatchObject({
+      ok: true,
+    });
+    expect(stale.state.connection?.token).toBe('new-token');
+    expect(stale.state.connection?.feature1BaseUrl).toBe('https://a.test');
   });
 });
 
@@ -366,14 +424,14 @@ describe('the folders the sign-ins live in', () => {
 
 describe('what the arguments ask for', () => {
   it('claims work with none, and signs in with setup', () => {
-    expect(commandFrom(['node', 'index.js'])).toBe('run');
-    expect(commandFrom(['node', 'index.js', 'setup'])).toBe('setup');
+    expect(commandFrom(['node', 'index.js'])).toEqual({ name: 'run' });
+    expect(commandFrom(['node', 'index.js', 'setup'])).toEqual({ name: 'setup' });
   });
 
   it('refuses anything else rather than quietly starting to claim work', () => {
     // `setup --renew` once started a second worker on the same volume.
     expect(() => commandFrom(['node', 'index.js', 'setup', '--renew'])).toThrow(/Unrecognised/);
-    expect(() => commandFrom(['node', 'index.js', 'setuo'])).toThrow(/either no arguments/);
+    expect(() => commandFrom(['node', 'index.js', 'setuo'])).toThrow(/Unrecognised/);
   });
 });
 

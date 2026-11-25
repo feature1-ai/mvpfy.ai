@@ -24,6 +24,7 @@ import { AgentKind, AgentRunner } from './agentRun';
 import { Redactor } from './redact';
 import { CredentialSession } from './credentials';
 import { buildPrompt, buildRepairPrompt, commitMessageFor, criterionText } from './prompt';
+import { readGuidance } from './guidance';
 import { RepositoryChecks, failureBrief, failureSummary } from './checks';
 import { UnitDriver, runUnits } from '../shared/unitRunner';
 
@@ -437,12 +438,14 @@ export class ExecutionEngine {
         // Asked for each run, not once: a long feature outlives a token, and
         // the session holds whichever one the last heartbeat brought.
         const planningMcp = this.deps.credentials?.agentMcp() ?? null;
+        const guidance = readGuidance(this.deps.layout.root);
         const brief = {
           execution,
           worktrees,
           questionsFile,
           unit,
           planningContext: Boolean(planningMcp),
+          ...(guidance ? { guidance } : {}),
         };
         const outcome = await this.deps.agent.run({
           kind: this.deps.agentKind,

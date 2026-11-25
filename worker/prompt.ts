@@ -33,6 +33,8 @@ export interface PromptContext {
   unit: Snapshot;
   /** True when Feature1's MCP server is registered for this run. */
   planningContext?: boolean;
+  /** The team's design principles and architecture, as written in mvpfy cloud. */
+  guidance?: string;
 }
 
 /**
@@ -105,6 +107,25 @@ function planningContextBlock(ctx: PromptContext): string {
   ].join('\n');
 }
 
+/**
+ * The team's own rules for this product, written once by its developers.
+ * Below the requirements in authority: a story that asks for something the
+ * guidance does not foresee is still the story to build.
+ */
+export function guidanceBlock(guidance: string | undefined): string {
+  const text = guidance?.trim();
+  if (!text) return '';
+  return [
+    '',
+    "The team's design principles and architecture, written by its developers for",
+    'every change to this product. Follow them. Where they and the requirements above',
+    'disagree, the requirements win — and say so in your last message.',
+    '',
+    text,
+    '',
+  ].join('\n');
+}
+
 /** Free text the person typed when they queued the work. */
 function instructionBlock(execution: Execution): string {
   const instructions = execution.snapshot.instructions?.trim();
@@ -150,6 +171,7 @@ export function buildPrompt(ctx: PromptContext): string {
     instructionBlock(execution),
     clarificationBlock(execution),
     planningContextBlock(ctx),
+    guidanceBlock(ctx.guidance),
   ];
 
   if (unit.type === 'task') {

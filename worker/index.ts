@@ -4,6 +4,9 @@ import { CliAgentRunner } from './agentRun';
 import { agentEnv, checkEnv } from './childEnv';
 import { EngineHost, engineHostFrom, withEngine } from './engineHost';
 import { applyRecipe, keepRecipe, prepareCheckout } from './prepare';
+import { readGuidance } from './guidance';
+import { DoctorCheck, doctorLines, fileCheck, recipeFile, runDoctor } from './doctor';
+import { agentStep } from './setup';
 import {
   PREVIEW_NAME,
   PreviewError,
@@ -43,7 +46,7 @@ import { Feature1Reader } from './feature1Reader';
 import { ProjectStore, describeProject, projectFrom } from './project';
 import { PULLED_LEASE_MS, executionFor } from './pull';
 import { RunnerCredentialStore, timeLeft } from './runnerCredential';
-import { agentStep, feature1Step, githubStep, runSetup } from './setup';
+import { feature1Step, githubStep, runSetup } from './setup';
 import { ShellSetupCommands, TerminalIo } from './setupIo';
 import { ensureSignInFolders } from './signInFolders';
 import { Feature1Transport } from './transport';
@@ -448,6 +451,7 @@ export async function prepare(): Promise<number> {
       agentKind: config.agent,
       ...(config.agentModel ? { agentModel: config.agentModel } : {}),
       template: setupTemplate(),
+      ...(readGuidance(root) ? { guidance: readGuidance(root) } : {}),
       log,
     }
   );
@@ -562,6 +566,97 @@ export async function comment(pullRequest: string, name: string, link: string): 
 }
 
 /**
+ * `doctor`: whether this runner can do its job, one `CHECK` line per answer.
+ * Builds nothing. Resolves with the exit code: zero when every check holds.
+ */
+export async function doctor(): Promise<number> {
+  ensureSignInFolders();
+  const root = workerRootFrom();
+  const config = configWithoutRunner(process.env);
+  const commands = new ShellSetupCommands();
+  const redactor = new Redactor();
+  const connection = new Feature1ConnectionStore(secretsDirFrom()).load();
+  const target = new ProjectStore(root).load();
+  const sandbox = sandboxClientFrom(process.env);
+  const engine = engineHostFrom(process.env);
+  const agentName = config.agent === 'claude' ? 'Claude Code' : 'Codex';
+
+  const checks: DoctorCheck[] = [
+    {
+      name: 'GitHub',
+      run: async () => {
+        if ((await commands.probe('gh auth status --hostname github.com')).code !== 0) {
+          throw new Error('Not signed in. Run setup.');
+        }
+        return 'Signed in';
+      },
+    },
+    {
+      name: agentName,
+      run: async () => {
+        if (!(await agentStep(config.agent, commands).done())) {
+          throw new Error('Not signed in. Run setup.');
+        }
+        return 'Signed in';
+      },
+    },
+    {
+      name: 'Feature1',
+      run: async () => {
+        if (!connection) throw new Error('Not signed in. Run setup.');
+        redactor.remember(connection.token);
+        const who = await new Feature1Login().verify(connection.feature1BaseUrl, connection.token);
+        return `Signed in to ${who.tenant.slug || who.tenant.id}`;
+      },
+    },
+    {
+      name: 'Repositories',
+      run: async () => {
+        if (!target) throw new Error('None set. Add one in Settings.');
+        return target.repositories.map((r) => `${r.name} from ${r.base_branch}`).join(', ');
+      },
+    },
+    {
+      name: 'Sandbox',
+      run: async () => {
+        if (!sandbox) throw new Error('This runner has no sandbox');
+        await new RemoteRunner(sandbox, redactor).ready(10_000);
+        return 'Answers';
+      },
+    },
+    {
+      name: 'Docker engine',
+      run: async () => {
+        if (!sandbox || !engine) throw new Error('This runner has no Docker engine');
+        const answer = await new RemoteRunner(sandbox, redactor).run(
+          "docker info --format '{{.ServerVersion}}'",
+          {
+            cwd: root,
+            env: withEngine({ PATH: process.env.PATH ?? '' }, engine),
+            timeoutMs: 15_000,
+          }
+        );
+        if (answer.code !== 0) throw new Error(answer.stderr.trim() || 'It did not answer');
+        return `Answers · Docker ${answer.stdout.trim()}`;
+      },
+    },
+    ...(target?.repositories[0]
+      ? [
+          fileCheck(
+            'Test links',
+            recipeFile(root, target.repositories[0].id),
+            'The product is set up to be started',
+            'Not set up yet. Set it up from Settings.'
+          ),
+        ]
+      : []),
+  ];
+  const results = await runDoctor(checks);
+  for (const line of doctorLines(results)) process.stdout.write(`${line}\n`);
+  return results.every((r) => r.ok) ? 0 : 1;
+}
+
+/**
  * `sandbox`: run what a worker sends, and hold nothing of the worker's.
  * See sandbox.ts for why this is a separate container.
  */
@@ -594,6 +689,7 @@ if (require.main === module) {
     if (command.name === 'comment') {
       process.exit(await comment(command.pullRequest, command.preview, command.link));
     }
+    if (command.name === 'doctor') process.exit(await doctor());
     if (command.name === 'sandbox') return sandbox();
     return main();
   })();

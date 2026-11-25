@@ -7,6 +7,7 @@ import { QUESTIONS_FILE } from '../shared/types';
 import { CheckAccess, failedChecks } from '../shared/unitChecks';
 import { UnitDriver, runUnits } from '../shared/unitRunner';
 import { AgentKind, AgentRunner } from './agentRun';
+import { guidanceBlock } from './prompt';
 import { CommandRunner } from './exec';
 
 /**
@@ -40,6 +41,8 @@ export interface PrepareDeps {
   agentModel?: string;
   /** The setup instructions template (src/prompts/bootstrap-runtime.txt). */
   template: string;
+  /** The team's design principles and architecture, when it has written any. */
+  guidance?: string;
   log: (message: string) => void;
   signal?: AbortSignal;
 }
@@ -103,7 +106,7 @@ export async function prepareCheckout(
     onWindows: false,
     portBlock: PORT_BLOCK,
   });
-  const units = buildSetupUnits({ mode: 'linked' }, instructions);
+  const units = buildSetupUnits({ mode: 'linked' }, instructions + guidanceBlock(deps.guidance));
   const questionsFile = path.join(checkout, RECIPE_DIR, QUESTIONS_FILE);
   const checks = access(checkout, deps.checks, deps.checkEnv);
 

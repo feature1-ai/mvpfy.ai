@@ -54,6 +54,7 @@ export type WorkerCommand =
   | { name: 'project'; repositories: string[] }
   | { name: 'implement'; feature: string }
   | { name: 'prepare' }
+  | { name: 'doctor' }
   | { name: 'preview'; branch: string; preview: string }
   | { name: 'preview-stop'; preview: string }
   | { name: 'comment'; pullRequest: string; preview: string; link: string };
@@ -70,7 +71,10 @@ export function commandFrom(argv: string[]): WorkerCommand {
   const [name, ...rest] = argv.slice(2);
   const plain = rest.every((arg) => arg.trim() && !arg.startsWith('-'));
   if (name === undefined) return { name: 'run' };
-  if ((name === 'setup' || name === 'sandbox' || name === 'prepare') && rest.length === 0) {
+  if (
+    (name === 'setup' || name === 'sandbox' || name === 'prepare' || name === 'doctor') &&
+    rest.length === 0
+  ) {
     return { name };
   }
   if (name === 'preview' && plain && rest.length === 2) {

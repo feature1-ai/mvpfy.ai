@@ -514,6 +514,20 @@ export class ExecutionEngine {
           if (signal.aborted) return cancelled();
           const results = await checks.verify(repositoryId, worktrees, signal);
           const repositoryName = authorisedRepository(execution, repositoryId).name;
+          // Checks found but none could start. Not a pass: a story counted as
+          // checked when nothing ran would go to the next, and the next, and
+          // the build would only find out at the end. Stop here, saying why.
+          const found = results.filter((r) => !r.stepId.startsWith('none-'));
+          if (found.length > 0 && found.every((r) => r.outcome === 'unavailable')) {
+            const why = found[0]?.reason ?? 'the command could not be started';
+            return stop(
+              this.finish(
+                checkpoint,
+                'failed',
+                `The checks for ${repositoryName} could not run after ${unitLabel(unit)}: ${why}.`
+              )
+            );
+          }
           for (const result of results) {
             // Only what ran and said no. A repository with nothing to run is
             // not something another attempt can fix, and is dealt with where

@@ -79,7 +79,10 @@ export function applyLinkSettings(envFile: string, settings: LinkSetting[]): voi
   } catch {
     // A recipe without an env file gets one.
   }
-  const lines = text.replace(/\n+$/, '').split('\n').filter((l, i, all) => l || i < all.length - 1);
+  const lines = text
+    .replace(/\n+$/, '')
+    .split('\n')
+    .filter((l, i, all) => l || i < all.length - 1);
   for (const { key, value } of settings) {
     const at = lines.findIndex((l) => new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`).test(l));
     if (at >= 0) lines[at] = `${key}=${value}`;

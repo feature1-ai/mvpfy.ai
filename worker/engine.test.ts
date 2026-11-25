@@ -191,7 +191,11 @@ describe('verification', () => {
     h.runner.when(/npm test/, { code: 127, stderr: 'not found' });
     const ending = await h.engine.run(checkpoint, never);
     expect(ending).toBe('failed');
-    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/No check passed/);
+    // At the first story, not after building every one of them unchecked.
+    expect(h.agent.runs).toHaveLength(1);
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(
+      /checks for api could not run after US-01/
+    );
   });
 
   it('hands over a repository whose only failure is an optional check', async () => {
@@ -929,7 +933,34 @@ describe('a story whose checks fail', () => {
 
     // Another agent run cannot conjure a test suite; it fails where it always did.
     expect(h.agent.runs).toHaveLength(1);
-    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/No check passed/);
+    expect(h.transport.progressCalls.at(-1)?.body.message).toMatch(/could not run/);
+  });
+
+  it('installs the dependencies a fresh checkout lacks before its checks', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+    const commands = h.runner.calls.map((c) => c.command);
+    const install = commands.findIndex((c) => c.includes('npm install --no-audit'));
+    const test = commands.findIndex((c) => c.includes('npm test'));
+    expect(install).toBeGreaterThanOrEqual(0);
+    expect(install).toBeLessThan(test);
+    // Kept out of commits whatever the repository's own .gitignore says.
+    expect(commands[install]).toContain('info/exclude');
+  });
+
+  it('sends a story back when its dependencies will not install, with why', async () => {
+    const { checkpoint } = await start(standaloneStoryExecution());
+    agentChanges(h, IDS.repoApi);
+    h.runner.when(
+      /npm install/,
+      { code: 1, stderr: 'ERESOLVE could not resolve peer dependency' },
+      1
+    );
+    expect(await h.engine.run(checkpoint, never)).toBe('ready_for_testing');
+    // The second attempt was told what went wrong.
+    expect(h.agent.runs).toHaveLength(2);
+    expect(h.agent.runs[1]?.prompt).toContain('ERESOLVE');
   });
 
   it('does not run a suite twice at a commit it already passed at', async () => {

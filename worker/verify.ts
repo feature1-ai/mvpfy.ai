@@ -237,6 +237,61 @@ export class Verifier {
   }
 
   /** Every step for one repository, in order. */
+  /**
+   * Install a JavaScript repository's dependencies when its checkout has
+   * none, so its checks can start at all.
+   *
+   * A fresh checkout has no node_modules, and `npm test` then fails as "not
+   * found" — which reads as nothing to run, not as a failure. A build of
+   * three stories went through all of them that way with not one test run,
+   * and only the final check noticed. The install runs where the checks run,
+   * with the same environment and no credentials; its own scripts are the
+   * repository's code like any other.
+   *
+   * Resolves with nothing when there was nothing to do or it worked, and
+   * with a failed result, carrying the end of the installer's output, when
+   * it did not.
+   */
+  private async installDependencies(
+    repositoryId: string,
+    worktree: string,
+    signal?: AbortSignal
+  ): Promise<VerificationResult | null> {
+    const has = (file: string) => fs.existsSync(path.join(worktree, file));
+    if (!has('package.json') || has('node_modules')) return null;
+    const install = has('pnpm-lock.yaml')
+      ? 'corepack pnpm install --frozen-lockfile'
+      : has('yarn.lock')
+        ? 'corepack yarn install --frozen-lockfile'
+        : has('package-lock.json') || has('npm-shrinkwrap.json')
+          ? 'npm ci --no-audit --no-fund'
+          : 'npm install --no-audit --no-fund';
+    // Never committed by accident, whatever the repository's own .gitignore says.
+    const exclude =
+      'git check-ignore -q node_modules || echo node_modules/ >> "$(git rev-parse --git-path info/exclude)"';
+    const started = Date.now();
+    const res = await this.runner.run(`${exclude}; ${install}`, {
+      cwd: worktree,
+      env: this.env,
+      timeoutMs: 20 * 60_000,
+      ...(signal ? { signal } : {}),
+    });
+    if (res.code === 0) return null;
+    const output = this.redactor.redact(`${res.stdout}\n${res.stderr}`).trim().split('\n');
+    return {
+      stepId: `install-${repositoryId}`,
+      kind: 'other',
+      name: 'Installing dependencies',
+      command: install,
+      repositoryId,
+      outcome: res.cancelled ? 'skipped' : 'failed',
+      exitCode: res.code,
+      durationMs: Date.now() - started,
+      summary: `\`${install}\` did not finish`,
+      output: output.slice(-40).join('\n'),
+    };
+  }
+
   async verifyRepository(
     repositoryId: string,
     opts: VerifyOptions & { steps?: VerificationStep[] }
@@ -267,6 +322,12 @@ export class Verifier {
       ];
     }
     const results: VerificationResult[] = [];
+    if (discovered && worktree) {
+      const installed = await this.installDependencies(repositoryId, worktree, opts.signal);
+      // Checks that cannot start without the dependencies say only "not
+      // found"; this says why, and goes back to the agent as a failure.
+      if (installed) return [installed];
+    }
     for (const step of steps) {
       results.push(
         await this.runStep(step, worktree, {

@@ -188,6 +188,33 @@ export class Git {
     if (fs.existsSync(path.join(clone, 'HEAD'))) await this.git(clone, 'worktree prune');
   }
 
+  /**
+   * A checkout of what a branch on the remote holds now, detached, at a
+   * directory of the caller's choosing. For looking at work, never for
+   * making it: there is no local branch to commit to or push.
+   *
+   * Made afresh each time, so it is always the branch's latest commit.
+   */
+  async detachedCheckout(
+    tenantId: string,
+    repo: ExecutionRepository,
+    branch: string,
+    dir: string
+  ): Promise<string> {
+    if (!validRef(branch)) throw new Error(`Refusing an unusable branch name: ${branch}`);
+    if (!this.layout.contains(dir)) throw new Error(`Refusing to check out to ${dir}`);
+    const clone = await this.ensureClone(tenantId, repo);
+    if (fs.existsSync(dir)) {
+      await this.git(clone, `worktree remove --force ${posixQuote(dir)}`).catch(() => undefined);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    await this.git(clone, 'worktree prune');
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    const ref = `refs/remotes/origin/${branch}`;
+    await this.git(clone, `worktree add --detach ${posixQuote(dir)} ${posixQuote(ref)}`);
+    return (await this.git(dir, 'rev-parse HEAD')).trim();
+  }
+
   async hasBranch(dir: string, branch: string): Promise<boolean> {
     try {
       await this.git(dir, `rev-parse --verify ${posixQuote(`refs/heads/${branch}`)}`);

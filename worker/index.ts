@@ -1,4 +1,11 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { CliAgentRunner } from './agentRun';
+import { agentEnv, checkEnv } from './childEnv';
+import { EngineHost, engineHostFrom, withEngine } from './engineHost';
+import { applyRecipe, keepRecipe, prepareCheckout } from './prepare';
+import { PREVIEW_NAME, PreviewError, startPreview, stopPreview } from './preview';
+import { uuidFor } from './project';
 import {
   WorkerConfig,
   commandFrom,
@@ -49,6 +56,42 @@ function log(message: string): void {
 }
 
 /**
+ * Where code the worker did not write runs, and with what.
+ *
+ * The agent, and the repositories' own checks, run in the sandbox when there
+ * is one. Git, gh and Feature1 stay here, with the credentials the sandbox
+ * never sees. Both get the tenant's own Docker engine when it has one, so the
+ * agent can build and start the product it is working on.
+ */
+async function untrustedSide(
+  runner: CommandRunner,
+  redactor: Redactor
+): Promise<{
+  untrusted: CommandRunner;
+  agentEnvironment: NodeJS.ProcessEnv;
+  checkEnvironment: NodeJS.ProcessEnv;
+  engine: EngineHost | null;
+}> {
+  const sandbox = sandboxClientFrom(process.env);
+  let untrusted: CommandRunner = runner;
+  if (sandbox) {
+    redactor.remember(sandbox.token);
+    const remote = new RemoteRunner(sandbox, redactor);
+    await remote.ready();
+    untrusted = remote;
+    log(`running the agent and the checks in the sandbox at ${sandbox.url}`);
+  }
+  const engine = engineHostFrom(process.env);
+  if (engine) log(`the sandbox has the tenant's Docker engine at ${engine.dockerHost}`);
+  return {
+    untrusted,
+    agentEnvironment: withEngine(agentEnv(), engine),
+    checkEnvironment: withEngine(checkEnv(), engine),
+    engine,
+  };
+}
+
+/**
  * Everything between "here is work" and "here is a pull request", put
  * together once. What differs between claiming work and pulling a feature is
  * only where the work comes from, which is the transport handed in.
@@ -72,27 +115,16 @@ async function assemble(
   }
   const credentials = new ExecutionCredentialSession(github);
 
-  // Code the worker did not write — the agent, and the repositories' own
-  // checks — runs in the sandbox when there is one. Git, gh and Feature1 stay
-  // here, with the credentials the sandbox never sees.
-  const sandbox = sandboxClientFrom(process.env);
-  let untrusted: CommandRunner = runner;
-  if (sandbox) {
-    redactor.remember(sandbox.token);
-    const remote = new RemoteRunner(sandbox, redactor);
-    await remote.ready();
-    untrusted = remote;
-    log(`running the agent and the checks in the sandbox at ${sandbox.url}`);
-  }
+  const { untrusted, agentEnvironment, checkEnvironment } = await untrustedSide(runner, redactor);
 
   const engine = new ExecutionEngine({
     transport,
     store,
     layout,
     git: new Git(runner, layout, process.env, credentials.git),
-    verifier: new Verifier(untrusted, redactor),
+    verifier: new Verifier(untrusted, redactor, checkEnvironment),
     pullRequests: new PullRequests(runner, redactor, process.env, credentials.gh),
-    agent: new CliAgentRunner(untrusted),
+    agent: new CliAgentRunner(untrusted, agentEnvironment),
     redactor,
     agentKind: config.agent,
     unitAttempts: config.unitAttempts,
@@ -314,6 +346,154 @@ export async function implement(reference: string): Promise<number> {
 }
 
 /**
+ * What `prepare` and `preview` need of a pulled-work runner: who it is signed
+ * in as, the one repository it builds, and a place under its root for each.
+ */
+function projectContext() {
+  const connection = new Feature1ConnectionStore(secretsDirFrom()).load();
+  if (!connection) throw new Error('This runner is not signed in to Feature1. Run `setup` first.');
+  const target = new ProjectStore(workerRootFrom()).load();
+  if (!target) {
+    throw new Error(
+      'This runner has not been told what it builds. Run `project <repository address>` first.'
+    );
+  }
+  const [repo, ...others] = target.repositories;
+  if (!repo || others.length > 0) {
+    // Setup can span several repositories; starting one for a test link
+    // across several is not built yet.
+    throw new Error('Test links work for a project of one repository for now');
+  }
+  const root = workerRootFrom();
+  return {
+    repo,
+    tenantId: uuidFor(connection.tenant.id),
+    root,
+    recipeDir: path.join(root, 'recipes', repo.id),
+  };
+}
+
+function setupTemplate(): string {
+  // Shipped beside the worker by Dockerfile.worker, and in the repository
+  // at the same place relative to the compiled code.
+  const file = path.join(__dirname, '..', '..', 'src', 'prompts', 'bootstrap-runtime.txt');
+  return fs.readFileSync(file, 'utf8');
+}
+
+/**
+ * `prepare`: set the product up once, the way the desktop app does, so it can
+ * be started for a test link. Resolves with the exit code.
+ */
+export async function prepare(): Promise<number> {
+  ensureSignInFolders();
+  const { repo, tenantId, root, recipeDir } = projectContext();
+  const config = configWithoutRunner(process.env);
+  const redactor = new Redactor().remember(...secretsIn(config));
+  const runner = new ShellRunner(redactor);
+  const layout = new Layout(root);
+  const probe = new ShellSetupCommands();
+  const github = operatorGithubToken() ?? (await ghLoginToken((c) => probe.probe(c)));
+  if (github) redactor.remember(github);
+  const credentials = new ExecutionCredentialSession(github);
+  const git = new Git(runner, layout, process.env, credentials.git);
+  const { untrusted, agentEnvironment, checkEnvironment, engine } = await untrustedSide(
+    runner,
+    redactor
+  );
+  if (!engine) log('no Docker engine for this tenant: the stack cannot be checked as it is set up');
+
+  // A worktree like any execution's, under an id of its own, so it lives
+  // where the sandbox and the engine both see it.
+  const prepareId = uuidFor(`prepare:${repo.id}`);
+  credentials.begin({ repositories: [repo] } as never);
+  const checkout = path.join(layout.executionDir(tenantId, prepareId), 'repos', repo.id);
+  const commit = await git.detachedCheckout(tenantId, repo, repo.base_branch, checkout);
+  credentials.end();
+  log(`setting ${repo.name} up from ${repo.base_branch} at ${commit.slice(0, 12)}`);
+
+  const outcome = await prepareCheckout(
+    checkout,
+    layout.agentDir(tenantId, prepareId),
+    path.join(recipeDir + '.progress.json'),
+    {
+      agent: new CliAgentRunner(untrusted, agentEnvironment),
+      checks: untrusted,
+      checkEnv: checkEnvironment,
+      agentKind: config.agent,
+      ...(config.agentModel ? { agentModel: config.agentModel } : {}),
+      template: setupTemplate(),
+      log,
+    }
+  );
+  if (outcome.kind === 'questions') {
+    log('setup stopped to ask:');
+    for (const question of outcome.questions) log(`  • ${question}`);
+    return 1;
+  }
+  if (outcome.kind === 'failed') {
+    log(`setup did not finish at "${outcome.step}": ${outcome.reason}`);
+    return 1;
+  }
+  keepRecipe(checkout, recipeDir);
+  fs.rmSync(recipeDir + '.progress.json', { force: true });
+  log(`set up: ${repo.name} can now be started for a test link`);
+  return 0;
+}
+
+/**
+ * `preview <branch> <name>`: start the product from a branch for a test link.
+ * Prints one line of JSON — where it answers and the login — for mvpfy-cloud.
+ */
+export async function preview(branch: string, name: string): Promise<number> {
+  if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
+  ensureSignInFolders();
+  const { repo, tenantId, root, recipeDir } = projectContext();
+  const redactor = new Redactor().remember(...secretsIn(configWithoutRunner(process.env)));
+  const runner = new ShellRunner(redactor);
+  const layout = new Layout(root);
+  const probe = new ShellSetupCommands();
+  const github = operatorGithubToken() ?? (await ghLoginToken((c) => probe.probe(c)));
+  if (github) redactor.remember(github);
+  const credentials = new ExecutionCredentialSession(github);
+  const git = new Git(runner, layout, process.env, credentials.git);
+  const { untrusted, checkEnvironment, engine } = await untrustedSide(runner, redactor);
+  if (!engine) throw new PreviewError('This tenant has no Docker engine to start the product in');
+
+  const checkout = path.join(root, 'previews', name, repo.id);
+  credentials.begin({ repositories: [repo] } as never);
+  const commit = await git.detachedCheckout(tenantId, repo, branch, checkout);
+  credentials.end();
+  applyRecipe(recipeDir, checkout);
+  const record = await startPreview(
+    checkout,
+    { name, branch, commit },
+    { runner: untrusted, env: checkEnvironment, engineHostname: engine.hostname, log }
+  );
+  fs.writeFileSync(path.join(root, 'previews', `${name}.json`), JSON.stringify(record, null, 2));
+  process.stdout.write(`PREVIEW ${JSON.stringify(record)}\n`);
+  return 0;
+}
+
+/** `preview-stop <name>`: take a test link's stack away, data and all. */
+export async function previewStop(name: string): Promise<number> {
+  if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
+  const root = workerRootFrom();
+  const { repo } = projectContext();
+  const redactor = new Redactor();
+  const { untrusted, checkEnvironment, engine } = await untrustedSide(
+    new ShellRunner(redactor),
+    redactor
+  );
+  if (!engine) throw new PreviewError('This tenant has no Docker engine');
+  const checkout = path.join(root, 'previews', name, repo.id);
+  await stopPreview(checkout, name, { runner: untrusted, env: checkEnvironment, log });
+  fs.rmSync(path.join(root, 'previews', name), { recursive: true, force: true });
+  fs.rmSync(path.join(root, 'previews', `${name}.json`), { force: true });
+  log(`stopped ${name}`);
+  return 0;
+}
+
+/**
  * `sandbox`: run what a worker sends, and hold nothing of the worker's.
  * See sandbox.ts for why this is a separate container.
  */
@@ -340,6 +520,9 @@ if (require.main === module) {
     if (command.name === 'setup') process.exit(await setup());
     if (command.name === 'project') process.exit(project(command.repositories));
     if (command.name === 'implement') process.exit(await implement(command.feature));
+    if (command.name === 'prepare') process.exit(await prepare());
+    if (command.name === 'preview') process.exit(await preview(command.branch, command.preview));
+    if (command.name === 'preview-stop') process.exit(await previewStop(command.preview));
     if (command.name === 'sandbox') return sandbox();
     return main();
   })();

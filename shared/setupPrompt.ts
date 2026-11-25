@@ -95,7 +95,7 @@ export function fillTemplate(template: string, vars: Record<string, string>): st
 }
 
 export interface SetupPromptInput {
-  project: Project;
+  project: Pick<Project, 'mode' | 'localPath' | 'basePort' | 'reposPendingSetup'>;
   /** The product manager asked for setup to be done again from scratch. */
   regenerate: boolean;
   /** The machine the stack runs on, which decides how file watchers must work. */

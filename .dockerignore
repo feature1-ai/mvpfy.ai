@@ -1,5 +1,6 @@
-# Only package.json, package-lock.json, tsconfig.worker.json, shared/ and
-# worker/ are used by Dockerfile.worker. Everything else stays out of the build
+# Only package.json, package-lock.json, tsconfig.worker.json, shared/,
+# worker/ and the one prompt `prepare` reads are used by Dockerfile.worker.
+# Everything else stays out of the build
 # context — notably .git and any local node_modules or build output.
 .git
 node_modules
@@ -11,6 +12,7 @@ build
 assets
 docs
 src
+!src/prompts/bootstrap-runtime.txt
 electron
 packaging
 scripts

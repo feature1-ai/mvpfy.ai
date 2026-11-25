@@ -52,7 +52,10 @@ export type WorkerCommand =
   | { name: 'sandbox' }
   /** With none, show the project; with some, set it. */
   | { name: 'project'; repositories: string[] }
-  | { name: 'implement'; feature: string };
+  | { name: 'implement'; feature: string }
+  | { name: 'prepare' }
+  | { name: 'preview'; branch: string; preview: string }
+  | { name: 'preview-stop'; preview: string };
 
 /**
  * What the arguments ask for.
@@ -66,13 +69,21 @@ export function commandFrom(argv: string[]): WorkerCommand {
   const [name, ...rest] = argv.slice(2);
   const plain = rest.every((arg) => arg.trim() && !arg.startsWith('-'));
   if (name === undefined) return { name: 'run' };
-  if ((name === 'setup' || name === 'sandbox') && rest.length === 0) return { name };
+  if ((name === 'setup' || name === 'sandbox' || name === 'prepare') && rest.length === 0) {
+    return { name };
+  }
+  if (name === 'preview' && plain && rest.length === 2) {
+    return { name, branch: rest[0] ?? '', preview: rest[1] ?? '' };
+  }
+  if (name === 'preview-stop' && plain && rest.length === 1)
+    return { name, preview: rest[0] ?? '' };
   if (name === 'project' && plain) return { name, repositories: rest };
   if (name === 'implement' && plain && rest.length === 1) return { name, feature: rest[0] ?? '' };
   throw new Error(
     `Unrecognised argument ${JSON.stringify([name, ...rest].join(' '))}. The worker takes either ` +
       'no arguments, to claim work; `setup`, to sign in once; `project <repository>…`, to say ' +
-      'what it builds; `implement <feature code>`, to pull one feature and build it; or ' +
+      'what it builds; `implement <feature code>`, to pull one feature and build it; `prepare`, ' +
+      'to set the product up for test links; `preview <branch> <name>` and `preview-stop <name>`; or ' +
       '`sandbox`, to run what another worker sends it.'
   );
 }

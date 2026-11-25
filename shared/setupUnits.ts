@@ -49,7 +49,7 @@ interface StepPlan {
 
 const NOTES = 'AGENTS.md, CLAUDE.md, .gitignore, mvpfy-summary.md and mvpfy-run.md';
 
-function plan(project: Project): StepPlan[] {
+function plan(project: Pick<Project, 'mode'>): StepPlan[] {
   const linked = project.mode === 'linked';
   const cfg = configDirFor(project.mode);
   const compose = `${cfg}docker-compose.mvpfy.yml`;
@@ -290,7 +290,7 @@ function resumeBrief(
  * `instructions` is the complete setup prompt, already filled in for the
  * project, so this stays about how the work is divided and nothing else.
  */
-export function buildSetupUnits(project: Project, instructions: string): AgentUnit[] {
+export function buildSetupUnits(project: Pick<Project, 'mode'>, instructions: string): AgentUnit[] {
   const steps = plan(project);
   const bootstrapFile = configDirFor(project.mode) + BOOTSTRAP_FILE;
   return steps.map((step, index) => ({

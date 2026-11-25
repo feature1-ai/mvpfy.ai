@@ -19,6 +19,7 @@ import {
 } from './preview';
 import { validPullRequestUrl } from '../shared/runner/validate';
 import { uuidFor } from './project';
+import { checkOutWorkspace, workspaceDir } from './workspaceCheckout';
 import {
   WorkerConfig,
   commandFrom,
@@ -398,18 +399,28 @@ function projectContext() {
       'This runner has not been told what it builds. Run `project <repository address>` first.'
     );
   }
-  const [repo, ...others] = target.repositories;
-  if (!repo || others.length > 0) {
-    // Setup can span several repositories; starting one for a test link
-    // across several is not built yet.
-    throw new Error('Test links work for a project of one repository for now');
-  }
+  const repos = target.repositories;
+  const [first] = repos;
+  if (!first)
+    throw new Error('This runner has no repositories. Run `project <repository address>`.');
   const root = workerRootFrom();
+  // One recipe per product: a repository's own id when it is the whole
+  // product, as before; one id for the set when there are several.
+  const key =
+    repos.length === 1
+      ? first.id
+      : uuidFor(
+          `workspace:${repos
+            .map((r) => r.id)
+            .sort()
+            .join(',')}`
+        );
   return {
-    repo,
+    repos,
     tenantId: uuidFor(connection.tenant.id),
     root,
-    recipeDir: path.join(root, 'recipes', repo.id),
+    recipeDir: path.join(root, 'recipes', key),
+    key,
   };
 }
 
@@ -426,7 +437,7 @@ function setupTemplate(): string {
  */
 export async function prepare(): Promise<number> {
   ensureSignInFolders();
-  const { repo, tenantId, root, recipeDir } = projectContext();
+  const { repos, tenantId, root, recipeDir, key } = projectContext();
   const config = configWithoutRunner(process.env);
   const redactor = new Redactor().remember(...secretsIn(config));
   const runner = new ShellRunner(redactor);
@@ -444,12 +455,19 @@ export async function prepare(): Promise<number> {
 
   // A worktree like any execution's, under an id of its own, so it lives
   // where the sandbox and the engine both see it.
-  const prepareId = uuidFor(`prepare:${repo.id}`);
-  credentials.begin({ repositories: [repo] } as never);
-  const checkout = path.join(layout.executionDir(tenantId, prepareId), 'repos', repo.id);
-  const commit = await git.detachedCheckout(tenantId, repo, repo.base_branch, checkout);
+  const prepareId = uuidFor(`prepare:${key}`);
+  credentials.begin({ repositories: repos } as never);
+  const { dir: checkout, commits } = await checkOutWorkspace(
+    git,
+    tenantId,
+    repos,
+    path.join(layout.executionDir(tenantId, prepareId), 'repos'),
+    (repo) => repo.base_branch
+  );
   credentials.end();
-  log(`setting ${repo.name} up from ${repo.base_branch} at ${commit.slice(0, 12)}`);
+  for (const [folder, at] of Object.entries(commits)) {
+    log(`setting ${folder} up from ${at.branch} at ${at.commit.slice(0, 12)}`);
+  }
 
   const outcome = await prepareCheckout(
     checkout,
@@ -481,7 +499,7 @@ export async function prepare(): Promise<number> {
     await clearEngine({ runner: untrusted, env: checkEnvironment, log }, checkout);
   }
   fs.rmSync(recipeDir + '.progress.json', { force: true });
-  log(`set up: ${repo.name} can now be started for a test link`);
+  log(`set up: ${repos.map((r) => r.name).join(', ')} can now be started for a test link`);
   return 0;
 }
 
@@ -492,7 +510,7 @@ export async function prepare(): Promise<number> {
 export async function preview(branch: string, name: string): Promise<number> {
   if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
   ensureSignInFolders();
-  const { repo, tenantId, root, recipeDir } = projectContext();
+  const { repos, tenantId, root, recipeDir } = projectContext();
   const redactor = new Redactor().remember(...secretsIn(configWithoutRunner(process.env)));
   const runner = new ShellRunner(redactor);
   const layout = new Layout(root);
@@ -504,10 +522,30 @@ export async function preview(branch: string, name: string): Promise<number> {
   const { untrusted, checkEnvironment, engine } = await untrustedSide(runner, redactor);
   if (!engine) throw new PreviewError('This tenant has no Docker engine to start the product in');
 
-  const checkout = path.join(root, 'previews', name, repo.id);
-  credentials.begin({ repositories: [repo] } as never);
-  const commit = await git.detachedCheckout(tenantId, repo, branch, checkout);
+  credentials.begin({ repositories: repos } as never);
+  // Each repository from the build's branch where the build changed it, and
+  // from its base branch where it did not: a feature that touched the API
+  // alone is tried against the web app as it is.
+  let onBranch = 0;
+  const { dir: checkout, commits } = await checkOutWorkspace(
+    git,
+    tenantId,
+    repos,
+    path.join(root, 'previews', name),
+    async (repo) => {
+      if (repos.length === 1 || (await git.remoteBranchExists(tenantId, repo, branch))) {
+        onBranch += 1;
+        return branch;
+      }
+      return repo.base_branch;
+    }
+  );
   credentials.end();
+  if (onBranch === 0) throw new PreviewError(`No repository has the branch ${branch}`);
+  for (const [folder, at] of Object.entries(commits)) {
+    log(`${folder} from ${at.branch} at ${at.commit.slice(0, 12)}`);
+  }
+  const commit = Object.values(commits).find((c) => c.branch === branch)?.commit ?? '';
   applyRecipe(recipeDir, checkout);
   const settings = readLinkSettings(root);
   applyLinkSettings(path.join(checkout, '.mvpfy', '.env'), settings);
@@ -526,14 +564,14 @@ export async function preview(branch: string, name: string): Promise<number> {
 export async function previewStop(name: string): Promise<number> {
   if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
   const root = workerRootFrom();
-  const { repo } = projectContext();
+  const { repos } = projectContext();
   const redactor = new Redactor();
   const { untrusted, checkEnvironment, engine } = await untrustedSide(
     new ShellRunner(redactor),
     redactor
   );
   if (!engine) throw new PreviewError('This tenant has no Docker engine');
-  const checkout = path.join(root, 'previews', name, repo.id);
+  const checkout = workspaceDir(path.join(root, 'previews', name), repos);
   await stopPreview(checkout, name, { runner: untrusted, env: checkEnvironment, log });
   fs.rmSync(path.join(root, 'previews', name), { recursive: true, force: true });
   fs.rmSync(path.join(root, 'previews', `${name}.json`), { force: true });
@@ -551,7 +589,7 @@ export async function comment(pullRequest: string, name: string, link: string): 
   if (!/^https?:\/\/p[a-z0-9]{12}\.[a-z0-9.-]+(:\d{2,5})?\/?$/.test(link)) {
     throw new Error(`Not a test link: ${link}`);
   }
-  const { repo } = projectContext();
+  const { repos } = projectContext();
   const root = workerRootFrom();
   const record = JSON.parse(
     fs.readFileSync(path.join(root, 'previews', `${name}.json`), 'utf8')
@@ -562,7 +600,7 @@ export async function comment(pullRequest: string, name: string, link: string): 
   if (!github) throw new Error('No GitHub sign-in to comment with. Run `setup`.');
   redactor.remember(github);
   const credentials = new ExecutionCredentialSession(github);
-  credentials.begin({ repositories: [repo] } as never);
+  credentials.begin({ repositories: repos } as never);
   const bodyFile = path.join(root, 'previews', `${name}.comment.md`);
   fs.writeFileSync(bodyFile, previewComment(record, link));
   try {

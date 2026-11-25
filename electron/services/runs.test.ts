@@ -98,7 +98,7 @@ describe('a stepped run', () => {
     await w.exited;
     expect(w.exits).toEqual([0]);
     expect(w.printed()).toBe('one\ntwo\n');
-  });
+  }, 20_000); // Each step starts a node process, which takes seconds on a busy machine.
 
   it('sends a step’s output before the step resolves', async () => {
     const w = watch('stepped-2');

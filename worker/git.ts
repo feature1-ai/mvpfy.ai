@@ -215,6 +215,25 @@ export class Git {
     return (await this.git(dir, 'rev-parse HEAD')).trim();
   }
 
+  /** Whether the remote has this branch, as of a fetch made now. */
+  async remoteBranchExists(
+    tenantId: string,
+    repo: ExecutionRepository,
+    branch: string
+  ): Promise<boolean> {
+    if (!validRef(branch)) return false;
+    const clone = await this.ensureClone(tenantId, repo);
+    try {
+      await this.git(
+        clone,
+        `rev-parse --verify --quiet ${posixQuote(`refs/remotes/origin/${branch}`)}`
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async hasBranch(dir: string, branch: string): Promise<boolean> {
     try {
       await this.git(dir, `rev-parse --verify ${posixQuote(`refs/heads/${branch}`)}`);

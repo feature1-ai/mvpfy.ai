@@ -52,8 +52,9 @@ import { SandboxServer, sandboxServerConfigFrom } from './sandbox';
 import { ExecutionStore } from './store';
 import { Feature1ConnectionStore, readerFor, whoIs } from './feature1Connection';
 import { Feature1Mcp, loadMcpAccess } from './feature1Mcp';
+import { githubWith, projectFromFeature1, repositoriesIn } from './projectResolve';
 import { Feature1Login } from './feature1Login';
-import { ProjectStore, describeProject, projectFrom } from './project';
+import { FROM_FEATURE1_FILE, Project, ProjectStore, describeProject, projectFrom } from './project';
 import { PULLED_LEASE_MS, executionFor } from './pull';
 import { RunnerCredentialStore, timeLeft } from './runnerCredential';
 import { feature1Step, githubStep, runSetup } from './setup';
@@ -268,14 +269,21 @@ export async function setup(): Promise<number> {
  */
 export function project(repositories: string[]): number {
   const store = new ProjectStore(workerRootFrom());
-  if (repositories.length > 0) store.save(projectFrom(repositories));
+  // Back to each item's own project in Feature1.
+  if (repositories.length === 1 && repositories[0] === FROM_FEATURE1) {
+    fs.rmSync(store.file, { force: true });
+  } else if (repositories.length > 0) {
+    store.save(projectFrom(repositories));
+  }
   const current = store.load();
   if (!current) {
+    const last = new ProjectStore(workerRootFrom(), FROM_FEATURE1_FILE).load();
     process.stdout.write(
-      'This runner has not been told what it builds.\n' +
-        'Say so with: project <repository address>[#branch] …\n'
+      'This runner builds each item in the repositories of its project in Feature1.\n' +
+        (last ? `The last build was in:\n${describeProject(last)}\n` : '') +
+        'To set them instead: project <repository address>[#branch] …\n'
     );
-    return 1;
+    return 0;
   }
   process.stdout.write(`This runner builds:\n${describeProject(current)}\n`);
   return 0;
@@ -295,6 +303,37 @@ export function project(repositories: string[]): number {
 /** Written by `implement` when a build is ready, on the worker's volume. */
 export const LAST_BUILD_FILE = 'last-build.json';
 
+/** `project from-feature1`: forget the repositories set here. */
+export const FROM_FEATURE1 = 'from-feature1';
+
+/**
+ * The repositories of the work's project in Feature1, checked on GitHub, and
+ * kept for the test links and chats that follow (projectResolve.ts).
+ */
+async function repositoriesFromFeature1(
+  connection: NonNullable<ReturnType<Feature1ConnectionStore['load']>>,
+  feature: { projectId: string | null; code: string | null; title: string },
+  redactor: Redactor
+): Promise<Project> {
+  if (connection.via !== 'mcp') {
+    throw new Error(
+      'This runner has not been told what it builds. Run `project <repository address>` first.'
+    );
+  }
+  const probe = new ShellSetupCommands();
+  const token = operatorGithubToken() ?? (await ghLoginToken((command) => probe.probe(command)));
+  if (token) redactor.remember(token);
+  const mcp = new Feature1Mcp(connection.feature1BaseUrl, connection.token);
+  const project = await projectFromFeature1(feature.projectId, feature.code ?? feature.title, {
+    list: async (projectId) =>
+      repositoriesIn((await mcp.call('get_repository_context', { project_id: projectId })).text),
+    ...githubWith(token),
+    log,
+  });
+  new ProjectStore(workerRootFrom(), FROM_FEATURE1_FILE).save(project);
+  return project;
+}
+
 export async function implement(reference: string): Promise<number> {
   if (process.platform === 'win32') {
     throw new Error('The mvpfy worker runs on Linux or macOS, not Windows');
@@ -304,12 +343,8 @@ export async function implement(reference: string): Promise<number> {
   if (!connection) {
     throw new Error('This runner is not signed in to Feature1. Run `setup` first.');
   }
-  const target = new ProjectStore(workerRootFrom()).load();
-  if (!target) {
-    throw new Error(
-      'This runner has not been told what it builds. Run `project <repository address>` first.'
-    );
-  }
+  // Set by a person, it wins; otherwise the work's own project in Feature1 says.
+  const chosen = new ProjectStore(workerRootFrom()).load();
   const config = configWithoutRunner(process.env);
   const redactor = new Redactor().remember(...secretsIn(config), connection.token);
 
@@ -319,6 +354,7 @@ export async function implement(reference: string): Promise<number> {
     connection.token,
     reference
   );
+  const target = chosen ?? (await repositoriesFromFeature1(connection, feature, redactor));
   const execution = executionFor(feature, target, {
     tenantId: connection.tenant.id,
     userId: connection.user.id,
@@ -331,7 +367,7 @@ export async function implement(reference: string): Promise<number> {
   for (const story of feature.stories) {
     log(`  • ${story.code ? `${story.code} ` : ''}${story.title}`);
   }
-  log(`in:\n${describeProject(target)}`);
+  log(`in${chosen ? '' : ", from Feature1's project"}:\n${describeProject(target)}`);
 
   // The lease fences one worker off from another that Feature1 has handed
   // the same work. Pulled work is handed to nobody else, so here a lease only
@@ -696,10 +732,13 @@ export async function review(executionId: string): Promise<number> {
 function projectContext() {
   const connection = new Feature1ConnectionStore(secretsDirFrom()).load();
   if (!connection) throw new Error('This runner is not signed in to Feature1. Run `setup` first.');
-  const target = new ProjectStore(workerRootFrom()).load();
+  const target =
+    new ProjectStore(workerRootFrom()).load() ??
+    new ProjectStore(workerRootFrom(), FROM_FEATURE1_FILE).load();
   if (!target) {
     throw new Error(
-      'This runner has not been told what it builds. Run `project <repository address>` first.'
+      'This runner does not know its repositories yet. Build something from Feature1 first, ' +
+        'or set them in Settings → Repositories.'
     );
   }
   const repos = target.repositories;

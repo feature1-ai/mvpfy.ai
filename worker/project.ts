@@ -84,13 +84,22 @@ function parse(content: string): Project | null {
   }
 }
 
+/**
+ * Where the repositories Feature1 named for the last build are kept: what a
+ * test link or a chat starts from when nobody set them.
+ */
+export const FROM_FEATURE1_FILE = 'project.feature1.json';
+
 export class ProjectStore {
-  constructor(private readonly root: string) {
+  constructor(
+    private readonly root: string,
+    private readonly name: string = FILE
+  ) {
     if (!path.isAbsolute(root)) throw new Error('The worker root must be an absolute path');
   }
 
   get file(): string {
-    return path.join(this.root, FILE);
+    return path.join(this.root, this.name);
   }
 
   load(): Project | null {

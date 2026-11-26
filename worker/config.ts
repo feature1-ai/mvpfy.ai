@@ -57,6 +57,7 @@ export type WorkerCommand =
   | { name: 'doctor' }
   | { name: 'preview'; branch: string; preview: string; web?: string; expo?: string }
   | { name: 'preview-stop'; preview: string }
+  | { name: 'review'; execution: string }
   | { name: 'comment'; pullRequest: string; preview: string; link: string };
 
 /**
@@ -88,6 +89,7 @@ export function commandFrom(argv: string[]): WorkerCommand {
     }
     return { name, branch, preview, web, expo };
   }
+  if (name === 'review' && plain && rest.length === 1) return { name, execution: rest[0] ?? '' };
   if (name === 'preview-stop' && plain && rest.length === 1)
     return { name, preview: rest[0] ?? '' };
   if (name === 'comment' && plain && rest.length === 3) {
@@ -99,7 +101,7 @@ export function commandFrom(argv: string[]): WorkerCommand {
     `Unrecognised argument ${JSON.stringify([name, ...rest].join(' '))}. The worker takes either ` +
       'no arguments, to claim work; `setup`, to sign in once; `project <repository>…`, to say ' +
       'what it builds; `implement <feature code>`, to pull one feature and build it; `prepare`, ' +
-      'to set the product up for test links; `preview <branch> <name>` and `preview-stop <name>`; or ' +
+      'to set the product up for test links; `preview <branch> <name>` and `preview-stop <name>`; `review <execution id>`, to write what a build changed and what to try; or ' +
       '`sandbox`, to run what another worker sends it.'
   );
 }

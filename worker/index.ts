@@ -20,7 +20,9 @@ import {
 } from './preview';
 import { validPullRequestUrl } from '../shared/runner/validate';
 import { uuidFor } from './project';
-import { checkOutWorkspace, workspaceDir } from './workspaceCheckout';
+import { UUID } from '../shared/runner/validate';
+import { checkOutWorkspace, repositoryFolders, workspaceDir } from './workspaceCheckout';
+import { planOf, readReview, reviewLine, reviewPrompt } from './review';
 import {
   WorkerConfig,
   commandFrom,
@@ -366,6 +368,7 @@ export async function implement(reference: string): Promise<number> {
         2
       )
     );
+    if (pullRequests.length > 0) await writeReview(execution, config, redactor);
     log(
       pullRequests.length > 0
         ? 'done: built, checked and ready to review'
@@ -385,6 +388,124 @@ export async function implement(reference: string): Promise<number> {
   fs.rmSync(repos, { recursive: true, force: true });
   log("removed this build's checkouts");
   return 1;
+}
+
+/**
+ * What changed and what to try, for whoever reviews the build (review.ts).
+ *
+ * The build's branch is checked out afresh — the build's own checkouts are
+ * gone by now — and the agent reads it against Feature1's plan, in the
+ * sandbox, read-only. The result is printed as one REVIEW line for
+ * mvpfy-cloud and kept beside the build. Best effort: whatever happens here,
+ * the build is ready.
+ */
+async function writeReview(
+  execution: ReturnType<typeof executionFor>,
+  config: ReturnType<typeof configWithoutRunner>,
+  redactor: Redactor
+): Promise<void> {
+  const root = workerRootFrom();
+  const layout = new Layout(root);
+  const reviewId = uuidFor(`review:${execution.id}`);
+  const dir = layout.executionDir(execution.tenant_id, reviewId);
+  try {
+    log('writing what changed and what to try on the test link');
+    const runner = new ShellRunner(redactor);
+    const probe = new ShellSetupCommands();
+    const github = operatorGithubToken() ?? (await ghLoginToken((c) => probe.probe(c)));
+    if (github) redactor.remember(github);
+    const credentials = new ExecutionCredentialSession(github);
+    const git = new Git(runner, layout, process.env, credentials.git);
+    const { untrusted, agentEnvironment } = await untrustedSide(runner, redactor);
+    const repos = execution.repositories;
+    const branch = executionBranch(execution.id);
+    const changed = new Set<string>();
+    credentials.begin({ repositories: repos } as never);
+    let checkout: string;
+    try {
+      checkout = (
+        await checkOutWorkspace(
+          git,
+          execution.tenant_id,
+          repos,
+          path.join(dir, 'repos'),
+          async (repo) => {
+            if (await git.remoteBranchExists(execution.tenant_id, repo, branch)) {
+              changed.add(repo.id);
+              return branch;
+            }
+            return repo.base_branch;
+          }
+        )
+      ).dir;
+    } finally {
+      credentials.end();
+    }
+    const folders = repositoryFolders(repos);
+    const outFile = path.join(dir, 'review.json');
+    fs.rmSync(outFile, { force: true });
+    const outcome = await new CliAgentRunner(untrusted, agentEnvironment).run({
+      kind: config.agent,
+      ...(config.agentModel ? { model: config.agentModel } : {}),
+      prompt: reviewPrompt(
+        planOf(execution.snapshot),
+        repos.map((r) => ({
+          folder: repos.length === 1 ? '.' : (folders.get(r.id) ?? r.id),
+          base: r.base_branch,
+          changed: changed.has(r.id),
+        })),
+        outFile
+      ),
+      cwd: checkout,
+      agentDir: layout.agentDir(execution.tenant_id, reviewId),
+      questionsFile: path.join(dir, 'questions.md'),
+      timeoutMs: 30 * 60_000,
+    });
+    const review = readReview(outFile);
+    if (!review) {
+      log(
+        `the review was not written (the agent ${outcome.timedOut ? 'ran out of time' : `exited ${outcome.code}`}); the build is ready all the same`
+      );
+      return;
+    }
+    fs.mkdirSync(path.join(root, 'reviews'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'reviews', `${execution.id}.json`),
+      JSON.stringify(review, null, 2)
+    );
+    process.stdout.write(`${reviewLine(review)}\n`);
+    log(`review: ${review.changes.length} change(s), ${review.tests.length} thing(s) to try`);
+  } catch (error) {
+    log(`the review could not be written: ${(error as Error).message}`);
+  } finally {
+    fs.rmSync(path.join(dir, 'repos'), { recursive: true, force: true });
+  }
+}
+
+/**
+ * `review <execution id>`: write what a finished build changed and what to
+ * try, for a build made before reviews were written, or to write it again.
+ */
+export async function review(executionId: string): Promise<number> {
+  if (!UUID.test(executionId)) throw new Error(`Not an execution id: ${executionId}`);
+  ensureSignInFolders();
+  const connection = new Feature1ConnectionStore(secretsDirFrom()).load();
+  if (!connection) throw new Error('This runner is not signed in to Feature1. Run `setup` first.');
+  const config = configWithoutRunner(process.env);
+  const layout = new Layout(workerRootFrom());
+  let checkpoint: { execution?: ReturnType<typeof executionFor> };
+  try {
+    checkpoint = JSON.parse(
+      fs.readFileSync(layout.checkpointFile(uuidFor(connection.tenant.id), executionId), 'utf8')
+    );
+  } catch {
+    throw new Error(`No build ${executionId} on this runner`);
+  }
+  if (!checkpoint.execution)
+    throw new Error(`Build ${executionId} has no record of what it was given`);
+  const redactor = new Redactor().remember(...secretsIn(config), connection.token);
+  await writeReview(checkpoint.execution, config, redactor);
+  return fs.existsSync(path.join(workerRootFrom(), 'reviews', `${executionId}.json`)) ? 0 : 1;
 }
 
 /**
@@ -757,6 +878,7 @@ if (require.main === module) {
     if (command.name === 'project') process.exit(project(command.repositories));
     if (command.name === 'implement') process.exit(await implement(command.feature));
     if (command.name === 'prepare') process.exit(await prepare());
+    if (command.name === 'review') process.exit(await review(command.execution));
     if (command.name === 'preview') {
       process.exit(
         await preview(

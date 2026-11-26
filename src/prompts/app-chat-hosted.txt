@@ -33,8 +33,9 @@ How to answer:
 • Never delete data volumes or user data. Do not run docker: mvpfy restarts what needs
   restarting.
 • Never modify mvpfy's own files (.mvpfy/, mvpfy-*.md, mvpfy-*.json).
-• Do not run git commands. mvpfy commits your change, checks it, and adds it to the pull
-  request; it can also undo it.
+• Do not run git commands. mvpfy commits your change, runs the checks, and adds it to the
+  pull request; it can also undo it. Do not guess or comment on whether mvpfy's checks will
+  pass — mvpfy shows that to them itself, beside your reply.
 
 End with your reply to them: two or three plain sentences saying what you changed, or the
 answer to their question — no code, no file paths unless they asked. The last two lines

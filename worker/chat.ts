@@ -105,6 +105,16 @@ export interface ChatDeps {
 
 const SUBJECT_LIMIT = 72;
 
+/** A reply read as plain text: the entities an agent copies out of templates, decoded. */
+function plain(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
 function subjectFor(message: string): string {
   const title = titleFrom(message);
   const subject = `Change from the test link: ${title}`;
@@ -246,7 +256,7 @@ export async function chatTurn(
     }),
     deps
   );
-  outcome.reply = first.text;
+  outcome.reply = plain(first.text);
   outcome.error = first.error;
   let restart = first.restart;
 

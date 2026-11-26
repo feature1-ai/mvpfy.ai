@@ -318,6 +318,16 @@ export async function startPreview(
   };
 }
 
+/** Restart a link's stack in place, for a change it only picks up that way. */
+export async function restartPreview(
+  checkout: string,
+  name: string,
+  deps: Pick<StartDeps, 'runner' | 'env' | 'log'>
+): Promise<void> {
+  if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
+  await compose({ ...deps, engineHostname: '' }, checkout, name, 'up -d --build', 30 * 60_000);
+}
+
 /** Take a preview's stack away, data and all: nothing about it outlives the link. */
 export async function stopPreview(
   checkout: string,

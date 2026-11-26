@@ -13,6 +13,7 @@ assets
 docs
 src
 !src/prompts/bootstrap-runtime.txt
+!src/prompts/app-chat-hosted.txt
 electron
 packaging
 scripts

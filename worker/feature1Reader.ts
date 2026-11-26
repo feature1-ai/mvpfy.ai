@@ -218,6 +218,45 @@ export class Feature1Reader {
     return id;
   }
 
+  /**
+   * A note on a feature, story or bug in Feature1, as the runner's user: how
+   * a change made beside its test link is told to the people who planned it.
+   * A task has no notes of its own; false when there is nowhere to put it.
+   */
+  async note(baseUrl: string, token: string, code: string, body: string): Promise<boolean> {
+    const kind = workKindOf(code);
+    let path: string;
+    if (kind === 'feature' || kind === null) {
+      path = `/feature-planning/${await this.resolve(baseUrl, token, code)}/comments`;
+    } else if (kind === 'story' || kind === 'bug') {
+      const query = new URLSearchParams({ search: code, includeGenerated: 'true', limit: '20' });
+      const found = await this.get(baseUrl, token, `/workflows?${query}`);
+      const match = (Array.isArray(found.workflows) ? found.workflows : [])
+        .map(row)
+        .find((w) => text(w.code).toLowerCase() === code.toLowerCase());
+      const id = match ? storyFrom(match).id : '';
+      if (!id) return false;
+      path = `/workflows/${encodeURIComponent(id)}/comments`;
+    } else {
+      return false;
+    }
+    try {
+      const response = await this.fetchImpl(`${baseUrl}/api${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ body: body.slice(0, 10_000) }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   /** The feature and everything of it still to be built. */
   async pullFeature(baseUrl: string, token: string, reference: string): Promise<PulledFeature> {
     const ref = reference.trim();

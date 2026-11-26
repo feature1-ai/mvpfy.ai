@@ -86,6 +86,7 @@ describe('reading what the agent said', () => {
       text: 'The checkout button is green now.',
       restart: false,
       proposal: false,
+      changed: false,
       error: null,
     });
   });
@@ -110,6 +111,7 @@ describe('reading what the agent said', () => {
       text: 'Added STRIPE_KEY.',
       restart: true,
       proposal: false,
+      changed: false,
       error: null,
     });
   });
@@ -140,6 +142,7 @@ describe('reading what the agent said', () => {
       text: 'Done.',
       restart: true,
       proposal: false,
+      changed: false,
     });
     expect(
       stripMarkers('I would make the button green. Shall I?\nProposal: yes\nRestart: no')
@@ -147,11 +150,13 @@ describe('reading what the agent said', () => {
       text: 'I would make the button green. Shall I?',
       restart: false,
       proposal: true,
+      changed: false,
     });
     expect(stripMarkers('No line here')).toEqual({
       text: 'No line here',
       restart: false,
       proposal: false,
+      changed: false,
     });
   });
 });
@@ -163,5 +168,16 @@ describe('titleFrom', () => {
     );
     expect(titleFrom('x'.repeat(80))).toHaveLength(48);
     expect(titleFrom('   ')).toBe('New chat');
+  });
+});
+
+describe('the hosted chat, which changes straight away', () => {
+  it('reads whether the agent changed anything', () => {
+    expect(stripMarkers('The menu says Safety now.\nChanged: yes\nRestart: no')).toEqual({
+      text: 'The menu says Safety now.',
+      restart: false,
+      proposal: false,
+      changed: true,
+    });
   });
 });

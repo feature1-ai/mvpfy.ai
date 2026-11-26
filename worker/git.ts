@@ -338,6 +338,48 @@ export class Git {
     );
   }
 
+  /**
+   * Push what a detached checkout holds onto a branch of the remote: a test
+   * link's checkout after a change made in its chat. Never forced — when
+   * the branch has moved on, the push fails and nothing is overwritten —
+   * and never onto the base branch.
+   */
+  async pushHead(dir: string, branch: string, baseBranch: string): Promise<void> {
+    if (branch === baseBranch) throw new Error(`Refusing to push to the base branch ${baseBranch}`);
+    if (!validRef(branch)) throw new Error(`Refusing to push an unusable ref: ${branch}`);
+    await this.git(dir, `push origin ${posixQuote(`HEAD:refs/heads/${branch}`)}`);
+  }
+
+  /** Undo one commit with a new one, leaving history as it was. */
+  async revert(dir: string, sha: string): Promise<string> {
+    if (!/^[0-9a-f]{7,40}$/i.test(sha)) throw new Error(`Not a commit: ${sha}`);
+    await this.git(
+      dir,
+      `-c user.name=${posixQuote('mvpfy worker')} -c user.email=${posixQuote('worker@mvpfy.local')} ` +
+        `revert --no-edit ${sha}`
+    );
+    return this.headCommit(dir);
+  }
+
+  /** Whether this checkout has this commit. */
+  async hasCommit(dir: string, sha: string): Promise<boolean> {
+    if (!/^[0-9a-f]{7,40}$/i.test(sha)) return false;
+    return this.git(dir, `cat-file -e ${sha}^{commit}`).then(
+      () => true,
+      () => false
+    );
+  }
+
+  /** Keep a path out of every commit made in this checkout, whatever its .gitignore says. */
+  async exclude(dir: string, pattern: string): Promise<void> {
+    const file = (await this.git(dir, 'rev-parse --git-path info/exclude')).trim();
+    const at = path.isAbsolute(file) ? file : path.join(dir, file);
+    const kept = fs.existsSync(at) ? fs.readFileSync(at, 'utf8') : '';
+    if (kept.split('\n').includes(pattern)) return;
+    fs.mkdirSync(path.dirname(at), { recursive: true });
+    fs.appendFileSync(at, `${kept && !kept.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+  }
+
   /** The remote as git has it, for telling GitHub which repository this is. */
   async originUrl(dir: string): Promise<string> {
     return (await this.git(dir, 'remote get-url origin')).trim();

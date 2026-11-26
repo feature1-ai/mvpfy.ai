@@ -480,3 +480,34 @@ describe('pulling one story, bug or task', () => {
     expect(execution.owner_type).toBe('task');
   });
 });
+
+describe('noting a change in Feature1', () => {
+  it('puts it on the feature, or on the story or bug, and nowhere for a task', async () => {
+    const posted: Array<{ path: string; body: unknown }> = [];
+    const routes: Record<string, unknown> = {
+      '/api/feature-planning?search=FEA-7&pageSize=20&limit=20': {
+        features: [{ id: FEATURE_ID, code: 'FEA-7' }],
+      },
+      '/api/workflows?search=FEA-US-3&includeGenerated=true&limit=20': {
+        workflows: [{ session_id: 'story-3', code: 'FEA-US-3' }],
+      },
+    };
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (init?.method === 'POST') {
+        posted.push({ path: url.pathname, body: JSON.parse(String(init.body)) });
+        return new Response('{"success":true}', { status: 201 });
+      }
+      const answer = routes[url.pathname + url.search];
+      return new Response(JSON.stringify(answer ?? {}), { status: answer ? 200 : 404 });
+    }) as typeof fetch;
+    const reader = new Feature1Reader(fetchImpl);
+    expect(await reader.note(BASE, 't', 'FEA-7', 'Renamed')).toBe(true);
+    expect(await reader.note(BASE, 't', 'FEA-US-3', 'Renamed')).toBe(true);
+    expect(await reader.note(BASE, 't', 'FEA-T-1', 'Renamed')).toBe(false);
+    expect(posted).toEqual([
+      { path: `/api/feature-planning/${FEATURE_ID}/comments`, body: { body: 'Renamed' } },
+      { path: '/api/workflows/story-3/comments', body: { body: 'Renamed' } },
+    ]);
+  });
+});

@@ -4,6 +4,7 @@ import { claudeCommandFor, codexCommandFor, posixShell } from '../shared/agentCo
 import { AgentMcpServer, claudeMcpConfig, codexMcpOverride } from '../shared/agentMcp';
 import { agentEnv } from './childEnv';
 import { CommandRunner, CommandResult } from './exec';
+import { RunSession } from '../shared/types';
 
 /**
  * Running the coding agent, once, for one unit of work.
@@ -25,6 +26,11 @@ export interface AgentOutcome {
   questions: string[];
   /** Redacted tail, kept on the worker for the operator. Never reported. */
   tail: string;
+  /**
+   * What the agent printed, whole up to a limit: its events, for reading what
+   * it said back (shared/chat.ts). Only a conversation reads it.
+   */
+  output?: string;
 }
 
 export interface AgentRunner {
@@ -40,6 +46,8 @@ export interface AgentRunner {
      * token's own scope: the worker hands it over, it does not police it.
      */
     mcp?: AgentMcpServer;
+    /** Continue (resume) or open (not resume) a named conversation. */
+    session?: RunSession;
     signal?: AbortSignal;
     timeoutMs?: number;
   }): Promise<AgentOutcome>;
@@ -75,7 +83,10 @@ export class CliAgentRunner implements AgentRunner {
     fs.rmSync(input.questionsFile, { force: true });
 
     const opts = { repoPath: input.cwd, promptFile };
-    const req = { ...(input.model ? { model: input.model } : {}) };
+    const req = {
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.session ? { session: input.session } : {}),
+    };
     // Per run, and gone after it: nothing is written into the checkout or
     // into the agent's own home, so one execution's access cannot be found
     // by the next.
@@ -124,6 +135,7 @@ export class CliAgentRunner implements AgentRunner {
       timedOut: res.timedOut,
       questions,
       tail: (res.stderr || res.stdout).slice(-4000),
+      output: res.stdout.slice(-2_000_000),
     };
   }
 }

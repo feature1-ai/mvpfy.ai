@@ -66,6 +66,8 @@ WORKDIR /app
 COPY --from=build /build/dist-worker ./dist-worker
 # The setup instructions `prepare` gives the agent, read from disk at run time.
 COPY src/prompts/bootstrap-runtime.txt ./src/prompts/bootstrap-runtime.txt
+# What the chat beside a test link tells the agent (worker/chat.ts).
+COPY src/prompts/app-chat-hosted.txt ./src/prompts/app-chat-hosted.txt
 
 # Never root. The worker clones repositories and runs an agent that executes
 # code from them; root in the container is one bug away from root on the

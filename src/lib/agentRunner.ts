@@ -1,3 +1,4 @@
+import { RESUME_NOTE, WORKSPACE_CONTRACT } from '../../shared/chatPrompt';
 import bootstrapTemplate from '../prompts/bootstrap-runtime.txt?raw';
 import type { RunsApi } from './useRuns';
 import { implementGrounding, specGrounding } from './grounding';
@@ -59,22 +60,6 @@ import { SETUP_UNIT_ATTEMPTS, buildSetupUnits } from './setupUnits';
  * app that started and never answered — the failure being fixed, caused by the
  * fix. The same goes for a sign-in the product manager can no longer use.
  */
-const WORKSPACE_CONTRACT =
-  'THINGS THE APP DEPENDS ON — whatever else you change, leave these true:\n' +
-  "• mvpfy.yml is how mvpfy finds and describes the running product. The main app's " +
-  '`host_port` and the port inside its `url` must be identical to each other AND to the port ' +
-  'docker-compose.mvpfy.yml actually publishes. If your change moves that port, change ' +
-  "mvpfy.yml in the same edit — otherwise the product manager's app points at nothing and " +
-  'their product looks like it never started.\n' +
-  '• The `demo_login:` and `demo_credentials:` blocks in mvpfy.yml are how the product ' +
-  'manager gets into their own product, and the app shows them those values. They must be ' +
-  'credentials that actually work. If your change alters how anyone signs in — a rebuilt ' +
-  'database, a new secret, a changed auth setting — re-seed that account and update the ' +
-  'block. If you deliberately remove a demo account, remove the block too rather than leave ' +
-  'a login on screen that no longer opens anything.\n' +
-  '• Seeded demo data is what they test against. Never drop a database volume or delete ' +
-  'seeded rows to make something work; if a schema genuinely has to be rebuilt, re-seed it ' +
-  'afterwards.';
 
 function workspaceNoteFor(project: Project): string {
   return project.mode === 'linked' ? LINKED_NOTE : '';
@@ -88,13 +73,6 @@ function workspaceNoteFor(project: Project): string {
  * file it is now forbidden to touch. Saying which instructions are live is
  * the whole job of this note.
  */
-const RESUME_NOTE =
-  'NOTE — this continues our earlier conversation about this workspace, so you already know ' +
-  'the code and the decisions behind it; use that rather than reading everything again. The ' +
-  'instructions below REPLACE the ones from that earlier step: where they differ, these win, ' +
-  'and any restriction you were under before no longer applies unless it is repeated here. ' +
-  'The files on disk may have changed since — check anything you are about to rely on rather ' +
-  'than trusting what you remember of it.';
 
 function resumeNoteFor(session?: RunSession): string {
   return session?.resume ? RESUME_NOTE : '';

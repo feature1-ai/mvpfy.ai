@@ -15,6 +15,7 @@ import {
   PreviewRecord,
   clearEngine,
   previewComment,
+  restartPreview,
   startPreview,
   stopPreview,
 } from './preview';
@@ -23,6 +24,7 @@ import { uuidFor } from './project';
 import { UUID } from '../shared/runner/validate';
 import { checkOutWorkspace, repositoryFolders, workspaceDir } from './workspaceCheckout';
 import { planOf, readReview, reviewLine, reviewPrompt } from './review';
+import { ChatRepository, ChatRequest, ChatSession, chatLine, chatTurn, chatUndo } from './chat';
 import {
   WorkerConfig,
   commandFrom,
@@ -482,6 +484,157 @@ async function writeReview(
   }
 }
 
+const CONVERSATION_ID = /^c[a-z0-9]{12}$/;
+
+/** A test link's checkout, repository by repository, for a conversation beside it. */
+async function chatContext(name: string, conversation: string) {
+  if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
+  if (!CONVERSATION_ID.test(conversation))
+    throw new Error(`Not a conversation id: ${conversation}`);
+  ensureSignInFolders();
+  const { repos, tenantId, root } = projectContext();
+  let record: { branch?: string };
+  try {
+    record = JSON.parse(fs.readFileSync(path.join(root, 'previews', `${name}.json`), 'utf8'));
+  } catch {
+    throw new PreviewError(`There is no test link ${name} on this runner`);
+  }
+  const config = configWithoutRunner(process.env);
+  const redactor = new Redactor().remember(...secretsIn(config));
+  const runner = new ShellRunner(redactor);
+  const layout = new Layout(root);
+  const probe = new ShellSetupCommands();
+  const github = operatorGithubToken() ?? (await ghLoginToken((c) => probe.probe(c)));
+  if (github) redactor.remember(github);
+  const credentials = new ExecutionCredentialSession(github);
+  credentials.begin({ repositories: repos } as never);
+  const git = new Git(runner, layout, process.env, credentials.git);
+  const workspace = workspaceDir(path.join(root, 'previews', name), repos);
+  const folders = repositoryFolders(repos);
+  const branch = record.branch ?? '';
+  const chatRepos: ChatRepository[] = [];
+  for (const repo of repos) {
+    const dir =
+      repos.length === 1 ? workspace : path.join(workspace, folders.get(repo.id) ?? repo.id);
+    const onBranch =
+      !!branch && (repos.length === 1 || (await git.remoteBranchExists(tenantId, repo, branch)));
+    chatRepos.push({
+      id: repo.id,
+      name: repo.name,
+      dir,
+      branch: onBranch ? branch : null,
+      base: repo.base_branch,
+    });
+  }
+  const dir = path.join(root, 'conversations', name);
+  fs.mkdirSync(dir, { recursive: true });
+  const sessionFile = path.join(dir, `${conversation}.session.json`);
+  return {
+    root,
+    config,
+    redactor,
+    runner,
+    git,
+    credentials,
+    workspace,
+    chatRepos,
+    dir,
+    session: {
+      load: (): ChatSession | null => {
+        try {
+          return JSON.parse(fs.readFileSync(sessionFile, 'utf8')) as ChatSession;
+        } catch {
+          return null;
+        }
+      },
+      save: (value: ChatSession | null) =>
+        value
+          ? fs.writeFileSync(sessionFile, JSON.stringify(value))
+          : fs.rmSync(sessionFile, { force: true }),
+    },
+  };
+}
+
+function chatTemplate(): string {
+  return fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'prompts', 'app-chat-hosted.txt'),
+    'utf8'
+  );
+}
+
+/**
+ * `chat <preview> <conversation>`: answer the message mvpfy-cloud left beside
+ * the conversation, changing the link's checkout when it asks for a change
+ * (worker/chat.ts). Prints one CHAT line.
+ */
+export async function chat(name: string, conversation: string): Promise<number> {
+  const ctx = await chatContext(name, conversation);
+  const requestFile = path.join(ctx.dir, `${conversation}.request.json`);
+  let request: ChatRequest;
+  try {
+    request = JSON.parse(fs.readFileSync(requestFile, 'utf8')) as ChatRequest;
+  } catch {
+    throw new Error('There is no message waiting for this conversation');
+  }
+  if (typeof request.message !== 'string' || !request.message.trim())
+    throw new Error('The message is empty');
+  const { untrusted, agentEnvironment, checkEnvironment } = await untrustedSide(
+    ctx.runner,
+    ctx.redactor
+  );
+  const connection = new Feature1ConnectionStore(secretsDirFrom()).load();
+  if (connection) ctx.redactor.remember(connection.token);
+  try {
+    const outcome = await chatTurn(ctx.workspace, ctx.chatRepos, request, {
+      agent: new CliAgentRunner(untrusted, agentEnvironment),
+      agentKind: ctx.config.agent,
+      ...(ctx.config.agentModel ? { agentModel: ctx.config.agentModel } : {}),
+      git: ctx.git,
+      verifier: new Verifier(untrusted, ctx.redactor, checkEnvironment),
+      pullRequests: new PullRequests(ctx.runner, ctx.redactor, process.env, ctx.credentials.gh),
+      note: (body) =>
+        connection
+          ? new Feature1Reader()
+              .note(connection.feature1BaseUrl, connection.token, request.code, body)
+              .catch(() => false)
+          : Promise.resolve(false),
+      restart: () =>
+        restartPreview(ctx.workspace, name, { runner: untrusted, env: checkEnvironment, log }),
+      template: chatTemplate(),
+      ...(readGuidance(ctx.root) ? { guidance: readGuidance(ctx.root) } : {}),
+      session: ctx.session,
+      agentDir: path.join(ctx.dir, 'agent'),
+      questionsFile: path.join(ctx.dir, 'questions.md'),
+      log,
+    });
+    process.stdout.write(`${chatLine('turn', outcome)}\n`);
+    return outcome.error && !outcome.changed ? 1 : 0;
+  } finally {
+    ctx.credentials.end();
+    fs.rmSync(requestFile, { force: true });
+  }
+}
+
+/** `chat-undo <preview> <conversation> <commit>`: take a change made in the chat away again. */
+export async function chatUndoCommand(
+  name: string,
+  conversation: string,
+  commit: string
+): Promise<number> {
+  const ctx = await chatContext(name, conversation);
+  try {
+    const result = await chatUndo(ctx.chatRepos, commit, {
+      git: ctx.git,
+      restart: async () => {},
+      log,
+    });
+    process.stdout.write(`${chatLine('undo', { commit, ...result })}\n`);
+    return result.reverted ? 0 : 1;
+  } finally {
+    ctx.credentials.end();
+  }
+}
+
 /**
  * `review <execution id>`: write what a finished build changed and what to
  * try, for a build made before reviews were written, or to write it again.
@@ -879,6 +1032,10 @@ if (require.main === module) {
     if (command.name === 'implement') process.exit(await implement(command.feature));
     if (command.name === 'prepare') process.exit(await prepare());
     if (command.name === 'review') process.exit(await review(command.execution));
+    if (command.name === 'chat') process.exit(await chat(command.preview, command.conversation));
+    if (command.name === 'chat-undo') {
+      process.exit(await chatUndoCommand(command.preview, command.conversation, command.commit));
+    }
     if (command.name === 'preview') {
       process.exit(
         await preview(

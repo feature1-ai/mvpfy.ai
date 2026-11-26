@@ -85,6 +85,20 @@ export class PullRequests {
    * a second, and the caller is told rather than left to find out — ensure()
    * refuses one that is not open (see `state`).
    */
+  /** Say something on a pull request, as the signed-in GitHub account. */
+  async comment(
+    target: Pick<PullRequestTarget, 'worktree' | 'owner' | 'name'>,
+    number: number,
+    body: string
+  ): Promise<boolean> {
+    const res = await this.gh(
+      target.worktree,
+      `pr comment ${number} --repo ${posixQuote(`${target.owner}/${target.name}`)} ` +
+        `--body ${posixQuote(body.slice(0, 60_000))}`
+    );
+    return res.code === 0;
+  }
+
   async findExisting(target: PullRequestTarget): Promise<PullRequestRecord | null> {
     const res = await this.gh(
       target.worktree,

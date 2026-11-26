@@ -321,28 +321,40 @@ export async function chatTurn(
   return outcome;
 }
 
-/** Undo a change made in the chat: revert it, and take it out of the pull request too. */
+/**
+ * Undo a change made in the chat: revert its commits, newest first — a
+ * change and the fix to its checks are one change — and take it out of the
+ * pull request too.
+ */
 export async function chatUndo(
   repos: ChatRepository[],
-  sha: string,
+  shas: string[],
   deps: Pick<ChatDeps, 'git' | 'restart' | 'log'>
 ): Promise<{ reverted: string | null; pushed: boolean; error: string | null }> {
-  for (const repo of repos) {
-    if (!(await deps.git.hasCommit(repo.dir, sha))) continue;
-    const reverted = await deps.git.revert(repo.dir, sha);
-    if (!repo.branch) return { reverted, pushed: false, error: null };
-    try {
-      await deps.git.pushHead(repo.dir, repo.branch, repo.base);
-      return { reverted, pushed: true, error: null };
-    } catch (error) {
-      return {
-        reverted,
-        pushed: false,
-        error: `Undone here, but not pushed: ${(error as Error).message}`,
-      };
-    }
+  let reverted: string | null = null;
+  const touched = new Set<ChatRepository>();
+  for (const sha of [...shas].reverse()) {
+    const repo = await (async () => {
+      for (const r of repos) if (await deps.git.hasCommit(r.dir, sha)) return r;
+      return null;
+    })();
+    if (!repo)
+      return { reverted, pushed: false, error: `This link has no commit ${sha.slice(0, 12)}` };
+    reverted = await deps.git.revert(repo.dir, sha);
+    touched.add(repo);
   }
-  return { reverted: null, pushed: false, error: `This link has no commit ${sha.slice(0, 12)}` };
+  const unpushable = [...touched].filter((r) => !r.branch);
+  if (unpushable.length) return { reverted, pushed: false, error: null };
+  try {
+    for (const repo of touched) await deps.git.pushHead(repo.dir, repo.branch ?? '', repo.base);
+    return { reverted, pushed: touched.size > 0, error: null };
+  } catch (error) {
+    return {
+      reverted,
+      pushed: false,
+      error: `Undone here, but not pushed: ${(error as Error).message}`,
+    };
+  }
 }
 
 /** One line for mvpfy-cloud to read off the log. */

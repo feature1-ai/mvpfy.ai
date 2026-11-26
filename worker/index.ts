@@ -623,7 +623,9 @@ export async function chatUndoCommand(
 ): Promise<number> {
   const ctx = await chatContext(name, conversation);
   try {
-    const result = await chatUndo(ctx.chatRepos, commit, {
+    const shas = commit.split(',').filter((s) => /^[0-9a-f]{7,40}$/i.test(s));
+    if (shas.length === 0) throw new Error(`Not a commit: ${commit}`);
+    const result = await chatUndo(ctx.chatRepos, shas, {
       git: ctx.git,
       restart: async () => {},
       log,

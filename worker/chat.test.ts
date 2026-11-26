@@ -183,13 +183,13 @@ describe('a conversation beside a test link', () => {
 
   it('undoes a change, in the link and in the pull request', async () => {
     const w = world({ replies: [], edits: [] });
-    expect(await chatUndo([repo], 'sha2000000000', w.deps)).toEqual({
+    expect(await chatUndo([repo], ['sha2000000000', 'sha3000000000'], w.deps)).toEqual({
       reverted: 'revertsha00000',
       pushed: true,
       error: null,
     });
-    expect(w.calls).toEqual(['revert sha2000000000', 'push mvpfy/x']);
-    expect((await chatUndo([repo], 'abc1234', w.deps)).error).toMatch(/no commit/);
+    expect(w.calls).toEqual(['revert sha3000000000', 'revert sha2000000000', 'push mvpfy/x']);
+    expect((await chatUndo([repo], ['abc1234'], w.deps)).error).toMatch(/no commit/);
   });
 
   it('takes its commands', () => {

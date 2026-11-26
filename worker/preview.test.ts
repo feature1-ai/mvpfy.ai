@@ -10,6 +10,8 @@ import { applyRecipe, keepRecipe, prepareCheckout } from './prepare';
 import {
   PreviewError,
   demoLoginOf,
+  inLinkService,
+  mainServiceOf,
   mobileOf,
   previewComment,
   serviceOnPort,
@@ -466,5 +468,21 @@ volumes:
         'https://b',
       ])
     ).toThrow(/http\(s\):\/\/host/);
+  });
+});
+
+describe("checking a chat's change in the link's own service", () => {
+  it('runs each check inside the running main service, under the link', async () => {
+    expect(mainServiceOf(MANIFEST)).toBe('app');
+    const runner = new ScriptedRunner().when(/exec -T app/, { code: 0 });
+    const inside = inLinkService(runner, '/w/previews/pabcdefghijkl/r1', 'pabcdefghijkl', 'app');
+    await inside.run('npm test --silent', { cwd: '/elsewhere', env: { PATH: '/bin' } });
+    const [call] = runner.calls;
+    expect(call?.command).toBe(
+      "docker compose -f .mvpfy/docker-compose.mvpfy.yml --project-directory . exec -T app sh -c 'npm test --silent'"
+    );
+    expect(call?.cwd).toBe('/w/previews/pabcdefghijkl/r1');
+    expect(call?.env?.COMPOSE_PROJECT_NAME).toBe('pabcdefghijkl');
+    expect(() => inLinkService(runner, '/w', 'pabcdefghijkl', 'app; rm')).toThrow(/Not a service/);
   });
 });

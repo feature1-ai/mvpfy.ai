@@ -318,6 +318,36 @@ export async function startPreview(
   };
 }
 
+/** The service setup named as the product's main one, from mvpfy.yml's `main_service:`. */
+export function mainServiceOf(manifest: string): string | null {
+  const name = manifest.match(/^main_service:\s*["']?([A-Za-z0-9._-]+)["']?\s*$/m)?.[1];
+  return name ?? null;
+}
+
+/**
+ * Run commands inside a link's running main service, where the product's
+ * dependencies are installed and the checkout is mounted: how a change made
+ * in a link's chat is checked, in seconds and with nothing to install.
+ */
+export function inLinkService(
+  runner: CommandRunner,
+  checkout: string,
+  name: string,
+  service: string
+): CommandRunner {
+  if (!PREVIEW_NAME.test(name)) throw new PreviewError(`Not a preview name: ${name}`);
+  if (!/^[A-Za-z0-9._-]+$/.test(service)) throw new PreviewError(`Not a service: ${service}`);
+  const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+  return {
+    run: (command, opts) =>
+      runner.run(`${composeFor(checkout)} exec -T ${service} sh -c ${quote(command)}`, {
+        ...opts,
+        cwd: checkout,
+        env: { ...opts.env, COMPOSE_PROJECT_NAME: name },
+      }),
+  };
+}
+
 /** Restart a link's stack in place, for a change it only picks up that way. */
 export async function restartPreview(
   checkout: string,

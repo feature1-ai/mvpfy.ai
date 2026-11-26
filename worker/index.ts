@@ -15,6 +15,9 @@ import {
   PreviewRecord,
   clearEngine,
   previewComment,
+  inLinkService,
+  mainServiceOf,
+  recipeManifest,
   restartPreview,
   startPreview,
   stopPreview,
@@ -528,6 +531,15 @@ async function chatContext(name: string, conversation: string) {
   }
   const dir = path.join(root, 'conversations', name);
   fs.mkdirSync(dir, { recursive: true });
+  // A product in one repository is checked inside its running main service.
+  let service: string | null = null;
+  if (repos.length === 1) {
+    try {
+      service = mainServiceOf(recipeManifest(workspace));
+    } catch {
+      service = null;
+    }
+  }
   const sessionFile = path.join(dir, `${conversation}.session.json`);
   return {
     root,
@@ -539,6 +551,7 @@ async function chatContext(name: string, conversation: string) {
     workspace,
     chatRepos,
     dir,
+    service,
     session: {
       load: (): ChatSession | null => {
         try {
@@ -590,7 +603,14 @@ export async function chat(name: string, conversation: string): Promise<number> 
       agentKind: ctx.config.agent,
       ...(ctx.config.agentModel ? { agentModel: ctx.config.agentModel } : {}),
       git: ctx.git,
-      verifier: new Verifier(untrusted, ctx.redactor, checkEnvironment),
+      verifier: ctx.service
+        ? new Verifier(
+            inLinkService(untrusted, ctx.workspace, name, ctx.service),
+            ctx.redactor,
+            checkEnvironment,
+            { install: false }
+          )
+        : new Verifier(untrusted, ctx.redactor, checkEnvironment),
       pullRequests: new PullRequests(ctx.runner, ctx.redactor, process.env, ctx.credentials.gh),
       note: (body) =>
         connection

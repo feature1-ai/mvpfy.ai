@@ -158,7 +158,8 @@ async function check(
         .slice(-6000);
       return {
         reason: `${repo.name}: ${verdict.reason}${output ? `\n\n${output}` : ''}`,
-        fixable: results.some((r) => r.outcome === 'failed'),
+        // A failed install is the environment's, not the change's.
+        fixable: results.some((r) => r.outcome === 'failed' && !r.stepId.startsWith('install-')),
       };
     }
   }

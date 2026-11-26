@@ -95,7 +95,11 @@ export function commandFrom(argv: string[]): WorkerCommand {
   if (name === 'chat' && plain && rest.length === 2) {
     return { name, preview: rest[0] ?? '', conversation: rest[1] ?? '' };
   }
-  if (name === 'chat-undo' && plain && (rest.length === 3 || (rest.length === 4 && rest[3] === 'local'))) {
+  if (
+    name === 'chat-undo' &&
+    plain &&
+    (rest.length === 3 || (rest.length === 4 && rest[3] === 'local'))
+  ) {
     return {
       name,
       preview: rest[0] ?? '',

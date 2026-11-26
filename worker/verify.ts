@@ -132,7 +132,12 @@ export class Verifier {
     private readonly runner: CommandRunner,
     private readonly redactor: Redactor,
     // The repo's own scripts run here; they get no credentials (childEnv.ts).
-    private readonly env: NodeJS.ProcessEnv = checkEnv()
+    private readonly env: NodeJS.ProcessEnv = checkEnv(),
+    /**
+     * Whether to install a JavaScript checkout's dependencies first. Not where
+     * the checks run in the product's own running container, which has them.
+     */
+    private readonly options: { install?: boolean } = {}
   ) {}
 
   /**
@@ -326,7 +331,7 @@ export class Verifier {
       ];
     }
     const results: VerificationResult[] = [];
-    if (discovered && worktree) {
+    if (discovered && worktree && this.options.install !== false) {
       const installed = await this.installDependencies(repositoryId, worktree, opts.signal);
       // Checks that cannot start without the dependencies say only "not
       // found"; this says why, and goes back to the agent as a failure.

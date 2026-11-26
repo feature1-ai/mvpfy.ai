@@ -166,6 +166,17 @@ export interface Feature1StepDeps {
   connections: { load(): SavedConnection | null; save(saved: SavedConnection): void };
   /** What Feature1 will call this runner. */
   name: string;
+  /**
+   * The access the web app left, when the runner was connected there through
+   * Feature1's MCP server: then there is no token to ask for.
+   */
+  mcp?: {
+    access: () => { mcpUrl: string; accessToken: string } | null;
+    whoami: (
+      mcpUrl: string,
+      token: string
+    ) => Promise<{ tenant: { id: string; slug: string }; user: { id: string; email?: string } }>;
+  };
   /** Answers supplied ahead of time, so setup can be scripted. */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
@@ -191,7 +202,10 @@ export function feature1Step(deps: Feature1StepDeps): SetupStep {
     id: 'feature1',
     title: 'Sign in to Feature1',
     done: async () => {
-      if (!deps.connections.load()) return false;
+      const saved = deps.connections.load();
+      if (!saved) return false;
+      // Connected from the web app: the host keeps it alive, not setup.
+      if (saved.via === 'mcp') return true;
       // No runner credential is not unfinished: this workspace may not hand
       // out work. One that exists is kept from lapsing.
       const runner = deps.store.load();
@@ -202,6 +216,22 @@ export function feature1Step(deps: Feature1StepDeps): SetupStep {
       );
     },
     perform: async () => {
+      const access = deps.mcp?.access();
+      if (access && deps.mcp) {
+        const identity = await deps.mcp.whoami(access.mcpUrl, access.accessToken);
+        deps.connections.save({
+          via: 'mcp',
+          feature1BaseUrl: access.mcpUrl,
+          token: '',
+          tenant: identity.tenant,
+          user: identity.user,
+        });
+        const who = identity.user.email ?? identity.user.id;
+        deps.io.say(
+          `Connected from the web app, through Feature1's MCP server: ${identity.tenant.slug || identity.tenant.id} as ${who}`
+        );
+        return;
+      }
       const previous = deps.connections.load();
       const scripted = (env.MVPFY_FEATURE1_TOKEN ?? '').trim();
       let identity: Feature1Identity | null = null;

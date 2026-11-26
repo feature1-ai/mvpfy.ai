@@ -50,9 +50,9 @@ import { Redactor } from './redact';
 import { RemoteRunner, sandboxClientFrom } from './remoteRunner';
 import { SandboxServer, sandboxServerConfigFrom } from './sandbox';
 import { ExecutionStore } from './store';
-import { Feature1ConnectionStore } from './feature1Connection';
+import { Feature1ConnectionStore, readerFor, whoIs } from './feature1Connection';
+import { Feature1Mcp, loadMcpAccess } from './feature1Mcp';
 import { Feature1Login } from './feature1Login';
-import { Feature1Reader } from './feature1Reader';
 import { ProjectStore, describeProject, projectFrom } from './project';
 import { PULLED_LEASE_MS, executionFor } from './pull';
 import { RunnerCredentialStore, timeLeft } from './runnerCredential';
@@ -252,6 +252,10 @@ export async function setup(): Promise<number> {
         store: new RunnerCredentialStore(secretsDirFrom()),
         connections: new Feature1ConnectionStore(secretsDirFrom()),
         name: workerNameFrom(),
+        mcp: {
+          access: () => loadMcpAccess(secretsDirFrom()),
+          whoami: (mcpUrl, token) => new Feature1Mcp(mcpUrl, token).whoami(),
+        },
       }),
     ],
     io
@@ -310,7 +314,7 @@ export async function implement(reference: string): Promise<number> {
   const redactor = new Redactor().remember(...secretsIn(config), connection.token);
 
   log(`pulling ${reference} from ${connection.feature1BaseUrl}`);
-  const feature = await new Feature1Reader().pullWork(
+  const feature = await readerFor(connection).pullWork(
     connection.feature1BaseUrl,
     connection.token,
     reference
@@ -614,7 +618,7 @@ export async function chat(name: string, conversation: string): Promise<number> 
       pullRequests: new PullRequests(ctx.runner, ctx.redactor, process.env, ctx.credentials.gh),
       note: (body) =>
         connection
-          ? new Feature1Reader()
+          ? readerFor(connection)
               .note(connection.feature1BaseUrl, connection.token, request.code, body)
               .catch(() => false)
           : Promise.resolve(false),
@@ -976,8 +980,10 @@ export async function doctor(): Promise<number> {
       run: async () => {
         if (!connection) throw new Error('Not signed in. Run setup.');
         redactor.remember(connection.token);
-        const who = await new Feature1Login().verify(connection.feature1BaseUrl, connection.token);
-        return `Signed in to ${who.tenant.slug || who.tenant.id}`;
+        const who = await whoIs(connection);
+        return connection.via === 'mcp'
+          ? `Connected to ${who.tenant.slug || who.tenant.id} through its MCP server`
+          : `Signed in to ${who.tenant.slug || who.tenant.id}`;
       },
     },
     {

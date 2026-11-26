@@ -95,14 +95,21 @@ const parsed = (value: unknown): unknown => {
 };
 
 /** The list Feature1 uses when it decides whether a feature may be queued. */
-const FEATURE_CLOSED = ['done', 'completed', 'cancelled', 'archived', 'communicate', 'measure'];
+export const FEATURE_CLOSED = [
+  'done',
+  'completed',
+  'cancelled',
+  'archived',
+  'communicate',
+  'measure',
+];
 /**
  * Stories not to build again. Feature1's own list, and one more: a story
  * ready for testing has been implemented and is waiting for a person. Feature1
  * leaves those in what it queues; built again here, they are hours of agent
  * time spent redoing work somebody is about to test.
  */
-const STORY_FINISHED = [
+export const STORY_FINISHED = [
   'completed',
   'done',
   'cancelled',

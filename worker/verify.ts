@@ -91,6 +91,20 @@ export interface VerifyOptions {
 
 const DEFAULT_STEP_TIMEOUT = 20 * 60_000;
 
+/**
+ * Whether a node_modules folder holds anything. A test link's stack mounts
+ * one into the checkout as an empty mount point (a volume over
+ * /app/node_modules), so its being there said nothing: the checks then
+ * found no test runner and nothing ran.
+ */
+function installed(dir: string): boolean {
+  try {
+    return fs.readdirSync(dir).some((name) => name !== '.DS_Store');
+  } catch {
+    return false;
+  }
+}
+
 /** The last few lines, which is where a test runner puts its summary. */
 function summarise(text: string, redactor: Redactor): string {
   const lines = text
@@ -248,7 +262,7 @@ export class Verifier {
     signal?: AbortSignal
   ): Promise<VerificationResult | null> {
     const has = (file: string) => fs.existsSync(path.join(worktree, file));
-    if (!has('package.json') || has('node_modules')) return null;
+    if (!has('package.json') || installed(path.join(worktree, 'node_modules'))) return null;
     const install = has('pnpm-lock.yaml')
       ? 'corepack pnpm install --frozen-lockfile'
       : has('yarn.lock')

@@ -126,3 +126,24 @@ describe('finding checks nobody named', () => {
     expect(runner.calls[0]?.env?.DOCKER_HOST).toBe('tcp://engine:2375');
   });
 });
+
+describe('installing before the checks', () => {
+  it('installs when node_modules is only an empty mount point', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-install-'));
+    try {
+      fs.writeFileSync(
+        path.join(dir, 'package.json'),
+        JSON.stringify({ scripts: { test: 'vitest' } })
+      );
+      fs.writeFileSync(path.join(dir, 'package-lock.json'), '{}');
+      fs.mkdirSync(path.join(dir, 'node_modules'));
+      const runner = new ScriptedRunner().when(/npm ci/, { code: 0 }).when(/npm test/, { code: 0 });
+      await new Verifier(runner, plainRedactor, { PATH: '/bin' }).verifyRepository('r1', {
+        worktrees: { r1: dir },
+      });
+      expect(runner.calls.some((c) => /npm ci/.test(c.command))).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

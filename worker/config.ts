@@ -59,7 +59,7 @@ export type WorkerCommand =
   | { name: 'preview-stop'; preview: string }
   | { name: 'review'; execution: string }
   | { name: 'chat'; preview: string; conversation: string }
-  | { name: 'chat-undo'; preview: string; conversation: string; commit: string }
+  | { name: 'chat-undo'; preview: string; conversation: string; commit: string; local?: boolean }
   | { name: 'comment'; pullRequest: string; preview: string; link: string };
 
 /**
@@ -95,8 +95,14 @@ export function commandFrom(argv: string[]): WorkerCommand {
   if (name === 'chat' && plain && rest.length === 2) {
     return { name, preview: rest[0] ?? '', conversation: rest[1] ?? '' };
   }
-  if (name === 'chat-undo' && plain && rest.length === 3) {
-    return { name, preview: rest[0] ?? '', conversation: rest[1] ?? '', commit: rest[2] ?? '' };
+  if (name === 'chat-undo' && plain && (rest.length === 3 || (rest.length === 4 && rest[3] === 'local'))) {
+    return {
+      name,
+      preview: rest[0] ?? '',
+      conversation: rest[1] ?? '',
+      commit: rest[2] ?? '',
+      ...(rest[3] === 'local' ? { local: true } : {}),
+    };
   }
   if (name === 'preview-stop' && plain && rest.length === 1)
     return { name, preview: rest[0] ?? '' };

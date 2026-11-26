@@ -78,7 +78,15 @@ export interface ChatDeps {
   agentModel?: string;
   git: Pick<
     Git,
-    'uncommitted' | 'commit' | 'pushHead' | 'exclude' | 'originUrl' | 'revert' | 'hasCommit'
+    | 'uncommitted'
+    | 'commit'
+    | 'pushHead'
+    | 'exclude'
+    | 'originUrl'
+    | 'revert'
+    | 'hasCommit'
+    | 'headCommit'
+    | 'resetTo'
   >;
   verifier: Pick<Verifier, 'verifyRepository'>;
   pullRequests: Pick<PullRequests, 'findExisting' | 'comment'>;
@@ -120,13 +128,17 @@ async function commitChanges(
   return commits;
 }
 
-/** Each changed repository's checks; the failure to fix, or null when they pass. */
+/**
+ * Each changed repository's checks: null when they pass; otherwise what went
+ * wrong, and whether it is the change's to fix — a check that failed is; a
+ * check that could not run at all is not, and no repair would help it.
+ */
 async function check(
   repos: ChatRepository[],
   changed: Set<string>,
   deps: ChatDeps,
   checks: ChatCheck[]
-): Promise<string | null> {
+): Promise<{ reason: string; fixable: boolean } | null> {
   for (const repo of repos.filter((r) => changed.has(r.id))) {
     const results = await deps.verifier.verifyRepository(repo.id, {
       worktrees: { [repo.id]: repo.dir },
@@ -144,7 +156,10 @@ async function check(
         .map((r) => `${r.name}:\n${r.output}`)
         .join('\n\n')
         .slice(-6000);
-      return `${repo.name}: ${verdict.reason}${output ? `\n\n${output}` : ''}`;
+      return {
+        reason: `${repo.name}: ${verdict.reason}${output ? `\n\n${output}` : ''}`,
+        fixable: results.some((r) => r.outcome === 'failed'),
+      };
     }
   }
   return null;
@@ -243,7 +258,7 @@ export async function chatTurn(
 
   const changed = new Set(outcome.commits.map((c) => c.repository));
   let failure = await check(repos, changed, deps, outcome.checks);
-  if (failure) {
+  if (failure?.fixable) {
     deps.log('the checks failed after the change; giving the agent one go at fixing it');
     const repair = await ask(
       workspace,
@@ -254,7 +269,7 @@ export async function chatTurn(
         ...(deps.guidance ? { guidance: deps.guidance } : {}),
         message:
           `(From mvpfy, not the product manager.) After your change, the repository's checks ` +
-          `failed:\n\n${failure}\n\nFix what broke, keeping the change they asked for. Reply ` +
+          `failed:\n\n${failure.reason}\n\nFix what broke, keeping the change they asked for. Reply ` +
           'in one or two plain sentences, and end with the same two lines.',
       }),
       deps
@@ -274,7 +289,9 @@ export async function chatTurn(
   }
 
   if (failure) {
-    outcome.notPushed = `Its checks still fail, so it was not added to the pull request. ${failure.split('\n')[0]}`;
+    outcome.notPushed = failure.fixable
+      ? `Its checks still fail, so it was not added to the pull request. ${failure.reason.split('\n')[0]}`
+      : `Its checks could not run, so it was not added to the pull request. ${failure.reason.split('\n')[0]}`;
     return outcome;
   }
   const offBranch = repos.filter((r) => changed.has(r.id) && !r.branch);
@@ -329,8 +346,21 @@ export async function chatTurn(
 export async function chatUndo(
   repos: ChatRepository[],
   shas: string[],
-  deps: Pick<ChatDeps, 'git' | 'restart' | 'log'>
+  deps: Pick<ChatDeps, 'git' | 'restart' | 'log'>,
+  options: { pushed?: boolean } = {}
 ): Promise<{ reverted: string | null; pushed: boolean; error: string | null }> {
+  // Never pushed, and still the last thing in the checkout: drop it, rather
+  // than add a revert that the next push would carry with it.
+  if (options.pushed === false) {
+    for (const repo of repos) {
+      const first = shas[0];
+      const last = shas[shas.length - 1];
+      if (!first || !last || !(await deps.git.hasCommit(repo.dir, last))) continue;
+      if ((await deps.git.headCommit(repo.dir)) !== last) break;
+      await deps.git.resetTo(repo.dir, `${first}^`);
+      return { reverted: await deps.git.headCommit(repo.dir), pushed: false, error: null };
+    }
+  }
   let reverted: string | null = null;
   const touched = new Set<ChatRepository>();
   for (const sha of [...shas].reverse()) {

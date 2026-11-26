@@ -619,17 +619,19 @@ export async function chat(name: string, conversation: string): Promise<number> 
 export async function chatUndoCommand(
   name: string,
   conversation: string,
-  commit: string
+  commit: string,
+  pushed = true
 ): Promise<number> {
   const ctx = await chatContext(name, conversation);
   try {
     const shas = commit.split(',').filter((s) => /^[0-9a-f]{7,40}$/i.test(s));
     if (shas.length === 0) throw new Error(`Not a commit: ${commit}`);
-    const result = await chatUndo(ctx.chatRepos, shas, {
-      git: ctx.git,
-      restart: async () => {},
-      log,
-    });
+    const result = await chatUndo(
+      ctx.chatRepos,
+      shas,
+      { git: ctx.git, restart: async () => {}, log },
+      { pushed }
+    );
     process.stdout.write(`${chatLine('undo', { commit, ...result })}\n`);
     return result.reverted ? 0 : 1;
   } finally {
@@ -1036,7 +1038,9 @@ if (require.main === module) {
     if (command.name === 'review') process.exit(await review(command.execution));
     if (command.name === 'chat') process.exit(await chat(command.preview, command.conversation));
     if (command.name === 'chat-undo') {
-      process.exit(await chatUndoCommand(command.preview, command.conversation, command.commit));
+      process.exit(
+        await chatUndoCommand(command.preview, command.conversation, command.commit, !command.local)
+      );
     }
     if (command.name === 'preview') {
       process.exit(

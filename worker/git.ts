@@ -361,6 +361,15 @@ export class Git {
     return this.headCommit(dir);
   }
 
+  /**
+   * Move a test link's checkout back to a commit, dropping what came after.
+   * Only ever for a change made in its chat that was never pushed.
+   */
+  async resetTo(dir: string, ref: string): Promise<void> {
+    if (!/^[0-9a-f]{7,40}\^?$/i.test(ref)) throw new Error(`Not a commit: ${ref}`);
+    await this.git(dir, `reset --hard ${ref}`);
+  }
+
   /** Whether this checkout has this commit. */
   async hasCommit(dir: string, sha: string): Promise<boolean> {
     if (!/^[0-9a-f]{7,40}$/i.test(sha)) return false;

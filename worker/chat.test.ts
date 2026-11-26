@@ -16,7 +16,7 @@ const claudeSays = (text: string) =>
 function world(script: {
   replies: string[];
   edits: boolean[];
-  checks?: Array<'passed' | 'failed'>;
+  checks?: Array<'passed' | 'failed' | 'unavailable'>;
   session?: ChatSession | null;
 }) {
   const calls: string[] = [];
@@ -57,6 +57,8 @@ function world(script: {
       originUrl: async () => 'https://github.com/feature1-ai/thankyoudoctor.git',
       revert: async (_dir, sha) => (calls.push(`revert ${sha}`), 'revertsha00000'),
       hasCommit: async (_dir, sha) => sha.startsWith('sha'),
+      headCommit: async () => 'sha3000000000',
+      resetTo: async (_dir, ref) => void calls.push(`reset ${ref}`),
     },
     verifier: {
       verifyRepository: async () => {
@@ -165,6 +167,27 @@ describe('a conversation beside a test link', () => {
     expect(kept).toMatchObject({ changed: true, pushed: false, noted: false });
     expect(kept.notPushed).toMatch(/still fail/);
     expect(stuck.calls.some((c) => c.startsWith('push'))).toBe(false);
+  });
+
+  it('does not ask for a repair when the checks could not run at all', async () => {
+    const w = world({
+      replies: ['Done.\nChanged: yes\nRestart: no'],
+      edits: [true],
+      checks: ['unavailable'],
+    });
+    const outcome = await chatTurn(repo.dir, [repo], request, w.deps);
+    expect(w.prompts).toHaveLength(1);
+    expect(outcome.pushed).toBe(false);
+    expect(outcome.notPushed).toMatch(/could not run/);
+  });
+
+  it('drops a change that was never pushed, rather than reverting it', async () => {
+    const w = world({ replies: [], edits: [] });
+    const result = await chatUndo([repo], ['sha2000000000', 'sha3000000000'], w.deps, {
+      pushed: false,
+    });
+    expect(result.pushed).toBe(false);
+    expect(w.calls).toEqual(['reset sha2000000000^']);
   });
 
   it('restarts the link when the change needs it', async () => {

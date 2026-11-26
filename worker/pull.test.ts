@@ -6,7 +6,13 @@ import { parseExecution, unitsOf } from '../shared/runner/validate';
 import { commandFrom, configWithoutRunner } from './config';
 import { Feature1ConnectionStore } from './feature1Connection';
 import { Feature1LoginError } from './feature1Login';
-import { Feature1ReadError, Feature1Reader, PulledFeature, storyFrom } from './feature1Reader';
+import {
+  Feature1ReadError,
+  Feature1Reader,
+  PulledFeature,
+  storyFrom,
+  workKindOf,
+} from './feature1Reader';
 import { Harness, agentChanges, makeHarness, withDiscoverableTests } from './harness';
 import {
   ProjectError,
@@ -387,5 +393,90 @@ describe('the lease on pulled work', () => {
     const { ending, pullRequests } = await buildAfterSleeping();
     expect(String(ending)).toMatch(/lease expired/i);
     expect(pullRequests).toBe(0);
+  });
+});
+
+describe('pulling one story, bug or task', () => {
+  const project = projectFrom(['https://github.com/acme/api.git']);
+  const who = { tenantId: 't', userId: 'u' };
+
+  it('reads what the code names', () => {
+    expect(workKindOf('THA-F-11')).toBe('feature');
+    expect(workKindOf('tha-us-52')).toBe('story');
+    expect(workKindOf('THA-BUG-3')).toBe('bug');
+    expect(workKindOf('THA-T-8')).toBe('task');
+    expect(workKindOf('THA-SPK-2')).toBe('spike');
+    expect(workKindOf(FEATURE_ID)).toBeNull();
+  });
+
+  it('builds a story on its own, as the story it is', async () => {
+    const { reader } = feature1({
+      '/api/workflows?search=THA-US-52&includeGenerated=true&limit=20': {
+        workflows: [
+          { session_id: 'story-x', code: 'THA-US-520', workflow_status: 'ready', title: 'Other' },
+          {
+            session_id: 'story-52',
+            code: 'THA-US-52',
+            workflow_status: 'ready',
+            title: 'Show the cap',
+            project_id: '22222222-2222-4222-8222-222222222222',
+          },
+        ],
+      },
+      '/api/workflows/story-52': {
+        workflow: {
+          sessionId: 'story-52',
+          code: 'THA-US-52',
+          stateData: {
+            userStory: { title: 'Show the pilot cap', description: 'On the queue.' },
+            acceptanceCriteria: ['The cap is shown'],
+          },
+        },
+      },
+    });
+    const story = await reader.pullWork(BASE, 'tok', 'THA-US-52');
+    expect(story).toMatchObject({ kind: 'story', code: 'THA-US-52', title: 'Show the pilot cap' });
+    const execution = executionFor(story, project, who);
+    expect(execution.origin_type).toBe('story');
+    expect(execution.snapshot).toMatchObject({ type: 'story', code: 'THA-US-52' });
+    expect(execution.snapshot.stories).toBeUndefined();
+    expect(unitsOf(execution)).toHaveLength(1);
+    expect(unitsOf(execution)[0]?.acceptanceCriteria).toEqual([{ text: 'The cap is shown' }]);
+  });
+
+  it('refuses a story that is already built, and a code Feature1 does not have', async () => {
+    const { reader } = feature1({
+      '/api/workflows?search=THA-BUG-3&includeGenerated=true&limit=20': {
+        workflows: [{ session_id: 'b3', code: 'THA-BUG-3', workflow_status: 'ready_for_testing' }],
+      },
+      '/api/workflows?search=THA-US-9&includeGenerated=true&limit=20': { workflows: [] },
+    });
+    await expect(reader.pullWork(BASE, 'tok', 'THA-BUG-3')).rejects.toThrow(
+      /nothing left to build/
+    );
+    await expect(reader.pullWork(BASE, 'tok', 'THA-US-9')).rejects.toThrow(
+      /no story with the code/
+    );
+    await expect(reader.pullWork(BASE, 'tok', 'THA-SPK-1')).rejects.toThrow(/spike/);
+  });
+
+  it('builds a task on its own, as a task', async () => {
+    const { reader } = feature1({
+      '/api/tasks?search=THA-T-8&limit=20': {
+        tasks: [
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            code: 'THA-T-8',
+            title: 'Rename the menu',
+            description: 'Call it Safety.',
+            status: 'todo',
+          },
+        ],
+      },
+    });
+    const task = await reader.pullWork(BASE, 'tok', 'THA-T-8');
+    const execution = executionFor(task, project, who);
+    expect(execution.snapshot).toMatchObject({ type: 'task', title: 'Rename the menu' });
+    expect(execution.owner_type).toBe('task');
   });
 });

@@ -17,9 +17,14 @@ import { Project, uuidFor } from './project';
 const digestOf = (value: unknown) =>
   crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-function storySnapshot(story: PulledStory): Snapshot {
+function storySnapshot(
+  story: PulledStory,
+  type: 'story' | 'task' = 'story',
+  instructions?: string
+): Snapshot {
   const snapshot = {
-    type: 'story' as const,
+    type,
+    ...(instructions !== undefined ? { instructions } : {}),
     id: story.id,
     code: story.code,
     title: story.title,
@@ -34,6 +39,12 @@ function storySnapshot(story: PulledStory): Snapshot {
 }
 
 export function snapshotOf(feature: PulledFeature, instructions = ''): Snapshot {
+  // A story, bug or task asked for on its own is the snapshot itself: built
+  // as one unit, and named for what it is.
+  const [single] = feature.stories;
+  if (feature.kind && feature.kind !== 'feature' && single) {
+    return storySnapshot(single, feature.kind === 'task' ? 'task' : 'story', instructions);
+  }
   const snapshot = {
     type: 'feature' as const,
     id: feature.id,
@@ -46,7 +57,7 @@ export function snapshotOf(feature: PulledFeature, instructions = ''): Snapshot 
     requirements: feature.requirements,
     dependencies: [],
     revision: feature.revision,
-    stories: feature.stories.map(storySnapshot),
+    stories: feature.stories.map((story) => storySnapshot(story)),
     instructions,
   };
   return { ...snapshot, digest: digestOf(snapshot) };
@@ -78,15 +89,21 @@ export function executionFor(
   }
   const newId = options.newId ?? (() => crypto.randomUUID());
   const featureId = uuidFor(feature.id);
+  const type =
+    feature.kind === 'task'
+      ? 'task'
+      : feature.kind && feature.kind !== 'feature'
+        ? 'story'
+        : 'feature';
   return {
     protocol_version: PROTOCOL_VERSION,
     id: newId(),
     tenant_id: uuidFor(who.tenantId),
     project_id: uuidFor(feature.projectId ?? feature.id),
     requested_by: who.userId,
-    origin_type: 'feature',
+    origin_type: type,
     origin_id: featureId,
-    owner_type: 'feature',
+    owner_type: type,
     owner_id: featureId,
     assistant_thread_id: null,
     request_key: newId(),

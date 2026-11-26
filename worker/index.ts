@@ -305,7 +305,7 @@ export async function implement(reference: string): Promise<number> {
   const redactor = new Redactor().remember(...secretsIn(config), connection.token);
 
   log(`pulling ${reference} from ${connection.feature1BaseUrl}`);
-  const feature = await new Feature1Reader().pullFeature(
+  const feature = await new Feature1Reader().pullWork(
     connection.feature1BaseUrl,
     connection.token,
     reference

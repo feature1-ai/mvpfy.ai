@@ -100,7 +100,7 @@ export function commandFrom(argv: string[]): WorkerCommand {
   throw new Error(
     `Unrecognised argument ${JSON.stringify([name, ...rest].join(' '))}. The worker takes either ` +
       'no arguments, to claim work; `setup`, to sign in once; `project <repository>…`, to say ' +
-      'what it builds; `implement <feature code>`, to pull one feature and build it; `prepare`, ' +
+      'what it builds; `implement <code>`, to pull a feature, story, bug or task and build it; `prepare`, ' +
       'to set the product up for test links; `preview <branch> <name>` and `preview-stop <name>`; `review <execution id>`, to write what a build changed and what to try; or ' +
       '`sandbox`, to run what another worker sends it.'
   );

@@ -30,7 +30,35 @@ export interface PulledStory {
   revision: string | null;
 }
 
+/** What a person can ask to have built, by the type part of its code. */
+export type WorkKind = 'feature' | 'story' | 'bug' | 'task';
+
+/** The kind of work a code names: THA-F-11, THA-US-52, THA-BUG-3, THA-T-8. Null for an id. */
+export function workKindOf(reference: string): WorkKind | 'spike' | null {
+  const type = reference
+    .trim()
+    .toUpperCase()
+    .match(/-([A-Z]+)-\d+$/)?.[1];
+  return type === 'F'
+    ? 'feature'
+    : type === 'US'
+      ? 'story'
+      : type === 'BUG'
+        ? 'bug'
+        : type === 'T'
+          ? 'task'
+          : type === 'SPK'
+            ? 'spike'
+            : null;
+}
+
 export interface PulledFeature {
+  /**
+   * What was asked for. A story, bug or task is built on its own: it is
+   * then the one entry in `stories`, and the snapshot is the item itself.
+   * Absent means a feature.
+   */
+  kind?: WorkKind;
   id: string;
   code: string | null;
   title: string;
@@ -239,6 +267,105 @@ export class Feature1Reader {
       revision: text(feature.updated_at, feature.updatedAt) || null,
       stories,
       finished,
+    };
+  }
+
+  /**
+   * Whatever the code names: a feature and its unfinished stories, or one
+   * story, bug or task on its own. An id is taken to be a feature's.
+   */
+  async pullWork(baseUrl: string, token: string, reference: string): Promise<PulledFeature> {
+    const ref = reference.trim();
+    const kind = workKindOf(ref);
+    if (kind === 'spike') {
+      throw new Feature1ReadError(`${ref} is a spike: research to do, not something to build.`);
+    }
+    if (kind === 'story' || kind === 'bug') return this.pullStory(baseUrl, token, ref, kind);
+    if (kind === 'task') return this.pullTask(baseUrl, token, ref);
+    return this.pullFeature(baseUrl, token, ref);
+  }
+
+  /** One story or bug, with its criteria, built on its own. */
+  private async pullStory(
+    baseUrl: string,
+    token: string,
+    code: string,
+    kind: 'story' | 'bug'
+  ): Promise<PulledFeature> {
+    const query = new URLSearchParams({ search: code, includeGenerated: 'true', limit: '20' });
+    const found = await this.get(baseUrl, token, `/workflows?${query}`);
+    const matches = (Array.isArray(found.workflows) ? found.workflows : [])
+      .map(row)
+      .filter((w) => text(w.code).toLowerCase() === code.toLowerCase());
+    if (matches.length > 1) throw new Feature1ReadError(`More than one item has the code ${code}.`);
+    const listed = matches[0];
+    const brief = listed ? storyFrom(listed) : null;
+    if (!listed || !brief?.id)
+      throw new Feature1ReadError(`Feature1 has no ${kind} with the code ${code}`);
+    if (STORY_FINISHED.includes(brief.status)) {
+      throw new Feature1ReadError(
+        `"${brief.title}" is ${brief.status.replace(/_/g, ' ')}. There is nothing left to build.`
+      );
+    }
+    const detail = row((await this.get(baseUrl, token, `/workflows/${brief.id}`)).workflow);
+    const story = storyFrom(listed, detail);
+    return {
+      kind,
+      id: story.id,
+      code: story.code ?? code,
+      title: story.title,
+      description: story.description,
+      status: story.status,
+      projectId: text(listed.project_id, listed.projectId, detail.project_id) || null,
+      requirements: null,
+      revision: story.revision,
+      stories: [story],
+      finished: [],
+    };
+  }
+
+  /** One task, built on its own. */
+  private async pullTask(baseUrl: string, token: string, code: string): Promise<PulledFeature> {
+    const query = new URLSearchParams({ search: code, limit: '20' });
+    const found = await this.get(baseUrl, token, `/tasks?${query}`);
+    const rows = Array.isArray(found.tasks)
+      ? found.tasks
+      : Array.isArray(found.data)
+        ? found.data
+        : [];
+    const matches = rows.map(row).filter((t) => text(t.code).toLowerCase() === code.toLowerCase());
+    if (matches.length > 1) throw new Feature1ReadError(`More than one task has the code ${code}.`);
+    const task = matches[0];
+    if (!task || !text(task.id))
+      throw new Feature1ReadError(`Feature1 has no task with the code ${code}`);
+    const status = text(task.status);
+    if (STORY_FINISHED.includes(status)) {
+      throw new Feature1ReadError(
+        `"${text(task.title)}" is ${status.replace(/_/g, ' ')}. There is nothing left to build.`
+      );
+    }
+    const unit: PulledStory = {
+      id: text(task.id),
+      code: text(task.code) || code,
+      title: text(task.title) || 'Untitled task',
+      description: text(task.description),
+      status,
+      acceptanceCriteria: criteria(task.acceptance_criteria ?? task.acceptanceCriteria),
+      dependencies: [],
+      revision: text(task.updated_at, task.updatedAt) || null,
+    };
+    return {
+      kind: 'task',
+      id: unit.id,
+      code: unit.code,
+      title: unit.title,
+      description: unit.description,
+      status,
+      projectId: text(task.project_id, task.projectId) || null,
+      requirements: null,
+      revision: unit.revision,
+      stories: [unit],
+      finished: [],
     };
   }
 }

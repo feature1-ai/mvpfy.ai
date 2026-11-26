@@ -1,5 +1,8 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { looksLikeSecret, parseStatus } from './git';
+import { looksLikeSecret, parseStatus, withCloneLock } from './git';
 
 const z = (...entries: string[]) => entries.join('\0') + '\0';
 
@@ -76,6 +79,47 @@ describe('looksLikeSecret', () => {
       'src/keys.ts',
     ]) {
       expect(looksLikeSecret(file), file).toBe(false);
+    }
+  });
+});
+
+describe('one runner at a time in a shared clone', () => {
+  it('lets one in at a time, lets the holder in again, and takes over a dead one', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mvpfy-lock-'));
+    try {
+      const clone = path.join(dir, 'clone');
+      const order: string[] = [];
+      const slow = (name: string) => async () => {
+        order.push(`${name} in`);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        order.push(`${name} out`);
+      };
+      await Promise.all([
+        withCloneLock(clone, slow('a'), { pollMs: 5 }),
+        withCloneLock(clone, slow('b'), { pollMs: 5 }),
+      ]);
+      // Never both inside at once.
+      expect(order).toEqual(['a in', 'a out', 'b in', 'b out']);
+
+      // Fetching inside adding a worktree: the same holder, so no wait.
+      expect(await withCloneLock(clone, () => withCloneLock(clone, async () => 'nested'))).toBe(
+        'nested'
+      );
+      expect(fs.existsSync(`${clone}.lock`)).toBe(false);
+
+      // Left by a runner that died: untouched for long enough, it is taken over.
+      fs.mkdirSync(`${clone}.lock`);
+      const old = new Date(Date.now() - 11 * 60_000);
+      fs.utimesSync(`${clone}.lock`, old, old);
+      expect(await withCloneLock(clone, async () => 'taken', { pollMs: 5 })).toBe('taken');
+
+      // Held by a live one: waited for, then given up on.
+      fs.mkdirSync(`${clone}.lock`);
+      await expect(
+        withCloneLock(clone, async () => 'never', { waitMs: 30, pollMs: 5 })
+      ).rejects.toThrow(/held clone too long/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

@@ -1,4 +1,5 @@
 import { posixQuote } from '../shared/shellQuote';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ExecutionRepository } from '../shared/runner/contract';
@@ -45,6 +46,74 @@ export interface GitFailure {
   command: string;
   code: number | null;
   message: string;
+}
+
+/**
+ * One runner at a time in a clone.
+ *
+ * A workspace's runners share one clone of each repository, every build in
+ * a worktree of its own. Worktrees side by side are fine; two runners
+ * fetching into the clone, or adding and pruning worktrees, at the same
+ * moment are not: git's ref and index locks make one of them fail. So each
+ * of those holds this, a directory beside the clone, made atomically on the
+ * shared volume. Asked for again by the task holding it, it is already held.
+ *
+ * A runner that died holding it leaves it behind; one not touched for
+ * STALE_MS is taken over. A holder touches it while it works, so a long
+ * first clone is never mistaken for a dead one.
+ */
+const HELD = new AsyncLocalStorage<Set<string>>();
+const STALE_MS = 10 * 60_000;
+const TOUCH_MS = 60_000;
+
+export async function withCloneLock<T>(
+  clone: string,
+  work: () => Promise<T>,
+  options: { waitMs?: number; pollMs?: number } = {}
+): Promise<T> {
+  const lock = `${clone}.lock`;
+  // Held by this very task further up (a fetch inside adding a worktree).
+  const mine = HELD.getStore();
+  if (mine?.has(lock)) return work();
+  const deadline = Date.now() + (options.waitMs ?? 45 * 60_000);
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  for (;;) {
+    try {
+      fs.mkdirSync(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      try {
+        if (Date.now() - fs.statSync(lock).mtimeMs > STALE_MS) {
+          fs.rmSync(lock, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`Another runner has held ${path.basename(clone)} too long`, {
+          cause: error,
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 500));
+    }
+  }
+  const touch = setInterval(() => {
+    const now = new Date();
+    try {
+      fs.utimesSync(lock, now, now);
+    } catch {
+      // Gone: nothing to keep fresh.
+    }
+  }, TOUCH_MS);
+  touch.unref?.();
+  try {
+    return await HELD.run(new Set([...(mine ?? []), lock]), work);
+  } finally {
+    clearInterval(touch);
+    fs.rmSync(lock, { recursive: true, force: true });
+  }
 }
 
 export class GitError extends Error {
@@ -95,6 +164,10 @@ export class Git {
    */
   async ensureClone(tenantId: string, repo: ExecutionRepository): Promise<string> {
     const dir = this.layout.cloneDir(tenantId, repo.id);
+    return withCloneLock(dir, () => this.cloneOrFetch(dir, repo));
+  }
+
+  private async cloneOrFetch(dir: string, repo: ExecutionRepository): Promise<string> {
     if (fs.existsSync(path.join(dir, 'HEAD'))) {
       await this.git(dir, `fetch --prune origin ${posixQuote(TRACKING_REFSPEC)}`);
       return dir;
@@ -147,6 +220,16 @@ export class Git {
       await this.git(tree, `checkout ${posixQuote(branch)}`);
       return tree;
     }
+    return withCloneLock(clone, () => this.addWorktree(clone, tree, branch, repo, startPoint));
+  }
+
+  private async addWorktree(
+    clone: string,
+    tree: string,
+    branch: string,
+    repo: ExecutionRepository,
+    startPoint?: string
+  ): Promise<string> {
     fs.mkdirSync(path.dirname(tree), { recursive: true });
     // A worktree whose directory went missing (a cleaned volume, a crash
     // mid-delete) stays registered, and `worktree add` then refuses the path
@@ -182,10 +265,13 @@ export class Git {
     const tree = this.layout.worktreeDir(tenantId, executionId, repositoryId);
     // --force discards whatever is in the tree, so it must be one of ours.
     if (!this.layout.contains(tree)) throw new Error(`Refusing to remove ${tree}`);
-    if (fs.existsSync(path.join(clone, 'HEAD')) && fs.existsSync(tree)) {
-      await this.git(clone, `worktree remove --force ${posixQuote(tree)}`);
-    }
-    if (fs.existsSync(path.join(clone, 'HEAD'))) await this.git(clone, 'worktree prune');
+    if (!fs.existsSync(path.join(clone, 'HEAD'))) return;
+    await withCloneLock(clone, async () => {
+      if (fs.existsSync(tree)) {
+        await this.git(clone, `worktree remove --force ${posixQuote(tree)}`);
+      }
+      await this.git(clone, 'worktree prune');
+    });
   }
 
   /**
@@ -204,14 +290,16 @@ export class Git {
     if (!validRef(branch)) throw new Error(`Refusing an unusable branch name: ${branch}`);
     if (!this.layout.contains(dir)) throw new Error(`Refusing to check out to ${dir}`);
     const clone = await this.ensureClone(tenantId, repo);
-    if (fs.existsSync(dir)) {
-      await this.git(clone, `worktree remove --force ${posixQuote(dir)}`).catch(() => undefined);
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-    await this.git(clone, 'worktree prune');
-    fs.mkdirSync(path.dirname(dir), { recursive: true });
-    const ref = `refs/remotes/origin/${branch}`;
-    await this.git(clone, `worktree add --detach ${posixQuote(dir)} ${posixQuote(ref)}`);
+    await withCloneLock(clone, async () => {
+      if (fs.existsSync(dir)) {
+        await this.git(clone, `worktree remove --force ${posixQuote(dir)}`).catch(() => undefined);
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+      await this.git(clone, 'worktree prune');
+      fs.mkdirSync(path.dirname(dir), { recursive: true });
+      const ref = `refs/remotes/origin/${branch}`;
+      await this.git(clone, `worktree add --detach ${posixQuote(dir)} ${posixQuote(ref)}`);
+    });
     return (await this.git(dir, 'rev-parse HEAD')).trim();
   }
 

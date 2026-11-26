@@ -105,6 +105,53 @@ export async function projectFromFeature1(
   return projectFrom(chosen);
 }
 
+/** The projects `list_projects` names: each one's id, name and how many repositories it has. */
+export function projectsIn(
+  markdown: string
+): Array<{ id: string; name: string; repositories: number | null }> {
+  return markdown
+    .split(/\n(?=\d+\. \*\*)/)
+    .map((block) => {
+      const count = block.match(/^\s*- repositories: (\d+)/m)?.[1];
+      return {
+        id: block.match(/project_id: `([0-9a-f-]{36})`/i)?.[1] ?? '',
+        name: block.match(/^\d+\. \*\*(.+?)\*\*/m)?.[1] ?? '',
+        repositories: count === undefined ? null : Number(count),
+      };
+    })
+    .filter((p) => p.id);
+}
+
+/**
+ * Before anything has been built, which project to set up for test links:
+ * the workspace's one project with repositories. With several, which one is
+ * not a guess to make; the first build says.
+ */
+export async function onlyProject(
+  projects: Array<{ id: string; name: string; repositories: number | null }>,
+  hasRepositories: (projectId: string) => Promise<boolean>
+): Promise<{ id: string; name: string }> {
+  const withRepos: Array<{ id: string; name: string }> = [];
+  for (const project of projects) {
+    if (project.repositories === 0) continue;
+    if (project.repositories === null && !(await hasRepositories(project.id))) continue;
+    withRepos.push(project);
+  }
+  const [only] = withRepos;
+  if (!only) {
+    throw new ProjectError(
+      'No project in Feature1 has a repository connected. Connect one in Feature1, or set the repositories in Settings.'
+    );
+  }
+  if (withRepos.length > 1) {
+    throw new ProjectError(
+      `Feature1 has several projects with repositories (${withRepos.map((p) => p.name).join(', ')}). ` +
+        'Build an item first, so mvpfy knows which to set up, or set the repositories in Settings.'
+    );
+  }
+  return only;
+}
+
 /** GitHub's own answers, with the runner's token. */
 export function githubWith(token: string | null, fetchImpl: typeof fetch = fetch) {
   const get = (path: string) =>

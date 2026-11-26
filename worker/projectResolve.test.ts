@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { githubWith, projectFromFeature1, repositoriesIn } from './projectResolve';
+import {
+  githubWith,
+  onlyProject,
+  projectFromFeature1,
+  projectsIn,
+  repositoriesIn,
+} from './projectResolve';
 
 // What Feature1's get_repository_context writes (mcp-server/project-metadata.js).
 const CONTEXT = `# Repository Context: Jar share
@@ -113,5 +119,49 @@ describe("a build's repositories, from its project in Feature1", () => {
       url: 'https://api.github.com/repos/Fastturtle-sa/Jarshare',
       auth: 'Bearer ghs_token',
     });
+  });
+});
+
+// What Feature1's list_projects writes (mcp-server/project-metadata.js).
+const PROJECTS = `# Projects (3)
+
+Pass the \`project_id\` you want to any project-scoped tool.
+
+1. **Jar share**
+   - project_id: \`34e91797-d13a-42ae-b319-c7751390db09\`
+   - slug: jar-share
+   - repositories: 1
+
+2. **Ideas**
+   - project_id: \`55555555-5555-4555-8555-555555555555\`
+   - repositories: 0
+
+3. **Older**
+   - project_id: \`66666666-6666-4666-8666-666666666666\`
+`;
+
+describe('setting up before anything is built', () => {
+  it("finds the workspace's one project with repositories", async () => {
+    const projects = projectsIn(PROJECTS);
+    expect(projects).toEqual([
+      { id: '34e91797-d13a-42ae-b319-c7751390db09', name: 'Jar share', repositories: 1 },
+      { id: '55555555-5555-4555-8555-555555555555', name: 'Ideas', repositories: 0 },
+      { id: '66666666-6666-4666-8666-666666666666', name: 'Older', repositories: null },
+    ]);
+    const asked: string[] = [];
+    const only = await onlyProject(projects, async (id) => {
+      asked.push(id);
+      return false;
+    });
+    expect(only.name).toBe('Jar share');
+    // Only the one whose count was not given is asked about.
+    expect(asked).toEqual(['66666666-6666-4666-8666-666666666666']);
+  });
+
+  it('does not guess between several, and says when there are none', async () => {
+    await expect(onlyProject(projectsIn(PROJECTS), async () => true)).rejects.toThrow(
+      /several projects with repositories \(Jar share, Older\)/
+    );
+    await expect(onlyProject([], async () => true)).rejects.toThrow(/No project in Feature1/);
   });
 });

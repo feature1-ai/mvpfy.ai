@@ -52,7 +52,13 @@ import { SandboxServer, sandboxServerConfigFrom } from './sandbox';
 import { ExecutionStore } from './store';
 import { Feature1ConnectionStore, readerFor, whoIs } from './feature1Connection';
 import { Feature1Mcp, loadMcpAccess } from './feature1Mcp';
-import { githubWith, projectFromFeature1, repositoriesIn } from './projectResolve';
+import {
+  githubWith,
+  onlyProject,
+  projectFromFeature1,
+  projectsIn,
+  repositoriesIn,
+} from './projectResolve';
 import { Feature1Login } from './feature1Login';
 import { FROM_FEATURE1_FILE, Project, ProjectStore, describeProject, projectFrom } from './project';
 import { PULLED_LEASE_MS, executionFor } from './pull';
@@ -777,8 +783,33 @@ function setupTemplate(): string {
  * `prepare`: set the product up once, the way the desktop app does, so it can
  * be started for a test link. Resolves with the exit code.
  */
+/**
+ * Before the first build, nobody has said which repositories, and no build
+ * has: the workspace's one project with repositories in Feature1 is set up.
+ */
+async function knowRepositories(): Promise<void> {
+  const root = workerRootFrom();
+  if (new ProjectStore(root).load() || new ProjectStore(root, FROM_FEATURE1_FILE).load()) return;
+  const connection = new Feature1ConnectionStore(secretsDirFrom()).load();
+  if (connection?.via !== 'mcp') return;
+  const mcp = new Feature1Mcp(connection.feature1BaseUrl, connection.token);
+  const repositoriesOf = async (projectId: string) =>
+    repositoriesIn((await mcp.call('get_repository_context', { project_id: projectId })).text);
+  const project = await onlyProject(
+    projectsIn((await mcp.call('list_projects', {})).text),
+    async (id) => (await repositoriesOf(id)).length > 0
+  );
+  log(`setting up ${project.name}, the workspace's project in Feature1`);
+  await repositoriesFromFeature1(
+    connection,
+    { projectId: project.id, code: null, title: project.name },
+    new Redactor()
+  );
+}
+
 export async function prepare(): Promise<number> {
   ensureSignInFolders();
+  await knowRepositories();
   const { repos, tenantId, root, recipeDir, key } = projectContext();
   const config = configWithoutRunner(process.env);
   const redactor = new Redactor().remember(...secretsIn(config));
